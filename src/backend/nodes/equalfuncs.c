@@ -124,6 +124,7 @@ _equalIntoClause(const IntoClause *a, const IntoClause *b)
 	COMPARE_SCALAR_FIELD(onCommit);
 	COMPARE_STRING_FIELD(tableSpaceName);
 	COMPARE_SCALAR_FIELD(skipData);
+	COMPARE_SCALAR_FIELD(relkind);
 
 	return true;
 }
@@ -1523,6 +1524,7 @@ _equalCreateTableAsStmt(const CreateTableAsStmt *a, const CreateTableAsStmt *b)
 {
 	COMPARE_NODE_FIELD(query);
 	COMPARE_NODE_FIELD(into);
+	COMPARE_SCALAR_FIELD(relkind);
 	COMPARE_SCALAR_FIELD(is_select_into);
 
 	return true;

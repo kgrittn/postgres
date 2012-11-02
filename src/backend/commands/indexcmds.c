@@ -352,7 +352,8 @@ DefineIndex(IndexStmt *stmt,
 	relationId = RelationGetRelid(rel);
 	namespaceId = RelationGetNamespace(rel);
 
-	if (rel->rd_rel->relkind != RELKIND_RELATION)
+	if (rel->rd_rel->relkind != RELKIND_RELATION &&
+		rel->rd_rel->relkind != RELKIND_MATVIEW)
 	{
 		if (rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
 
@@ -1860,7 +1861,8 @@ ReindexDatabase(const char *databaseName, bool do_system, bool do_user)
 	{
 		Form_pg_class classtuple = (Form_pg_class) GETSTRUCT(tuple);
 
-		if (classtuple->relkind != RELKIND_RELATION)
+		if (classtuple->relkind != RELKIND_RELATION &&
+			classtuple->relkind != RELKIND_MATVIEW)
 			continue;
 
 		/* Skip temp tables of other backends; we can't reindex them at all */

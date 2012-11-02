@@ -715,6 +715,7 @@ pg_relation_filenode(PG_FUNCTION_ARGS)
 	switch (relform->relkind)
 	{
 		case RELKIND_RELATION:
+		case RELKIND_MATVIEW:
 		case RELKIND_INDEX:
 		case RELKIND_SEQUENCE:
 		case RELKIND_TOASTVALUE:
@@ -763,6 +764,7 @@ pg_relation_filepath(PG_FUNCTION_ARGS)
 	switch (relform->relkind)
 	{
 		case RELKIND_RELATION:
+		case RELKIND_MATVIEW:
 		case RELKIND_INDEX:
 		case RELKIND_SEQUENCE:
 		case RELKIND_TOASTVALUE:

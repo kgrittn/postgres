@@ -1032,6 +1032,7 @@ _copyIntoClause(const IntoClause *from)
 	COPY_SCALAR_FIELD(onCommit);
 	COPY_STRING_FIELD(tableSpaceName);
 	COPY_SCALAR_FIELD(skipData);
+	COPY_SCALAR_FIELD(relkind);
 
 	return newnode;
 }
@@ -3226,6 +3227,7 @@ _copyCreateTableAsStmt(const CreateTableAsStmt *from)
 
 	COPY_NODE_FIELD(query);
 	COPY_NODE_FIELD(into);
+	COPY_SCALAR_FIELD(relkind);
 	COPY_SCALAR_FIELD(is_select_into);
 
 	return newnode;

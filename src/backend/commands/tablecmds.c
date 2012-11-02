@@ -215,6 +215,12 @@ static const struct dropmsgstrings dropmsgstringarray[] = {
 		gettext_noop("view \"%s\" does not exist, skipping"),
 		gettext_noop("\"%s\" is not a view"),
 	gettext_noop("Use DROP VIEW to remove a view.")},
+	{RELKIND_MATVIEW,
+		ERRCODE_UNDEFINED_TABLE,
+		gettext_noop("materialized view \"%s\" does not exist"),
+		gettext_noop("materialized view \"%s\" does not exist, skipping"),
+		gettext_noop("\"%s\" is not a materialized view"),
+	gettext_noop("Use DROP MATERIALIZED VIEW to remove a materialized view.")},
 	{RELKIND_INDEX,
 		ERRCODE_UNDEFINED_OBJECT,
 		gettext_noop("index \"%s\" does not exist"),
@@ -246,9 +252,10 @@ struct DropRelationCallbackState
 /* Alter table target-type flags for ATSimplePermissions */
 #define		ATT_TABLE				0x0001
 #define		ATT_VIEW				0x0002
-#define		ATT_INDEX				0x0004
-#define		ATT_COMPOSITE_TYPE		0x0008
-#define		ATT_FOREIGN_TABLE		0x0010
+#define		ATT_MATVIEW				0x0004
+#define		ATT_INDEX				0x0008
+#define		ATT_COMPOSITE_TYPE		0x0010
+#define		ATT_FOREIGN_TABLE		0x0020
 
 static void truncate_check_rel(Relation rel);
 static List *MergeAttributes(List *schema, List *supers, char relpersistence,
@@ -394,6 +401,8 @@ static void RangeVarCallbackForDropRelation(const RangeVar *rel, Oid relOid,
 								Oid oldRelOid, void *arg);
 static void RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid,
 								 Oid oldrelid, void *arg);
+
+static bool isQueryUsingTempRelation_walker(Node *node, void *context);
 
 
 /* ----------------------------------------------------------------
@@ -731,7 +740,7 @@ DropErrorMsgWrongType(const char *relname, char wrongkind, char rightkind)
 /*
  * RemoveRelations
  *		Implements DROP TABLE, DROP INDEX, DROP SEQUENCE, DROP VIEW,
- *		DROP FOREIGN TABLE
+ *		DROP MATERIALIZED VIEW, DROP FOREIGN TABLE
  */
 void
 RemoveRelations(DropStmt *drop)
@@ -778,6 +787,10 @@ RemoveRelations(DropStmt *drop)
 
 		case OBJECT_VIEW:
 			relkind = RELKIND_VIEW;
+			break;
+
+		case OBJECT_MATVIEW:
+			relkind = RELKIND_MATVIEW;
 			break;
 
 		case OBJECT_FOREIGN_TABLE:
@@ -1224,11 +1237,12 @@ truncate_check_rel(Relation rel)
 {
 	AclResult	aclresult;
 
-	/* Only allow truncate on regular tables */
-	if (rel->rd_rel->relkind != RELKIND_RELATION)
+	/* Only allow truncate on regular tables and materialized views. */
+	if (rel->rd_rel->relkind != RELKIND_RELATION &&
+		rel->rd_rel->relkind != RELKIND_MATVIEW)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table",
+				 errmsg("\"%s\" is not a table or materialized view",
 						RelationGetRelationName(rel))));
 
 	/* Permissions checks */
@@ -2063,12 +2077,13 @@ renameatt_check(Oid myrelid, Form_pg_class classform, bool recursing)
 	 */
 	if (relkind != RELKIND_RELATION &&
 		relkind != RELKIND_VIEW &&
+		relkind != RELKIND_MATVIEW &&
 		relkind != RELKIND_COMPOSITE_TYPE &&
 		relkind != RELKIND_INDEX &&
 		relkind != RELKIND_FOREIGN_TABLE)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table, view, composite type, index, or foreign table",
+				 errmsg("\"%s\" is not a table, view, materialized view, composite type, index, or foreign table",
 						NameStr(classform->relname))));
 
 	/*
@@ -3188,7 +3203,8 @@ ATRewriteCatalogs(List **wqueue, LOCKMODE lockmode)
 	{
 		AlteredTableInfo *tab = (AlteredTableInfo *) lfirst(ltab);
 
-		if (tab->relkind == RELKIND_RELATION)
+		if (tab->relkind == RELKIND_RELATION ||
+			tab->relkind == RELKIND_MATVIEW)
 			AlterTableCreateToastTable(tab->relid, (Datum) 0);
 	}
 }
@@ -3916,6 +3932,9 @@ ATSimplePermissions(Relation rel, int allowed_targets)
 		case RELKIND_VIEW:
 			actual_target = ATT_VIEW;
 			break;
+		case RELKIND_MATVIEW:
+			actual_target = ATT_MATVIEW;
+			break;
 		case RELKIND_INDEX:
 			actual_target = ATT_INDEX;
 			break;
@@ -4126,7 +4145,8 @@ find_composite_type_dependencies(Oid typeOid, Relation origRelation,
 		rel = relation_open(pg_depend->objid, AccessShareLock);
 		att = rel->rd_att->attrs[pg_depend->objsubid - 1];
 
-		if (rel->rd_rel->relkind == RELKIND_RELATION)
+		if (rel->rd_rel->relkind == RELKIND_RELATION ||
+			rel->rd_rel->relkind == RELKIND_MATVIEW)
 		{
 			if (origTypeName)
 				ereport(ERROR,
@@ -4952,11 +4972,12 @@ ATPrepSetStatistics(Relation rel, const char *colName, Node *newValue, LOCKMODE 
 	 * allowSystemTableMods to be turned on.
 	 */
 	if (rel->rd_rel->relkind != RELKIND_RELATION &&
+		rel->rd_rel->relkind != RELKIND_MATVIEW &&
 		rel->rd_rel->relkind != RELKIND_INDEX &&
 		rel->rd_rel->relkind != RELKIND_FOREIGN_TABLE)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table, index, or foreign table",
+				 errmsg("\"%s\" is not a table, materialized view, index, or foreign table",
 						RelationGetRelationName(rel))));
 
 	/* Permissions checks */
@@ -8041,6 +8062,7 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing, LOCKMODE lock
 	{
 		case RELKIND_RELATION:
 		case RELKIND_VIEW:
+		case RELKIND_MATVIEW:
 		case RELKIND_FOREIGN_TABLE:
 			/* ok to change owner */
 			break;
@@ -8197,11 +8219,12 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing, LOCKMODE lock
 							 tuple_class->relkind == RELKIND_COMPOSITE_TYPE);
 
 		/*
-		 * If we are operating on a table, also change the ownership of any
-		 * indexes and sequences that belong to the table, as well as the
-		 * table's toast table (if it has one)
+		 * If we are operating on a table or materialized view, also change
+		 * the ownership of any indexes and sequences that belong to the
+		 * relation, as well as its toast table (if it has one).
 		 */
 		if (tuple_class->relkind == RELKIND_RELATION ||
+			tuple_class->relkind == RELKIND_MATVIEW ||
 			tuple_class->relkind == RELKIND_TOASTVALUE)
 		{
 			List	   *index_oid_list;
@@ -8217,7 +8240,8 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing, LOCKMODE lock
 			list_free(index_oid_list);
 		}
 
-		if (tuple_class->relkind == RELKIND_RELATION)
+		if (tuple_class->relkind == RELKIND_RELATION ||
+			tuple_class->relkind == RELKIND_MATVIEW)
 		{
 			/* If it has a toast table, recurse to change its ownership */
 			if (tuple_class->reltoastrelid != InvalidOid)
@@ -8487,6 +8511,7 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 		case RELKIND_RELATION:
 		case RELKIND_TOASTVALUE:
 		case RELKIND_VIEW:
+		case RELKIND_MATVIEW:
 			(void) heap_reloptions(rel->rd_rel->relkind, newOptions, true);
 			break;
 		case RELKIND_INDEX:
@@ -8495,7 +8520,7 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 		default:
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("\"%s\" is not a table, index, or TOAST table",
+					 errmsg("\"%s\" is not a table, view, materialized view, index, or TOAST table",
 							RelationGetRelationName(rel))));
 			break;
 	}
@@ -9762,8 +9787,9 @@ AlterTableNamespace(AlterObjectSchemaStmt *stmt)
 }
 
 /*
- * The guts of relocating a table to another namespace: besides moving
- * the table itself, its dependent objects are relocated to the new schema.
+ * The guts of relocating a table or materialized view to another namespace:
+ * besides moving the relation itself, its dependent objects are relocated to
+ * the new schema.
  */
 void
 AlterTableNamespaceInternal(Relation rel, Oid oldNspOid, Oid nspOid,
@@ -9784,7 +9810,8 @@ AlterTableNamespaceInternal(Relation rel, Oid oldNspOid, Oid nspOid,
 							   nspOid, false, false, objsMoved);
 
 	/* Fix other dependent stuff */
-	if (rel->rd_rel->relkind == RELKIND_RELATION)
+	if (rel->rd_rel->relkind == RELKIND_RELATION ||
+		rel->rd_rel->relkind == RELKIND_MATVIEW)
 	{
 		AlterIndexNamespaces(classRel, rel, oldNspOid, nspOid, objsMoved);
 		AlterSeqNamespaces(classRel, rel, oldNspOid, nspOid,
@@ -10189,10 +10216,10 @@ AtEOSubXact_on_commit_actions(bool isCommit, SubTransactionId mySubid,
 
 /*
  * This is intended as a callback for RangeVarGetRelidExtended().  It allows
- * the table to be locked only if (1) it's a plain table or TOAST table and
- * (2) the current user is the owner (or the superuser).  This meets the
- * permission-checking needs of both CLUSTER and REINDEX TABLE; we expose it
- * here so that it can be used by both.
+ * the relation to be locked only if (1) it's a plain table, materialized
+ * view, or TOAST table and (2) the current user is the owner (or the
+ * superuser).  This meets the permission-checking needs of both CLUSTER and
+ * REINDEX TABLE; we expose it here so that it can be used by both.
  */
 void
 RangeVarCallbackOwnsTable(const RangeVar *relation,
@@ -10212,10 +10239,11 @@ RangeVarCallbackOwnsTable(const RangeVar *relation,
 	relkind = get_rel_relkind(relId);
 	if (!relkind)
 		return;
-	if (relkind != RELKIND_RELATION && relkind != RELKIND_TOASTVALUE)
+	if (relkind != RELKIND_RELATION && relkind != RELKIND_TOASTVALUE &&
+		relkind != RELKIND_MATVIEW)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table", relation->relname)));
+				 errmsg("\"%s\" is not a table or materialized view", relation->relname)));
 
 	/* Check permissions */
 	if (!pg_class_ownercheck(relId, GetUserId()))
@@ -10297,6 +10325,11 @@ RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid, Oid oldrelid,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("\"%s\" is not a view", rv->relname)));
 
+	if (reltype == OBJECT_MATVIEW && relkind != RELKIND_MATVIEW)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a materialized view", rv->relname)));
+
 	if (reltype == OBJECT_FOREIGN_TABLE && relkind != RELKIND_FOREIGN_TABLE)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
@@ -10333,13 +10366,61 @@ RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid, Oid oldrelid,
 	 * Don't allow ALTER TABLE .. SET SCHEMA on relations that can't be moved
 	 * to a different schema, such as indexes and TOAST tables.
 	 */
-	if (IsA(stmt, AlterObjectSchemaStmt) &&relkind != RELKIND_RELATION
-		&& relkind != RELKIND_VIEW && relkind != RELKIND_SEQUENCE
-		&& relkind != RELKIND_FOREIGN_TABLE)
+	if (IsA(stmt, AlterObjectSchemaStmt) && relkind != RELKIND_RELATION
+		&& relkind != RELKIND_VIEW && relkind != RELKIND_MATVIEW
+		&& relkind != RELKIND_SEQUENCE && relkind != RELKIND_FOREIGN_TABLE)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 			errmsg("\"%s\" is not a table, view, sequence, or foreign table",
 				   rv->relname)));
 
 	ReleaseSysCache(tuple);
+}
+
+/*
+ * Returns true iff any relation underlying this query is a temporary database
+ * object (table, view, or materialized view).
+ *
+ */
+bool
+isQueryUsingTempRelation(Query *query)
+{
+	return isQueryUsingTempRelation_walker((Node *) query, NULL);
+}
+
+static bool
+isQueryUsingTempRelation_walker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Query))
+	{
+		Query	   *query = (Query *) node;
+		ListCell   *rtable;
+
+		foreach(rtable, query->rtable)
+		{
+			RangeTblEntry *rte = lfirst(rtable);
+
+			if (rte->rtekind == RTE_RELATION)
+			{
+				Relation	rel = heap_open(rte->relid, AccessShareLock);
+				char		relpersistence = rel->rd_rel->relpersistence;
+
+				heap_close(rel, AccessShareLock);
+				if (relpersistence == RELPERSISTENCE_TEMP)
+					return true;
+			}
+		}
+
+		return query_tree_walker(query,
+								 isQueryUsingTempRelation_walker,
+								 context,
+								 QTW_IGNORE_JOINALIASES);
+	}
+
+	return expression_tree_walker(node,
+								  isQueryUsingTempRelation_walker,
+								  context);
 }

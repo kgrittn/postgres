@@ -22,6 +22,15 @@
 #define RULE_FIRES_ON_REPLICA	'R'
 #define RULE_DISABLED			'D'
 
+extern void InsertRule(char *rulname,
+				  int evtype,
+				  Oid eventrel_oid,
+				  AttrNumber evslot_index,
+				  bool evinstead,
+				  Node *event_qual,
+				  List *action,
+				  bool replace);
+
 extern void DefineRule(RuleStmt *stmt, const char *queryString);
 
 extern void DefineQueryRewrite(char *rulename,

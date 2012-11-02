@@ -984,6 +984,12 @@ CheckValidResultRel(Relation resultRel, CmdType operation)
 					break;
 			}
 			break;
+		case RELKIND_MATVIEW:
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("cannot change materialized view \"%s\"",
+							RelationGetRelationName(resultRel))));
+			break;
 		case RELKIND_FOREIGN_TABLE:
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
@@ -1032,6 +1038,13 @@ CheckValidRowMarkRel(Relation rel, RowMarkType markType)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("cannot lock rows in view \"%s\"",
+							RelationGetRelationName(rel))));
+			break;
+		case RELKIND_MATVIEW:
+			/* Should not get here */
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("cannot lock rows in materialized view \"%s\"",
 							RelationGetRelationName(rel))));
 			break;
 		case RELKIND_FOREIGN_TABLE:

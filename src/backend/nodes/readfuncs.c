@@ -395,6 +395,7 @@ _readIntoClause(void)
 	READ_ENUM_FIELD(onCommit, OnCommitAction);
 	READ_STRING_FIELD(tableSpaceName);
 	READ_BOOL_FIELD(skipData);
+	READ_CHAR_FIELD(relkind);
 
 	READ_DONE();
 }

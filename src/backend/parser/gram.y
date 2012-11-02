@@ -121,6 +121,13 @@ typedef struct PrivTarget
 #define CAS_NOT_VALID				0x10
 #define CAS_NO_INHERIT				0x20
 
+/*
+ * In the IntoClause structure there is a char value which will eventually be
+ * set to RELKIND_RELATION or RELKIND_MATVIEW based on the relkind field in
+ * the statement-level structure, which is an ObjectType. Define the default
+ * here, which should always be overridden later.
+ */
+#define INTO_CLAUSE_RELKIND_DEFAULT	'\0'
 
 #define parser_yyerror(msg)  scanner_yyerror(msg, yyscanner)
 #define parser_errposition(pos)  scanner_errposition(pos, yyscanner)
@@ -247,6 +254,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 		DeallocateStmt PrepareStmt ExecuteStmt
 		DropOwnedStmt ReassignOwnedStmt
 		AlterTSConfigurationStmt AlterTSDictionaryStmt
+		CreateMatViewStmt
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
@@ -555,7 +563,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 	LEADING LEAKPROOF LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL
 	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P
 
-	MAPPING MATCH MAXVALUE MINUTE_P MINVALUE MODE MONTH_P MOVE
+	MAPPING MATCH MATERIALIZED MAXVALUE MINUTE_P MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEXT NO NONE
 	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
@@ -812,6 +820,7 @@ stmt :
 			| VariableSetStmt
 			| VariableShowStmt
 			| ViewStmt
+			| CreateMatViewStmt
 			| /*EMPTY*/
 				{ $$ = NULL; }
 		;
@@ -1694,9 +1703,9 @@ DiscardStmt:
 
 /*****************************************************************************
  *
- *	ALTER [ TABLE | INDEX | SEQUENCE | VIEW ] variations
+ *	ALTER [ TABLE | INDEX | SEQUENCE | VIEW | MATERIALIZED VIEW ] variations
  *
- * Note: we accept all subcommands for each of the four variants, and sort
+ * Note: we accept all subcommands for each of the five variants, and sort
  * out what's really legal at execution time.
  *****************************************************************************/
 
@@ -1770,6 +1779,24 @@ AlterTableStmt:
 					n->relation = $5;
 					n->cmds = $6;
 					n->relkind = OBJECT_VIEW;
+					n->missing_ok = true;
+					$$ = (Node *)n;
+				}
+		|	ALTER MATERIALIZED VIEW qualified_name alter_table_cmds
+				{
+					AlterTableStmt *n = makeNode(AlterTableStmt);
+					n->relation = $4;
+					n->cmds = $5;
+					n->relkind = OBJECT_MATVIEW;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
+		|	ALTER MATERIALIZED VIEW IF_P EXISTS qualified_name alter_table_cmds
+				{
+					AlterTableStmt *n = makeNode(AlterTableStmt);
+					n->relation = $6;
+					n->cmds = $7;
+					n->relkind = OBJECT_MATVIEW;
 					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
@@ -3149,6 +3176,7 @@ CreateAsStmt:
 					CreateTableAsStmt *ctas = makeNode(CreateTableAsStmt);
 					ctas->query = $6;
 					ctas->into = $4;
+					ctas->relkind = OBJECT_TABLE;
 					ctas->is_select_into = false;
 					/* cram additional flags into the IntoClause */
 					$4->rel->relpersistence = $2;
@@ -3167,6 +3195,7 @@ create_as_target:
 					$$->onCommit = $4;
 					$$->tableSpaceName = $5;
 					$$->skipData = false;		/* might get changed later */
+					$$->relkind = INTO_CLAUSE_RELKIND_DEFAULT;
 				}
 		;
 
@@ -3174,6 +3203,29 @@ opt_with_data:
 			WITH DATA_P								{ $$ = TRUE; }
 			| WITH NO DATA_P						{ $$ = FALSE; }
 			| /*EMPTY*/								{ $$ = TRUE; }
+		;
+
+
+/*****************************************************************************
+ *
+ *		QUERY :
+ *				CREATE MATERIALIZED VIEW relname AS SelectStmt
+ *
+ *****************************************************************************/
+
+CreateMatViewStmt:
+		CREATE OptTemp MATERIALIZED VIEW create_as_target AS SelectStmt opt_with_data
+				{
+					CreateTableAsStmt *ctas = makeNode(CreateTableAsStmt);
+					ctas->query = $7;
+					ctas->into = $5;
+					ctas->relkind = OBJECT_MATVIEW;
+					ctas->is_select_into = false;
+					/* cram additional flags into the IntoClause */
+					$5->rel->relpersistence = $2;
+					$5->skipData = !($8);
+					$$ = (Node *) ctas;
+				}
 		;
 
 
@@ -3692,6 +3744,15 @@ AlterExtensionContentsStmt:
 					n->action = $4;
 					n->objtype = OBJECT_VIEW;
 					n->objname = $6;
+					$$ = (Node *)n;
+				}
+			| ALTER EXTENSION name add_drop MATERIALIZED VIEW any_name
+				{
+					AlterExtensionContentsStmt *n = makeNode(AlterExtensionContentsStmt);
+					n->extname = $3;
+					n->action = $4;
+					n->objtype = OBJECT_MATVIEW;
+					n->objname = $7;
 					$$ = (Node *)n;
 				}
 			| ALTER EXTENSION name add_drop FOREIGN TABLE any_name
@@ -5020,6 +5081,7 @@ DropStmt:	DROP drop_type IF_P EXISTS any_name_list opt_drop_behavior
 drop_type:	TABLE									{ $$ = OBJECT_TABLE; }
 			| SEQUENCE								{ $$ = OBJECT_SEQUENCE; }
 			| VIEW									{ $$ = OBJECT_VIEW; }
+			| MATERIALIZED VIEW						{ $$ = OBJECT_MATVIEW; }
 			| INDEX									{ $$ = OBJECT_INDEX; }
 			| FOREIGN TABLE							{ $$ = OBJECT_FOREIGN_TABLE; }
 			| EVENT TRIGGER 						{ $$ = OBJECT_EVENT_TRIGGER; }
@@ -5086,7 +5148,8 @@ opt_restart_seqs:
  *				   EXTENSION | ROLE | TEXT SEARCH PARSER |
  *				   TEXT SEARCH DICTIONARY | TEXT SEARCH TEMPLATE |
  *				   TEXT SEARCH CONFIGURATION | FOREIGN TABLE |
- *				   FOREIGN DATA WRAPPER | SERVER | EVENT TRIGGER ] <objname> |
+ *				   FOREIGN DATA WRAPPER | SERVER | EVENT TRIGGER |
+ *				   MATERIALIZED VIEW] <objname> |
  *				 AGGREGATE <aggname> (arg1, ...) |
  *				 FUNCTION <funcname> (arg1, arg2, ...) |
  *				 OPERATOR <op> (leftoperand_typ, rightoperand_typ) |
@@ -5260,6 +5323,7 @@ comment_type:
 			| DOMAIN_P							{ $$ = OBJECT_DOMAIN; }
 			| TYPE_P							{ $$ = OBJECT_TYPE; }
 			| VIEW								{ $$ = OBJECT_VIEW; }
+			| MATERIALIZED VIEW					{ $$ = OBJECT_MATVIEW; }
 			| COLLATION							{ $$ = OBJECT_COLLATION; }
 			| CONVERSION_P						{ $$ = OBJECT_CONVERSION; }
 			| TABLESPACE						{ $$ = OBJECT_TABLESPACE; }
@@ -5361,6 +5425,7 @@ security_label_type:
 			| TABLESPACE						{ $$ = OBJECT_TABLESPACE; }
 			| TYPE_P							{ $$ = OBJECT_TYPE; }
 			| VIEW								{ $$ = OBJECT_VIEW; }
+			| MATERIALIZED VIEW					{ $$ = OBJECT_MATVIEW; }
 		;
 
 security_label:	Sconst				{ $$ = $1; }
@@ -6903,6 +6968,26 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
+			| ALTER MATERIALIZED VIEW qualified_name RENAME TO name
+				{
+					RenameStmt *n = makeNode(RenameStmt);
+					n->renameType = OBJECT_MATVIEW;
+					n->relation = $4;
+					n->subname = NULL;
+					n->newname = $7;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
+			| ALTER MATERIALIZED VIEW IF_P EXISTS qualified_name RENAME TO name
+				{
+					RenameStmt *n = makeNode(RenameStmt);
+					n->renameType = OBJECT_MATVIEW;
+					n->relation = $6;
+					n->subname = NULL;
+					n->newname = $9;
+					n->missing_ok = true;
+					$$ = (Node *)n;
+				}
 			| ALTER INDEX qualified_name RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
@@ -7307,6 +7392,24 @@ AlterObjectSchemaStmt:
 					n->objectType = OBJECT_VIEW;
 					n->relation = $5;
 					n->newschema = $8;
+					n->missing_ok = true;
+					$$ = (Node *)n;
+				}
+			| ALTER MATERIALIZED VIEW qualified_name SET SCHEMA name
+				{
+					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
+					n->objectType = OBJECT_MATVIEW;
+					n->relation = $4;
+					n->newschema = $7;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
+			| ALTER MATERIALIZED VIEW IF_P EXISTS qualified_name SET SCHEMA name
+				{
+					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
+					n->objectType = OBJECT_MATVIEW;
+					n->relation = $6;
+					n->newschema = $9;
 					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
@@ -8548,6 +8651,7 @@ ExecuteStmt: EXECUTE name execute_param_clause
 					n->params = $8;
 					ctas->query = (Node *) n;
 					ctas->into = $4;
+					ctas->relkind = OBJECT_TABLE;
 					ctas->is_select_into = false;
 					/* cram additional flags into the IntoClause */
 					$4->rel->relpersistence = $2;
@@ -9094,6 +9198,7 @@ into_clause:
 					$$->onCommit = ONCOMMIT_NOOP;
 					$$->tableSpaceName = NULL;
 					$$->skipData = false;
+					$$->relkind = INTO_CLAUSE_RELKIND_DEFAULT;
 				}
 			| /*EMPTY*/
 				{ $$ = NULL; }
@@ -12558,6 +12663,7 @@ unreserved_keyword:
 			| LOCK_P
 			| MAPPING
 			| MATCH
+			| MATERIALIZED
 			| MAXVALUE
 			| MINUTE_P
 			| MINVALUE

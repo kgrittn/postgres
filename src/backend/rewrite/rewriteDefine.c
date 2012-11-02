@@ -50,7 +50,7 @@ static void setRuleCheckAsUser_Query(Query *qry, Oid userid);
  *	  takes the arguments and inserts them as a row into the system
  *	  relation "pg_rewrite"
  */
-static Oid
+void
 InsertRule(char *rulname,
 		   int evtype,
 		   Oid eventrel_oid,
@@ -183,8 +183,6 @@ InsertRule(char *rulname,
 						   RewriteRelationId, rewriteObjectId, 0, NULL);
 
 	heap_close(pg_rewrite_desc, RowExclusiveLock);
-
-	return rewriteObjectId;
 }
 
 /*
@@ -256,6 +254,7 @@ DefineQueryRewrite(char *rulename,
 	 * Verify relation is of a type that rules can sensibly be applied to.
 	 */
 	if (event_relation->rd_rel->relkind != RELKIND_RELATION &&
+		event_relation->rd_rel->relkind != RELKIND_MATVIEW &&
 		event_relation->rd_rel->relkind != RELKIND_VIEW)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),

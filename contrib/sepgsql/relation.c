@@ -301,7 +301,7 @@ sepgsql_relation_post_create(Oid relOid)
 	SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, rcontext);
 
 	/*
-	 * We also assigns a default security label on columns of the new regular
+	 * We also assign a default security label on columns of new regular
 	 * tables.
 	 */
 	if (classForm->relkind == RELKIND_RELATION)

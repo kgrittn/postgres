@@ -2,6 +2,8 @@
  *
  * createas.c
  *	  Execution of CREATE TABLE ... AS, a/k/a SELECT INTO
+ *	  Since CREATE MATERIALIZED VIEW shares syntax and most behaviors,
+ *	  implement that here, too.
  *
  * We implement this by diverting the query's normal output to a
  * specialized DestReceiver type.
@@ -30,6 +32,7 @@
 #include "commands/prepare.h"
 #include "commands/tablecmds.h"
 #include "parser/parse_clause.h"
+#include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"
@@ -43,6 +46,7 @@ typedef struct
 {
 	DestReceiver pub;			/* publicly-known function pointers */
 	IntoClause *into;			/* target relation specification */
+	Query		*query;			/* the query which defines/populates data */
 	/* These fields are filled by intorel_startup: */
 	Relation	rel;			/* relation to write to */
 	CommandId	output_cid;		/* cmin to insert in output tuples */
@@ -110,6 +114,38 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 		elog(ERROR, "unexpected rewrite result for CREATE TABLE AS SELECT");
 	query = (Query *) linitial(rewritten);
 	Assert(query->commandType == CMD_SELECT);
+	
+	((DR_intorel *) dest)->query = query;
+
+	/*
+	 * Enforce validations needed for materialized views only.
+	 */
+	if (stmt->relkind == OBJECT_MATVIEW)
+	{
+		/*
+		* Prohibit a data-modifying CTE in the query used to create a
+		* materialized view. It's not sufficiently clear what the user would
+		* want to happen if the MV is refreshed or incrementally maintained.
+		*/
+		if (query->hasModifyingCTE)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("materialized views must not use data-modifying statements in WITH")));
+
+		/*
+		 * If the user didn't explicitly ask for a temporary materialized
+		 * view, check whether any temporary database objects are used in its
+		 * creation query. It would be hard to refresh data or incrementally
+		 * maintain it if a source disappeared.
+		 */
+		if (into->rel->relpersistence == RELPERSISTENCE_PERMANENT
+			&& isQueryUsingTempRelation(query))
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("permanent materialized views must not use temporary tables or views")));
+		}
+	}
 
 	/* plan the query */
 	plan = pg_plan_query(query, 0, params);
@@ -304,7 +340,7 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	/*
 	 * Actually create the target table
 	 */
-	intoRelationId = DefineRelation(create, RELKIND_RELATION, InvalidOid);
+	intoRelationId = DefineRelation(create, into->relkind, InvalidOid);
 
 	/*
 	 * If necessary, create a TOAST table for the target table.  Note that
@@ -330,6 +366,15 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	intoRelationDesc = heap_open(intoRelationId, AccessExclusiveLock);
 
 	/*
+	 * Create the "view" part of a materialized view.
+	 */
+	if (into->relkind == RELKIND_MATVIEW)
+	{
+		InsertRule("_RETURN", CMD_SELECT, intoRelationId, -1, true, NULL,
+				   list_make1(myState->query), false);
+	}
+
+	/*
 	 * Check INSERT permission on the constructed table.
 	 *
 	 * XXX: It would arguably make sense to skip this check if into->skipData
@@ -338,7 +383,7 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	rte = makeNode(RangeTblEntry);
 	rte->rtekind = RTE_RELATION;
 	rte->relid = intoRelationId;
-	rte->relkind = RELKIND_RELATION;
+	rte->relkind = into->relkind;
 	rte->requiredPerms = ACL_INSERT;
 
 	for (attnum = 1; attnum <= intoRelationDesc->rd_att->natts; attnum++)

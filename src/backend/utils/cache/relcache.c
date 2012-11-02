@@ -376,6 +376,7 @@ RelationParseRelOptions(Relation relation, HeapTuple tuple)
 		case RELKIND_TOASTVALUE:
 		case RELKIND_INDEX:
 		case RELKIND_VIEW:
+		case RELKIND_MATVIEW:
 			break;
 		default:
 			return;
