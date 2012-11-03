@@ -715,11 +715,20 @@ permissionsList(const char *pattern)
 	printfPQExpBuffer(&buf,
 					  "SELECT n.nspname as \"%s\",\n"
 					  "  c.relname as \"%s\",\n"
-					  "  CASE c.relkind WHEN 'r' THEN '%s' WHEN 'v' THEN '%s' WHEN 'S' THEN '%s' WHEN 'f' THEN '%s' END as \"%s\",\n"
+					  "  CASE c.relkind"
+					  " WHEN 'r' THEN '%s'"
+					  " WHEN 'v' THEN '%s'"
+					  " WHEN 'm' THEN '%s'"
+					  " WHEN 'S' THEN '%s'"
+					  " WHEN 'f' THEN '%s'"
+					  " END as \"%s\",\n"
 					  "  ",
 					  gettext_noop("Schema"),
 					  gettext_noop("Name"),
-	   gettext_noop("table"), gettext_noop("view"), gettext_noop("sequence"),
+					  gettext_noop("table"),
+					  gettext_noop("view"),
+					  gettext_noop("materialized view"),
+					  gettext_noop("sequence"),
 					  gettext_noop("foreign table"),
 					  gettext_noop("Type"));
 
@@ -736,7 +745,7 @@ permissionsList(const char *pattern)
 
 	appendPQExpBuffer(&buf, "\nFROM pg_catalog.pg_class c\n"
 	   "     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace\n"
-					  "WHERE c.relkind IN ('r', 'v', 'S', 'f')\n");
+					  "WHERE c.relkind IN ('r', 'v', 'm', 'S', 'f')\n");
 
 	/*
 	 * Unless a schema pattern is specified, we suppress system and temp
@@ -1308,6 +1317,7 @@ describeOneTableDetails(const char *schemaname,
 		 * types, and foreign tables (c.f. CommentObject() in comment.c).
 		 */
 		if (tableinfo.relkind == 'r' || tableinfo.relkind == 'v' ||
+			tableinfo.relkind == 'm' ||
 			tableinfo.relkind == 'f' || tableinfo.relkind == 'c')
 			appendPQExpBuffer(&buf, ", pg_catalog.col_description(a.attrelid, a.attnum)");
 	}
@@ -1335,6 +1345,14 @@ describeOneTableDetails(const char *schemaname,
 		case 'v':
 			printfPQExpBuffer(&title, _("View \"%s.%s\""),
 							  schemaname, relationname);
+			break;
+		case 'm':
+			if (tableinfo.relpersistence == 'u')
+				printfPQExpBuffer(&title, _("Unlogged materialized view \"%s.%s\""),
+								  schemaname, relationname);
+			else
+				printfPQExpBuffer(&title, _("Materialized view \"%s.%s\""),
+								  schemaname, relationname);
 			break;
 		case 'S':
 			printfPQExpBuffer(&title, _("Sequence \"%s.%s\""),
@@ -1378,6 +1396,7 @@ describeOneTableDetails(const char *schemaname,
 	cols = 2;
 
 	if (tableinfo.relkind == 'r' || tableinfo.relkind == 'v' ||
+		tableinfo.relkind == 'm' ||
 		tableinfo.relkind == 'f' || tableinfo.relkind == 'c')
 	{
 		show_modifiers = true;
@@ -1397,10 +1416,12 @@ describeOneTableDetails(const char *schemaname,
 	if (verbose)
 	{
 		headers[cols++] = gettext_noop("Storage");
-		if (tableinfo.relkind == 'r' || tableinfo.relkind == 'f')
+		if (tableinfo.relkind == 'r' || tableinfo.relkind == 'm' ||
+			tableinfo.relkind == 'f')
 			headers[cols++] = gettext_noop("Stats target");
 		/* Column comments, if the relkind supports this feature. */
 		if (tableinfo.relkind == 'r' || tableinfo.relkind == 'v' ||
+			tableinfo.relkind == 'm' ||
 			tableinfo.relkind == 'c' || tableinfo.relkind == 'f')
 			headers[cols++] = gettext_noop("Description");
 	}
@@ -1411,8 +1432,8 @@ describeOneTableDetails(const char *schemaname,
 	for (i = 0; i < cols; i++)
 		printTableAddHeader(&cont, headers[i], true, 'l');
 
-	/* Check if table is a view */
-	if (tableinfo.relkind == 'v' && verbose)
+	/* Check if table is a view or materialized view */
+	if ((tableinfo.relkind == 'v' || tableinfo.relkind == 'm') && verbose)
 	{
 		PGresult   *result;
 
@@ -1500,7 +1521,8 @@ describeOneTableDetails(const char *schemaname,
 							  false, false);
 
 			/* Statistics target, if the relkind supports this feature */
-			if (tableinfo.relkind == 'r' || tableinfo.relkind == 'f')
+			if (tableinfo.relkind == 'r' || tableinfo.relkind == 'm' ||
+				tableinfo.relkind == 'f')
 			{
 				printTableAddCell(&cont, PQgetvalue(res, i, firstvcol + 1),
 								  false, false);
@@ -1508,6 +1530,7 @@ describeOneTableDetails(const char *schemaname,
 
 			/* Column comments, if the relkind supports this feature. */
 			if (tableinfo.relkind == 'r' || tableinfo.relkind == 'v' ||
+				tableinfo.relkind == 'm' ||
 				tableinfo.relkind == 'c' || tableinfo.relkind == 'f')
 				printTableAddCell(&cont, PQgetvalue(res, i, firstvcol + 2),
 								  false, false);
@@ -1680,7 +1703,8 @@ describeOneTableDetails(const char *schemaname,
 		 */
 		PQclear(result);
 	}
-	else if (tableinfo.relkind == 'r' || tableinfo.relkind == 'f')
+	else if (tableinfo.relkind == 'r' || tableinfo.relkind == 'm' ||
+			 tableinfo.relkind == 'f')
 	{
 		/* Footer information about a table */
 		PGresult   *result = NULL;
@@ -2099,7 +2123,8 @@ describeOneTableDetails(const char *schemaname,
 	/*
 	 * Finish printing the footer information about a table.
 	 */
-	if (tableinfo.relkind == 'r' || tableinfo.relkind == 'f')
+	if (tableinfo.relkind == 'r' || tableinfo.relkind == 'm' ||
+		tableinfo.relkind == 'f')
 	{
 		PGresult   *result;
 		int			tuples;
@@ -2296,7 +2321,7 @@ add_tablespace_footer(printTableContent *const cont, char relkind,
 					  Oid tablespace, const bool newline)
 {
 	/* relkinds for which we support tablespaces */
-	if (relkind == 'r' || relkind == 'i')
+	if (relkind == 'r' || relkind == 'm' || relkind == 'i')
 	{
 		/*
 		 * We ignore the database default tablespace so that users not using
@@ -2578,6 +2603,7 @@ listDbRoleSettings(const char *pattern, const char *pattern2)
  * t - tables
  * i - indexes
  * v - views
+ * m - materialized views
  * s - sequences
  * E - foreign table (Note: different from 'f', the relkind value)
  * (any order of the above is fine)
@@ -2589,6 +2615,7 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	bool		showTables = strchr(tabtypes, 't') != NULL;
 	bool		showIndexes = strchr(tabtypes, 'i') != NULL;
 	bool		showViews = strchr(tabtypes, 'v') != NULL;
+	bool		showMatViews = strchr(tabtypes, 'm') != NULL;
 	bool		showSeq = strchr(tabtypes, 's') != NULL;
 	bool		showForeign = strchr(tabtypes, 'E') != NULL;
 
@@ -2609,12 +2636,21 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	printfPQExpBuffer(&buf,
 					  "SELECT n.nspname as \"%s\",\n"
 					  "  c.relname as \"%s\",\n"
-					  "  CASE c.relkind WHEN 'r' THEN '%s' WHEN 'v' THEN '%s' WHEN 'i' THEN '%s' WHEN 'S' THEN '%s' WHEN 's' THEN '%s' WHEN 'f' THEN '%s' END as \"%s\",\n"
+					  "  CASE c.relkind"
+					  " WHEN 'r' THEN '%s'"
+					  " WHEN 'v' THEN '%s'"
+					  " WHEN 'm' THEN '%s'"
+					  " WHEN 'i' THEN '%s'"
+					  " WHEN 'S' THEN '%s'"
+					  " WHEN 's' THEN '%s'"
+					  " WHEN 'f' THEN '%s'"
+					  " END as \"%s\",\n"
 					  "  pg_catalog.pg_get_userbyid(c.relowner) as \"%s\"",
 					  gettext_noop("Schema"),
 					  gettext_noop("Name"),
 					  gettext_noop("table"),
 					  gettext_noop("view"),
+					  gettext_noop("materialized view"),
 					  gettext_noop("index"),
 					  gettext_noop("sequence"),
 					  gettext_noop("special"),
@@ -2660,6 +2696,8 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 		appendPQExpBuffer(&buf, "'r',");
 	if (showViews)
 		appendPQExpBuffer(&buf, "'v',");
+	if (showMatViews)
+		appendPQExpBuffer(&buf, "'m',");
 	if (showIndexes)
 		appendPQExpBuffer(&buf, "'i',");
 	if (showSeq)
