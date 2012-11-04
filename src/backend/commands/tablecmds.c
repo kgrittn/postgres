@@ -1174,6 +1174,13 @@ ExecuteTruncate(TruncateStmt *stmt)
 			heap_relid = RelationGetRelid(rel);
 			toast_relid = rel->rd_rel->reltoastrelid;
 
+			/* This makes a materialized view invalid for use. */
+			if (rel->rd_rel->relkind == RELKIND_MATVIEW &&
+				rel->rd_rel->relisvalid)
+			{
+				SetRelationIsValid(heap_relid, false);
+			}
+
 			/*
 			 * The same for the toast table, if any.
 			 */
