@@ -493,7 +493,7 @@ ExecutorRewind(QueryDesc *queryDesc)
  * ExecCheckRelationsValid
  *		Check that relations which are to be accessed are flagged as valid.
  *
- * For now we are only checking materialized views.
+ * If not, throw error. For a materialized view, suggest refresh.
  */
 static void
 ExecCheckRelationsValid(List *rangeTable)
@@ -504,16 +504,21 @@ ExecCheckRelationsValid(List *rangeTable)
 	{
 		RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
 
-		if (rte->rtekind != RTE_RELATION ||
-			rte->relkind != RELKIND_MATVIEW)
+		if (rte->rtekind != RTE_RELATION)
 			continue;
 
 		if (!RelationIsFlaggedAsValid(rte->relid))
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("materialized view \"%s\" has not been populated",
-							get_rel_name(rte->relid)),
-					 errhint("Use the REFRESH command or drop and re-create the materialized view.")));
+			if (rte->relkind == RELKIND_MATVIEW)
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("materialized view \"%s\" has not been populated",
+								get_rel_name(rte->relid)),
+						 errhint("Use the REFRESH command or drop and re-create the materialized view.")));
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("relation \"%s\" is flagged as invalid",
+								get_rel_name(rte->relid))));
 	}
 }
 
