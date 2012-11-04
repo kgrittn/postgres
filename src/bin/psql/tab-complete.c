@@ -2094,7 +2094,7 @@ psql_completion(char *text, int start, int end)
 	{
 		static const char *const list_UNLOGGED[] =
 		{"TABLE", "MATERIALIZED VIEW", NULL};
-		
+
 		COMPLETE_WITH_LIST(list_UNLOGGED);
 	}
 
