@@ -2056,6 +2056,53 @@ SetRelationHasSubclass(Oid relationId, bool relhassubclass)
 }
 
 /*
+ * SetRelationIsValid
+ *		Set the value of the relation's relisvalid field in pg_class.
+ *
+ * NOTE: caller must be holding an appropriate lock on the relation.
+ * ShareUpdateExclusiveLock is sufficient.
+ *
+ * NOTE: an important side-effect of this operation is that an SI invalidation
+ * message is sent out to all backends --- including me --- causing plans
+ * referencing the relation to be rebuilt with the new list of children.
+ * This must happen even if we find that no change is needed in the pg_class
+ * row.
+ */
+void
+SetRelationIsValid(Oid relationId, bool relisvalid)
+{
+	Relation	relationRelation;
+	HeapTuple	tuple;
+	Form_pg_class classtuple;
+
+	/*
+	 * Fetch a modifiable copy of the tuple, modify it, update pg_class.
+	 */
+	relationRelation = heap_open(RelationRelationId, RowExclusiveLock);
+	tuple = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(relationId));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u", relationId);
+	classtuple = (Form_pg_class) GETSTRUCT(tuple);
+
+	if (classtuple->relisvalid != relisvalid)
+	{
+		classtuple->relisvalid = relisvalid;
+		simple_heap_update(relationRelation, &tuple->t_self, tuple);
+
+		/* keep the catalog indexes up to date */
+		CatalogUpdateIndexes(relationRelation, tuple);
+	}
+	else
+	{
+		/* no need to change tuple, but force relcache rebuild anyway */
+		CacheInvalidateRelcacheByTuple(tuple);
+	}
+
+	heap_freetuple(tuple);
+	heap_close(relationRelation, RowExclusiveLock);
+}
+
+/*
  *		renameatt_check			- basic sanity checks before attribute rename
  */
 static void

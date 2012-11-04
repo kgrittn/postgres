@@ -50,6 +50,7 @@ extern void CheckTableNotInUse(Relation rel, const char *stmt);
 extern void ExecuteTruncate(TruncateStmt *stmt);
 
 extern void SetRelationHasSubclass(Oid relationId, bool relhassubclass);
+extern void SetRelationIsValid(Oid relationId, bool relisvalid);
 
 extern void renameatt(RenameStmt *stmt);
 

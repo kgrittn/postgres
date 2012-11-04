@@ -372,6 +372,8 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	{
 		InsertRule("_RETURN", CMD_SELECT, intoRelationId, -1, true, NULL,
 				   list_make1(myState->query), false);
+		if (into->skipData)
+			SetRelationIsValid(intoRelationId, false);
 	}
 
 	/*
