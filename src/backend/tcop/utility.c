@@ -110,6 +110,27 @@ CheckRelationOwnership(RangeVar *rel, bool noCatalogs)
 	ReleaseSysCache(tuple);
 }
 
+/*
+ * Tells whether a relation is flagged as valid. The caller must be holding a
+ * lock on the relation.
+ */
+bool
+RelationIsFlaggedAsValid(Oid relid)
+{
+	HeapTuple	tuple;
+	Form_pg_class classtup;
+	bool		result;
+
+	tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (!HeapTupleIsValid(tuple))
+		return false;					/* concurrently dropped */
+	classtup = (Form_pg_class) GETSTRUCT(tuple);
+	result = classtup->relisvalid;
+	ReleaseSysCache(tuple);
+
+	return result;
+}
+
 
 /*
  * CommandIsReadOnly: is an executable query read-only?

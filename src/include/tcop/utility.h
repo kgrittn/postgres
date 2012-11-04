@@ -52,4 +52,6 @@ extern bool CommandIsReadOnly(Node *parsetree);
 
 extern void CheckRelationOwnership(RangeVar *rel, bool noCatalogs);
 
+extern bool RelationIsFlaggedAsValid(Oid relid);
+
 #endif   /* UTILITY_H */

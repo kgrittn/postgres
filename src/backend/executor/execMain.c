@@ -490,6 +490,34 @@ ExecutorRewind(QueryDesc *queryDesc)
 
 
 /*
+ * ExecCheckRelationsValid
+ *		Check that relations which are to be accessed are flagged as valid.
+ *
+ * For now we are only checking materialized views.
+ */
+static void
+ExecCheckRelationsValid(List *rangeTable)
+{
+	ListCell   *l;
+
+	foreach(l, rangeTable)
+	{
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
+
+		if (rte->rtekind != RTE_RELATION ||
+			rte->relkind != RELKIND_MATVIEW)
+			continue;
+
+		if (!RelationIsFlaggedAsValid(rte->relid))
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("materialized view \"%s\" has not been populated",
+							get_rel_name(rte->relid)),
+					 errhint("Use the REFRESH command or drop and re-create the materialized view.")));
+	}
+}
+
+/*
  * ExecCheckRTPerms
  *		Check access permissions for all relations listed in a range table.
  *
@@ -722,6 +750,11 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	 * Do permissions checks
 	 */
 	ExecCheckRTPerms(rangeTable, true);
+
+	/*
+	 * Ensure that all referrenced relations are flagged as valid.
+	 */
+	ExecCheckRelationsValid(rangeTable);
 
 	/*
 	 * initialize the node's execution state
