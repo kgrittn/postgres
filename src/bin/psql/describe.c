@@ -2624,8 +2624,8 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	printQueryOpt myopt = pset.popt;
 	static const bool translate_columns[] = {false, false, true, false, false, false, false};
 
-	if (!(showTables || showIndexes || showViews || showSeq || showForeign))
-		showTables = showViews = showSeq = showForeign = true;
+	if (!(showTables || showIndexes || showViews || showMatViews || showSeq || showForeign))
+		showTables = showViews = showMatViews = showSeq = showForeign = true;
 
 	initPQExpBuffer(&buf);
 

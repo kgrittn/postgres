@@ -794,8 +794,8 @@ static const pgsql_thing_t words_after_create[] = {
 												 * ... */
 	{"USER", Query_for_list_of_roles},
 	{"USER MAPPING FOR", NULL, NULL},
-	{"VIEW", NULL, &Query_for_list_of_views},
 	{"MATERIALIZED VIEW", NULL, &Query_for_list_of_matviews},
+	{"VIEW", NULL, &Query_for_list_of_views},
 	{NULL}						/* end of list */
 };
 
@@ -955,7 +955,7 @@ psql_completion(char *text, int start, int end)
 		static const char *const list_ALTER[] =
 		{"AGGREGATE", "COLLATION", "CONVERSION", "DATABASE", "DEFAULT PRIVILEGES", "DOMAIN",
 			"EXTENSION", "FOREIGN DATA WRAPPER", "FOREIGN TABLE", "FUNCTION",
-			"GROUP", "INDEX", "LANGUAGE", "LARGE OBJECT", "OPERATOR",
+			"GROUP", "INDEX", "LANGUAGE", "LARGE OBJECT", "MATERIALIZED VIEW", "OPERATOR",
 			"ROLE", "SCHEMA", "SERVER", "SEQUENCE", "TABLE",
 			"TABLESPACE", "TEXT SEARCH", "TRIGGER", "TYPE",
 		"USER", "USER MAPPING FOR", "VIEW", NULL};
@@ -1289,6 +1289,16 @@ psql_completion(char *text, int start, int end)
 		{"ALTER COLUMN", "OWNER TO", "RENAME TO", "SET SCHEMA", NULL};
 
 		COMPLETE_WITH_LIST(list_ALTERVIEW);
+	}
+	/* ALTER MATERIALIZED VIEW <name> */
+	else if (pg_strcasecmp(prev4_wd, "ALTER") == 0 &&
+			 pg_strcasecmp(prev3_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev2_wd, "VIEW") == 0)
+	{
+		static const char *const list_ALTERMATVIEW[] =
+		{"ALTER COLUMN", "OWNER TO", "RENAME TO", "SET SCHEMA", NULL};
+
+		COMPLETE_WITH_LIST(list_ALTERMATVIEW);
 	}
 	/* ALTER TRIGGER <name>, add ON */
 	else if (pg_strcasecmp(prev3_wd, "ALTER") == 0 &&
@@ -1802,7 +1812,7 @@ psql_completion(char *text, int start, int end)
 		{"CAST", "COLLATION", "CONVERSION", "DATABASE", "EXTENSION",
 			"FOREIGN DATA WRAPPER", "FOREIGN TABLE",
 			"SERVER", "INDEX", "LANGUAGE", "RULE", "SCHEMA", "SEQUENCE",
-			"TABLE", "TYPE", "VIEW", "COLUMN", "AGGREGATE", "FUNCTION",
+			"TABLE", "TYPE", "VIEW", "MATERIALIZED VIEW", "COLUMN", "AGGREGATE", "FUNCTION",
 			"OPERATOR", "TRIGGER", "CONSTRAINT", "DOMAIN", "LARGE OBJECT",
 		"TABLESPACE", "TEXT SEARCH", "ROLE", NULL};
 
@@ -2074,7 +2084,7 @@ psql_completion(char *text, int start, int end)
 			  pg_strcasecmp(prev_wd, "TEMPORARY") == 0))
 	{
 		static const char *const list_TEMP[] =
-		{"SEQUENCE", "TABLE", "VIEW", NULL};
+		{"SEQUENCE", "TABLE", "VIEW", "MATERIALIZED VIEW", NULL};
 
 		COMPLETE_WITH_LIST(list_TEMP);
 	}
@@ -2082,7 +2092,10 @@ psql_completion(char *text, int start, int end)
 	else if (pg_strcasecmp(prev2_wd, "CREATE") == 0 &&
 			 pg_strcasecmp(prev_wd, "UNLOGGED") == 0)
 	{
-		COMPLETE_WITH_CONST("TABLE");
+		static const char *const list_UNLOGGED[] =
+		{"TABLE", "MATERIALIZED VIEW", NULL};
+		
+		COMPLETE_WITH_LIST(list_UNLOGGED);
 	}
 
 /* CREATE TABLESPACE */
@@ -2247,6 +2260,19 @@ psql_completion(char *text, int start, int end)
 		COMPLETE_WITH_CONST("AS");
 	/* Complete "CREATE VIEW <sth> AS with "SELECT" */
 	else if (pg_strcasecmp(prev4_wd, "CREATE") == 0 &&
+			 pg_strcasecmp(prev3_wd, "VIEW") == 0 &&
+			 pg_strcasecmp(prev_wd, "AS") == 0)
+		COMPLETE_WITH_CONST("SELECT");
+
+/* CREATE MATERIALIZED VIEW */
+	/* Complete CREATE MATERIALIZED VIEW <name> with AS */
+	else if (pg_strcasecmp(prev4_wd, "CREATE") == 0 &&
+			 pg_strcasecmp(prev3_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev2_wd, "VIEW") == 0)
+		COMPLETE_WITH_CONST("AS");
+	/* Complete "CREATE MATERIALIZED VIEW <sth> AS with "SELECT" */
+	else if (pg_strcasecmp(prev5_wd, "CREATE") == 0 &&
+			 pg_strcasecmp(prev4_wd, "MATERIALIZED") == 0 &&
 			 pg_strcasecmp(prev3_wd, "VIEW") == 0 &&
 			 pg_strcasecmp(prev_wd, "AS") == 0)
 		COMPLETE_WITH_CONST("SELECT");
@@ -2814,9 +2840,9 @@ psql_completion(char *text, int start, int end)
 			  pg_strcasecmp(prev_wd, "ON") == 0))
 	{
 		static const char *const list_SECURITY_LABEL[] =
-		{"LANGUAGE", "SCHEMA", "SEQUENCE", "TABLE", "TYPE", "VIEW", "COLUMN",
-			"AGGREGATE", "FUNCTION", "DOMAIN", "LARGE OBJECT",
-		NULL};
+		{"LANGUAGE", "SCHEMA", "SEQUENCE", "TABLE", "TYPE", "VIEW",
+			"MATERIALIZED VIEW", "COLUMN", "AGGREGATE", "FUNCTION", "DOMAIN",
+			"LARGE OBJECT",	NULL};
 
 		COMPLETE_WITH_LIST(list_SECURITY_LABEL);
 	}
