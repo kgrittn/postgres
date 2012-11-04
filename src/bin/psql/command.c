@@ -422,6 +422,7 @@ exec_command(const char *cmd,
 				break;
 			case 't':
 			case 'v':
+			case 'm':
 			case 'i':
 			case 's':
 			case 'E':
