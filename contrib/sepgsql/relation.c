@@ -54,8 +54,8 @@ sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum)
 	Form_pg_attribute attForm;
 
 	/*
-	 * Only attributes within regular relation have individual security
-	 * labels.
+	 * Only attributes within regular relation or materialized view have
+	 * individual security labels.
 	 */
 	if (get_rel_relkind(relOid) != RELKIND_RELATION)
 		return;
@@ -159,7 +159,8 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum,
 	ObjectAddress object;
 	char	   *audit_name;
 
-	if (get_rel_relkind(relOid) != RELKIND_RELATION)
+	if (get_rel_relkind(relOid) != RELKIND_RELATION &&
+		get_rel_relkind(relOid) != RELKIND_MATVIEW)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("cannot set security label on non-regular columns")));
@@ -263,6 +264,10 @@ sepgsql_relation_post_create(Oid relOid)
 			tclass = SEPG_CLASS_DB_VIEW;
 			tclass_text = "view";
 			break;
+		case RELKIND_MATVIEW:
+			tclass = SEPG_CLASS_DB_MATVIEW;
+			tclass_text = "materialized view";  /* TODO: "matview"? */
+			break;
 		case RELKIND_INDEX:
 			/* deal with indexes specially; no need for tclass */
 			sepgsql_index_modify(relOid);
@@ -302,9 +307,10 @@ sepgsql_relation_post_create(Oid relOid)
 
 	/*
 	 * We also assign a default security label on columns of new regular
-	 * tables.
+	 * tables and materialized views.
 	 */
-	if (classForm->relkind == RELKIND_RELATION)
+	if (classForm->relkind == RELKIND_RELATION ||
+		classForm->relkind == RELKIND_MATVIEW)
 	{
 		Relation	arel;
 		ScanKeyData akey;
@@ -386,6 +392,9 @@ sepgsql_relation_drop(Oid relOid)
 		case RELKIND_VIEW:
 			tclass = SEPG_CLASS_DB_VIEW;
 			break;
+		case RELKIND_MATVIEW:
+			tclass = SEPG_CLASS_DB_MATVIEW;
+			break;
 		case RELKIND_INDEX:
 			/* ignore indexes on toast tables */
 			if (get_rel_namespace(relOid) == PG_TOAST_NAMESPACE)
@@ -420,7 +429,7 @@ sepgsql_relation_drop(Oid relOid)
 	}
 
 	/*
-	 * check db_table/sequence/view:{drop} permission
+	 * check db_table/sequence/view/matview:{drop} permission
 	 */
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
@@ -436,6 +445,8 @@ sepgsql_relation_drop(Oid relOid)
 
 	/*
 	 * check db_column:{drop} permission
+	 *
+	 * TODO: Anything to do here for materialized views?
 	 */
 	if (relkind == RELKIND_RELATION)
 	{
@@ -489,11 +500,13 @@ sepgsql_relation_relabel(Oid relOid, const char *seclabel)
 		tclass = SEPG_CLASS_DB_SEQUENCE;
 	else if (relkind == RELKIND_VIEW)
 		tclass = SEPG_CLASS_DB_VIEW;
+	else if (relkind == RELKIND_MATVIEW)
+		tclass = SEPG_CLASS_DB_MATVIEW;
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("cannot set security labels on relations except "
-						"for tables, sequences or views")));
+						"for tables, sequences, views, or materialized views")));
 
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
@@ -543,6 +556,9 @@ sepgsql_relation_setattr(Oid relOid)
 			break;
 		case RELKIND_VIEW:
 			tclass = SEPG_CLASS_DB_VIEW;
+			break;
+		case RELKIND_MATVIEW:
+			tclass = SEPG_CLASS_DB_MATVIEW;
 			break;
 		case RELKIND_INDEX:
 			/* deal with indexes specially */

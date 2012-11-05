@@ -594,6 +594,35 @@ static struct
 			},
 		}
 	},
+	{
+		"db_materialized_view", SEPG_CLASS_DB_MATVIEW,
+		{
+			{
+				"create", SEPG_DB_MATVIEW__CREATE
+			},
+			{
+				"drop", SEPG_DB_MATVIEW__DROP
+			},
+			{
+				"getattr", SEPG_DB_MATVIEW__GETATTR
+			},
+			{
+				"setattr", SEPG_DB_MATVIEW__SETATTR
+			},
+			{
+				"relabelfrom", SEPG_DB_MATVIEW__RELABELFROM
+			},
+			{
+				"relabelto", SEPG_DB_MATVIEW__RELABELTO
+			},
+			{
+				"expand", SEPG_DB_MATVIEW__SELECT
+			},
+			{
+				NULL, 0UL
+			},
+		}
+	},
 };
 
 /*
