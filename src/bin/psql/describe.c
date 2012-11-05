@@ -1627,44 +1627,6 @@ describeOneTableDetails(const char *schemaname,
 
 		PQclear(result);
 	}
-	else if (view_def)
-	{
-		PGresult   *result = NULL;
-
-		/* Footer information about a view */
-		printTableAddFooter(&cont, _("View definition:"));
-		printTableAddFooter(&cont, view_def);
-
-		/* print rules */
-		if (tableinfo.hasrules)
-		{
-			printfPQExpBuffer(&buf,
-							  "SELECT r.rulename, trim(trailing ';' from pg_catalog.pg_get_ruledef(r.oid, true))\n"
-							  "FROM pg_catalog.pg_rewrite r\n"
-			"WHERE r.ev_class = '%s' AND r.rulename != '_RETURN' ORDER BY 1;",
-							  oid);
-			result = PSQLexec(buf.data, false);
-			if (!result)
-				goto error_return;
-
-			if (PQntuples(result) > 0)
-			{
-				printTableAddFooter(&cont, _("Rules:"));
-				for (i = 0; i < PQntuples(result); i++)
-				{
-					const char *ruledef;
-
-					/* Everything after "CREATE RULE" is echoed verbatim */
-					ruledef = PQgetvalue(result, i, 1);
-					ruledef += 12;
-
-					printfPQExpBuffer(&buf, " %s", ruledef);
-					printTableAddFooter(&cont, buf.data);
-				}
-			}
-			PQclear(result);
-		}
-	}
 	else if (tableinfo.relkind == 'S')
 	{
 		/* Footer information about a sequence */
@@ -1994,6 +1956,45 @@ describeOneTableDetails(const char *schemaname,
 						printfPQExpBuffer(&buf, "    %s", ruledef);
 						printTableAddFooter(&cont, buf.data);
 					}
+				}
+			}
+			PQclear(result);
+		}
+	}
+
+	if (view_def)
+	{
+		PGresult   *result = NULL;
+
+		/* Footer information about a view */
+		printTableAddFooter(&cont, _("View definition:"));
+		printTableAddFooter(&cont, view_def);
+
+		/* print rules */
+		if (tableinfo.hasrules)
+		{
+			printfPQExpBuffer(&buf,
+							  "SELECT r.rulename, trim(trailing ';' from pg_catalog.pg_get_ruledef(r.oid, true))\n"
+							  "FROM pg_catalog.pg_rewrite r\n"
+			"WHERE r.ev_class = '%s' AND r.rulename != '_RETURN' ORDER BY 1;",
+							  oid);
+			result = PSQLexec(buf.data, false);
+			if (!result)
+				goto error_return;
+
+			if (PQntuples(result) > 0)
+			{
+				printTableAddFooter(&cont, _("Rules:"));
+				for (i = 0; i < PQntuples(result); i++)
+				{
+					const char *ruledef;
+
+					/* Everything after "CREATE RULE" is echoed verbatim */
+					ruledef = PQgetvalue(result, i, 1);
+					ruledef += 12;
+
+					printfPQExpBuffer(&buf, " %s", ruledef);
+					printTableAddFooter(&cont, buf.data);
 				}
 			}
 			PQclear(result);
