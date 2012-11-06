@@ -32,6 +32,8 @@
 
 /*
  * Internally used code of object classes
+ * 
+ * NOTE: Materialized views are treated as tables for now.
  */
 #define SEPG_CLASS_PROCESS			0
 #define SEPG_CLASS_FILE				1
@@ -51,8 +53,7 @@
 #define SEPG_CLASS_DB_BLOB			15
 #define SEPG_CLASS_DB_LANGUAGE		16
 #define SEPG_CLASS_DB_VIEW			17
-#define SEPG_CLASS_DB_MATVIEW		18
-#define SEPG_CLASS_MAX				19
+#define SEPG_CLASS_MAX				18
 
 /*
  * Internally used code of access vectors
@@ -211,14 +212,6 @@
 #define SEPG_DB_VIEW__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
 #define SEPG_DB_VIEW__RELABELTO				(SEPG_DB_DATABASE__RELABELTO)
 #define SEPG_DB_VIEW__EXPAND				(1<<6)
-
-#define SEPG_DB_MATVIEW__CREATE			(SEPG_DB_DATABASE__CREATE)
-#define SEPG_DB_MATVIEW__DROP				(SEPG_DB_DATABASE__DROP)
-#define SEPG_DB_MATVIEW__GETATTR			(SEPG_DB_DATABASE__GETATTR)
-#define SEPG_DB_MATVIEW__SETATTR			(SEPG_DB_DATABASE__SETATTR)
-#define SEPG_DB_MATVIEW__RELABELFROM		(SEPG_DB_DATABASE__RELABELFROM)
-#define SEPG_DB_MATVIEW__RELABELTO			(SEPG_DB_DATABASE__RELABELTO)
-#define SEPG_DB_MATVIEW__SELECT			(1<<6)
 
 /*
  * hooks.c

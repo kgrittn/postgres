@@ -54,8 +54,8 @@ sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum)
 	Form_pg_attribute attForm;
 
 	/*
-	 * Only attributes within regular relation or materialized view have
-	 * individual security labels.
+	 * Only attributes within regular relation can have ALTER to add columns
+	 * with individual security labels.
 	 */
 	if (get_rel_relkind(relOid) != RELKIND_RELATION)
 		return;
@@ -253,6 +253,7 @@ sepgsql_relation_post_create(Oid relOid)
 	switch (classForm->relkind)
 	{
 		case RELKIND_RELATION:
+		case RELKIND_MATVIEW:
 			tclass = SEPG_CLASS_DB_TABLE;
 			tclass_text = "table";
 			break;
@@ -263,10 +264,6 @@ sepgsql_relation_post_create(Oid relOid)
 		case RELKIND_VIEW:
 			tclass = SEPG_CLASS_DB_VIEW;
 			tclass_text = "view";
-			break;
-		case RELKIND_MATVIEW:
-			tclass = SEPG_CLASS_DB_MATVIEW;
-			tclass_text = "materialized view";  /* TODO: "matview"? */
 			break;
 		case RELKIND_INDEX:
 			/* deal with indexes specially; no need for tclass */
@@ -384,6 +381,7 @@ sepgsql_relation_drop(Oid relOid)
 	switch (relkind)
 	{
 		case RELKIND_RELATION:
+		case RELKIND_MATVIEW:
 			tclass = SEPG_CLASS_DB_TABLE;
 			break;
 		case RELKIND_SEQUENCE:
@@ -391,9 +389,6 @@ sepgsql_relation_drop(Oid relOid)
 			break;
 		case RELKIND_VIEW:
 			tclass = SEPG_CLASS_DB_VIEW;
-			break;
-		case RELKIND_MATVIEW:
-			tclass = SEPG_CLASS_DB_MATVIEW;
 			break;
 		case RELKIND_INDEX:
 			/* ignore indexes on toast tables */
@@ -429,7 +424,7 @@ sepgsql_relation_drop(Oid relOid)
 	}
 
 	/*
-	 * check db_table/sequence/view/matview:{drop} permission
+	 * check db_table/sequence/view:{drop} permission
 	 */
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
@@ -445,8 +440,6 @@ sepgsql_relation_drop(Oid relOid)
 
 	/*
 	 * check db_column:{drop} permission
-	 *
-	 * TODO: Anything to do here for materialized views?
 	 */
 	if (relkind == RELKIND_RELATION)
 	{
@@ -501,7 +494,7 @@ sepgsql_relation_relabel(Oid relOid, const char *seclabel)
 	else if (relkind == RELKIND_VIEW)
 		tclass = SEPG_CLASS_DB_VIEW;
 	else if (relkind == RELKIND_MATVIEW)
-		tclass = SEPG_CLASS_DB_MATVIEW;
+		tclass = SEPG_CLASS_DB_TABLE;
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
@@ -549,6 +542,7 @@ sepgsql_relation_setattr(Oid relOid)
 	switch (get_rel_relkind(relOid))
 	{
 		case RELKIND_RELATION:
+		case RELKIND_MATVIEW:
 			tclass = SEPG_CLASS_DB_TABLE;
 			break;
 		case RELKIND_SEQUENCE:
@@ -556,9 +550,6 @@ sepgsql_relation_setattr(Oid relOid)
 			break;
 		case RELKIND_VIEW:
 			tclass = SEPG_CLASS_DB_VIEW;
-			break;
-		case RELKIND_MATVIEW:
-			tclass = SEPG_CLASS_DB_MATVIEW;
 			break;
 		case RELKIND_INDEX:
 			/* deal with indexes specially */

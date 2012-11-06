@@ -765,7 +765,7 @@ exec_object_restorecon(struct selabel_handle * sehnd, Oid catalogId)
 				else if (relForm->relkind == RELKIND_VIEW)
 					objtype = SELABEL_DB_VIEW;
 				else if (relForm->relkind == RELKIND_MATVIEW)
-					objtype = SELABEL_DB_MATVIEW;
+					objtype = SELABEL_DB_TABLE;
 				else
 					continue;	/* no need to assign security label */
 
