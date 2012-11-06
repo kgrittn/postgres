@@ -508,6 +508,7 @@ ExecCheckRelationsValid(List *rangeTable)
 			continue;
 
 		if (!RelationIsFlaggedAsValid(rte->relid))
+		{
 			if (rte->relkind == RELKIND_MATVIEW)
 				ereport(ERROR,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -519,6 +520,7 @@ ExecCheckRelationsValid(List *rangeTable)
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 						 errmsg("relation \"%s\" is flagged as invalid",
 								get_rel_name(rte->relid))));
+		}
 	}
 }
 
