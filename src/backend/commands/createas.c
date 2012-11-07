@@ -115,7 +115,7 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 		elog(ERROR, "unexpected rewrite result for CREATE TABLE AS SELECT");
 	query = (Query *) linitial(rewritten);
 	Assert(query->commandType == CMD_SELECT);
-	
+
 	((DR_intorel *) dest)->query = query;
 
 	/*
