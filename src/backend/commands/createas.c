@@ -31,6 +31,7 @@
 #include "commands/createas.h"
 #include "commands/prepare.h"
 #include "commands/tablecmds.h"
+#include "commands/view.h"
 #include "parser/parse_clause.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
@@ -370,8 +371,7 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	 */
 	if (into->relkind == RELKIND_MATVIEW)
 	{
-		InsertRule("_RETURN", CMD_SELECT, intoRelationId, -1, true, NULL,
-				   list_make1(myState->query), false);
+		StoreViewQuery(intoRelationId, myState->query, false);
 		if (into->skipData)
 			SetRelationIsValid(intoRelationId, false);
 	}

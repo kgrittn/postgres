@@ -479,6 +479,15 @@ DefineView(ViewStmt *stmt, const char *queryString)
 	 */
 	CommandCounterIncrement();
 
+	StoreViewQuery(viewOid, viewParse, stmt->replace);
+}
+
+/*
+ * Use the rules system to store the query for the view.
+ */
+void
+StoreViewQuery(Oid viewOid, Query *viewParse, bool replace)
+{
 	/*
 	 * The range table of 'viewParse' does not contain entries for the "OLD"
 	 * and "NEW" relations. So... add them!
@@ -488,5 +497,5 @@ DefineView(ViewStmt *stmt, const char *queryString)
 	/*
 	 * Now create the rules associated with the view.
 	 */
-	DefineViewRules(viewOid, viewParse, stmt->replace);
+	DefineViewRules(viewOid, viewParse, replace);
 }
