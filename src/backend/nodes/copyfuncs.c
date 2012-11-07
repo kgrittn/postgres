@@ -3233,6 +3233,16 @@ _copyCreateTableAsStmt(const CreateTableAsStmt *from)
 	return newnode;
 }
 
+static LoadMatViewStmt *
+_copyLoadMatViewStmt(const LoadMatViewStmt *from)
+{
+	LoadMatViewStmt *newnode = makeNode(LoadMatViewStmt);
+
+	COPY_NODE_FIELD(relation);
+
+	return newnode;
+}
+
 static CreateSeqStmt *
 _copyCreateSeqStmt(const CreateSeqStmt *from)
 {
@@ -4302,6 +4312,9 @@ copyObject(const void *from)
 			break;
 		case T_CreateTableAsStmt:
 			retval = _copyCreateTableAsStmt(from);
+			break;
+		case T_LoadMatViewStmt:
+			retval = _copyLoadMatViewStmt(from);
 			break;
 		case T_CreateSeqStmt:
 			retval = _copyCreateSeqStmt(from);

@@ -2437,6 +2437,8 @@ typedef struct ExplainStmt
  * A query written as CREATE TABLE AS will produce this node type natively.
  * A query written as SELECT ... INTO will be transformed to this form during
  * parse analysis.
+ * A query written as CREATE MATERIALIZED view will produce this node type,
+ * during parse analysis, since it needs all the same data.
  *
  * The "query" field is handled similarly to EXPLAIN, though note that it
  * can be a SELECT or an EXECUTE, but not other DML statements.
@@ -2450,6 +2452,16 @@ typedef struct CreateTableAsStmt
 	ObjectType	relkind;		/* type of object */
 	bool		is_select_into; /* it was written as SELECT INTO */
 } CreateTableAsStmt;
+
+/* ----------------------
+ *		LOAD MATERIALIZED VIEW Statement
+ * ----------------------
+ */
+typedef struct LoadMatViewStmt
+{
+	NodeTag		type;
+	RangeVar   *relation;		/* relation to insert into */
+} LoadMatViewStmt;
 
 /* ----------------------
  * Checkpoint Statement

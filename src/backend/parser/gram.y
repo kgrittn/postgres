@@ -254,7 +254,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 		DeallocateStmt PrepareStmt ExecuteStmt
 		DropOwnedStmt ReassignOwnedStmt
 		AlterTSConfigurationStmt AlterTSDictionaryStmt
-		CreateMatViewStmt
+		CreateMatViewStmt LoadMatViewStmt
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
@@ -751,6 +751,7 @@ stmt :
 			| CreateForeignTableStmt
 			| CreateFunctionStmt
 			| CreateGroupStmt
+			| CreateMatViewStmt
 			| CreateOpClassStmt
 			| CreateOpFamilyStmt
 			| AlterOpFamilyStmt
@@ -796,6 +797,7 @@ stmt :
 			| IndexStmt
 			| InsertStmt
 			| ListenStmt
+			| LoadMatViewStmt
 			| LoadStmt
 			| LockStmt
 			| NotifyStmt
@@ -820,7 +822,6 @@ stmt :
 			| VariableSetStmt
 			| VariableShowStmt
 			| ViewStmt
-			| CreateMatViewStmt
 			| /*EMPTY*/
 				{ $$ = NULL; }
 		;
@@ -3225,6 +3226,22 @@ CreateMatViewStmt:
 					$5->rel->relpersistence = $2;
 					$5->skipData = !($8);
 					$$ = (Node *) ctas;
+				}
+		;
+
+
+/*****************************************************************************
+ *
+ *		QUERY :
+ *				LOAD MATERIALIZED VIEW qualified_name
+ *
+ *****************************************************************************/
+
+LoadMatViewStmt:
+		LOAD MATERIALIZED VIEW qualified_name
+				{
+					LoadMatViewStmt *n = makeNode(LoadMatViewStmt);
+					n->relation = $4;
 				}
 		;
 

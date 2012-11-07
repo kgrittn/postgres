@@ -1531,6 +1531,14 @@ _equalCreateTableAsStmt(const CreateTableAsStmt *a, const CreateTableAsStmt *b)
 }
 
 static bool
+_equalLoadMatViewStmt(const LoadMatViewStmt *a, const LoadMatViewStmt *b)
+{
+	COMPARE_NODE_FIELD(relation);
+
+	return true;
+}
+
+static bool
 _equalCreateSeqStmt(const CreateSeqStmt *a, const CreateSeqStmt *b)
 {
 	COMPARE_NODE_FIELD(sequence);
@@ -2789,6 +2797,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_CreateTableAsStmt:
 			retval = _equalCreateTableAsStmt(a, b);
+			break;
+		case T_LoadMatViewStmt:
+			retval = _equalLoadMatViewStmt(a, b);
 			break;
 		case T_CreateSeqStmt:
 			retval = _equalCreateSeqStmt(a, b);
