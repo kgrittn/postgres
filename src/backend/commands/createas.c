@@ -148,8 +148,14 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 		}
 	}
 
-	/* plan the query */
-	plan = pg_plan_query(query, 0, params);
+	/*
+	 * Plan the query. Use a copy of thw query to avoid the planner scribbling
+	 * on the query with current details which might not be valid when a
+	 * materialized view next uses the query. In particular, the inh flag
+	 * may be set to false if a table currently has no children; but that
+	 * doesn't mean it won't have children next time.
+	 */
+	plan = pg_plan_query((Query *) copyObject(query), 0, params);
 
 	/*
 	 * Use a snapshot with an updated command ID to ensure this query sees

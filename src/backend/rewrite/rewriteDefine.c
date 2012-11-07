@@ -409,7 +409,8 @@ DefineQueryRewrite(char *rulename,
 		 * business of converting relations to views is just a kluge to allow
 		 * loading ancient pg_dump files.)
 		 */
-		if (event_relation->rd_rel->relkind != RELKIND_VIEW)
+		if (event_relation->rd_rel->relkind != RELKIND_VIEW &&
+			event_relation->rd_rel->relkind != RELKIND_MATVIEW)
 		{
 			HeapScanDesc scanDesc;
 
@@ -506,7 +507,9 @@ DefineQueryRewrite(char *rulename,
 		 * backends (including me!) to update relcache entries with the new
 		 * rule.
 		 */
-		SetRelationRuleStatus(event_relid, true, RelisBecomingView);
+		SetRelationRuleStatus(event_relid,
+							  (event_relation->rd_rel->relkind == RELKIND_VIEW),
+							  RelisBecomingView);
 	}
 
 	/*
