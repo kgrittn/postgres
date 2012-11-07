@@ -90,6 +90,7 @@ InsertRule(char *rulname,
 	values[Anum_pg_rewrite_ev_action - 1] = CStringGetTextDatum(actiontree);
 
 	/*
+	 * 
 	 * Ready to store new pg_rewrite tuple
 	 */
 	pg_rewrite_desc = heap_open(RewriteRelationId, RowExclusiveLock);
@@ -505,11 +506,12 @@ DefineQueryRewrite(char *rulename,
 		 *
 		 * Important side effect: an SI notice is broadcast to force all
 		 * backends (including me!) to update relcache entries with the new
-		 * rule.
+		 * rule. The exception to that is materialized views, which are just
+		 * saving the query definition for possible use in regenerating the
+		 * contents of the relation.
 		 */
-		SetRelationRuleStatus(event_relid,
-							  (event_relation->rd_rel->relkind == RELKIND_VIEW),
-							  RelisBecomingView);
+		if (event_relation->rd_rel->relkind != RELKIND_MATVIEW)
+			SetRelationRuleStatus(event_relid, true, RelisBecomingView);
 	}
 
 	/*
