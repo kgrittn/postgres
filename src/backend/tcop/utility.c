@@ -37,6 +37,7 @@
 #include "commands/event_trigger.h"
 #include "commands/explain.h"
 #include "commands/extension.h"
+#include "commands/matview.h"
 #include "commands/lockcmds.h"
 #include "commands/portalcmds.h"
 #include "commands/prepare.h"
@@ -1163,6 +1164,13 @@ standard_ProcessUtility(Node *parsetree,
 			if (isCompleteQuery)
 				EventTriggerDDLCommandStart(parsetree);
 			ExecCreateTableAs((CreateTableAsStmt *) parsetree,
+							  queryString, params, completionTag);
+			break;
+
+		case T_LoadMatViewStmt:
+			if (isCompleteQuery)
+				EventTriggerDDLCommandStart(parsetree);
+			ExecLoadMatView((LoadMatViewStmt *) parsetree,
 							  queryString, params, completionTag);
 			break;
 

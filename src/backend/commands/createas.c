@@ -149,7 +149,7 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 	}
 
 	/*
-	 * Plan the query. Use a copy of thw query to avoid the planner scribbling
+	 * Plan the query. Use a copy of the query to avoid the planner scribbling
 	 * on the query with current details which might not be valid when a
 	 * materialized view next uses the query. In particular, the inh flag
 	 * may be set to false if a table currently has no children; but that
