@@ -50,7 +50,7 @@ static void setRuleCheckAsUser_Query(Query *qry, Oid userid);
  *	  takes the arguments and inserts them as a row into the system
  *	  relation "pg_rewrite"
  */
-void
+static void
 InsertRule(char *rulname,
 		   int evtype,
 		   Oid eventrel_oid,
@@ -90,7 +90,6 @@ InsertRule(char *rulname,
 	values[Anum_pg_rewrite_ev_action - 1] = CStringGetTextDatum(actiontree);
 
 	/*
-	 * 
 	 * Ready to store new pg_rewrite tuple
 	 */
 	pg_rewrite_desc = heap_open(RewriteRelationId, RowExclusiveLock);
