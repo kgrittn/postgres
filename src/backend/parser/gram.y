@@ -8584,6 +8584,8 @@ ExplainableStmt:
 			| DeleteStmt
 			| DeclareCursorStmt
 			| CreateAsStmt
+			| CreateMatViewStmt
+			| LoadMatViewStmt
 			| ExecuteStmt					/* by default all are $$=$1 */
 		;
 
