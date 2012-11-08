@@ -324,6 +324,11 @@ analyze_requires_snapshot(Node *parseTree)
 			result = true;
 			break;
 
+		case T_LoadMatViewStmt:
+			/* yes, because the SELECT from pg_rewrite must be analyzed */
+			result = true;
+			break;
+
 		default:
 			/* other utility statements don't have any real parse analysis */
 			result = false;
