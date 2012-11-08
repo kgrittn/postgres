@@ -24,6 +24,7 @@ extern void ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 
 extern int	GetIntoRelEFlags(IntoClause *intoClause);
 
-extern DestReceiver *CreateIntoRelDestReceiver(IntoClause *intoClause);
+extern DestReceiver *CreateIntoRelDestReceiver(IntoClause *intoClause,
+											   Query *query);
 
 #endif   /* CREATEAS_H */

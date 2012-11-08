@@ -79,7 +79,7 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 	/*
 	 * Create the tuple receiver object and insert info it will need
 	 */
-	dest = CreateIntoRelDestReceiver(into);
+	dest = CreateIntoRelDestReceiver(into, query);
 
 	/*
 	 * The contained Query could be a SELECT, or an EXECUTE utility command.
@@ -118,44 +118,17 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 
 	((DR_intorel *) dest)->query = query;
 
-	/*
-	 * Enforce validations needed for materialized views only.
-	 */
 	if (stmt->relkind == OBJECT_MATVIEW)
 	{
 		/*
-		* Prohibit a data-modifying CTE in the query used to create a
-		* materialized view. It's not sufficiently clear what the user would
-		* want to happen if the MV is refreshed or incrementally maintained.
-		*/
-		if (query->hasModifyingCTE)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("materialized views must not use data-modifying statements in WITH")));
-
-		/*
-		 * If the user didn't explicitly ask for a temporary materialized
-		 * view, check whether any temporary database objects are used in its
-		 * creation query. It would be hard to refresh data or incrementally
-		 * maintain it if a source disappeared.
+		 * We need to rewrite the query again so that we can store a version
+		 * that the planner has not scribbled on for reloading the MV later.
 		 */
-		if (into->rel->relpersistence == RELPERSISTENCE_PERMANENT
-			&& isQueryUsingTempRelation(query))
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("permanent materialized views must not use temporary tables or views")));
-		}
+		query = (Query *) copyObject(query);
 	}
 
-	/*
-	 * Plan the query. Use a copy of the query to avoid the planner scribbling
-	 * on the query with current details which might not be valid when a
-	 * materialized view next uses the query. In particular, the inh flag
-	 * may be set to false if a table currently has no children; but that
-	 * doesn't mean it won't have children next time.
-	 */
-	plan = pg_plan_query((Query *) copyObject(query), 0, params);
+	/* plan the query */
+	plan = pg_plan_query(query, 0, params);
 
 	/*
 	 * Use a snapshot with an updated command ID to ensure this query sees
@@ -231,7 +204,7 @@ GetIntoRelEFlags(IntoClause *intoClause)
  * self->into to be filled in immediately for other callers.
  */
 DestReceiver *
-CreateIntoRelDestReceiver(IntoClause *intoClause)
+CreateIntoRelDestReceiver(IntoClause *intoClause, Query *query)
 {
 	DR_intorel *self = (DR_intorel *) palloc0(sizeof(DR_intorel));
 
@@ -241,6 +214,7 @@ CreateIntoRelDestReceiver(IntoClause *intoClause)
 	self->pub.rDestroy = intorel_destroy;
 	self->pub.mydest = DestIntoRel;
 	self->into = intoClause;
+	self->query = query;
 	/* other private fields will be set during intorel_startup */
 
 	return (DestReceiver *) self;
@@ -342,7 +316,37 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	if (lc != NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("CREATE TABLE AS specifies too many column names")));
+				 errmsg("too many column names are specified")));
+
+	/*
+	 * Enforce validations needed for materialized views only.
+	 */
+	if (into->relkind == RELKIND_MATVIEW)
+	{
+		/*
+		* Prohibit a data-modifying CTE in the query used to create a
+		* materialized view. It's not sufficiently clear what the user would
+		* want to happen if the MV is refreshed or incrementally maintained.
+		*/
+		if (myState->query->hasModifyingCTE)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("materialized views must not use data-modifying statements in WITH")));
+
+		/*
+		 * If the user didn't explicitly ask for a temporary materialized
+		 * view, check whether any temporary database objects are used in its
+		 * creation query. It would be hard to refresh data or incrementally
+		 * maintain it if a source disappeared.
+		 */
+		if (into->rel->relpersistence == RELPERSISTENCE_PERMANENT
+			&& isQueryUsingTempRelation(myState->query))
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("permanent materialized views must not use temporary tables or views")));
+		}
+	}
 
 	/*
 	 * Actually create the target table

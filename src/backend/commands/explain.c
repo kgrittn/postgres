@@ -350,12 +350,21 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
 		 */
 		CreateTableAsStmt *ctas = (CreateTableAsStmt *) utilityStmt;
 		List	   *rewritten;
+		Query	   *query;
 
 		Assert(IsA(ctas->query, Query));
 		rewritten = QueryRewrite((Query *) copyObject(ctas->query));
 		Assert(list_length(rewritten) == 1);
-		ExplainOneQuery((Query *) linitial(rewritten), ctas->into, es,
-						queryString, params);
+		query = (Query *) linitial(rewritten);
+		es->query = query;
+
+		/*
+		 * For a materialized view, we don't want the planner scribbling on
+		 * the query, because it will need to be planned again.
+		 */
+		if (into->relkind == RELKIND_MATVIEW)
+			query = copyObject(query);
+		ExplainOneQuery(query, ctas->into, es, queryString, params);
 	}
 	else if (IsA(utilityStmt, ExecuteStmt))
 		ExplainExecuteQuery((ExecuteStmt *) utilityStmt, into, es,
@@ -427,7 +436,7 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 	 * AS, we'd better use the appropriate tuple receiver.
 	 */
 	if (into)
-		dest = CreateIntoRelDestReceiver(into);
+		dest = CreateIntoRelDestReceiver(into, es->query);
 	else
 		dest = None_Receiver;
 
