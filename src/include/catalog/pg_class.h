@@ -69,7 +69,7 @@ CATALOG(pg_class,1259) BKI_BOOTSTRAP BKI_ROWTYPE_OID(83) BKI_SCHEMA_MACRO
 
 	/*
 	 * When relisvalid is set to false, a query which references the relation
-	 * will throw and error saying the relation is not available. The initial
+	 * will throw an error saying the relation is not available. The initial
 	 * intended use is to flag whether a materialized view has been populated.
 	 * It may prove useful for other purposes.
 	 */
