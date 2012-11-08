@@ -36,7 +36,6 @@ typedef struct ExplainState
 	ExplainFormat format;		/* output format */
 	/* other states */
 	PlannedStmt *pstmt;			/* top of plan */
-	Query	   *query;			/* rewritten but unplanned query for CMV */
 	List	   *rtable;			/* range table */
 	List	   *rtable_names;	/* alias names for RTEs */
 	int			indent;			/* current indentation level */
@@ -64,12 +63,12 @@ extern void ExplainInitState(ExplainState *es);
 extern TupleDesc ExplainResultDesc(ExplainStmt *stmt);
 
 extern void ExplainOneUtility(Node *utilityStmt, IntoClause *into,
-				  ExplainState *es,
-				  const char *queryString, ParamListInfo params);
+				  ExplainState *es, const char *queryString,
+				  DestReceiver *dest, ParamListInfo params);
 
 extern void ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into,
-			   ExplainState *es,
-			   const char *queryString, ParamListInfo params);
+			   ExplainState *es, const char *queryString,
+			   DestReceiver *dest, ParamListInfo params);
 
 extern void ExplainPrintPlan(ExplainState *es, QueryDesc *queryDesc);
 

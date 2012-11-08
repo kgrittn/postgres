@@ -19,12 +19,14 @@
 #include "tcop/dest.h"
 
 
+extern Query *SetupForCreateTableAs(Query *query, IntoClause *into,
+									 DestReceiver *dest);
+
 extern void ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 				  ParamListInfo params, char *completionTag);
 
 extern int	GetIntoRelEFlags(IntoClause *intoClause);
 
-extern DestReceiver *CreateIntoRelDestReceiver(IntoClause *intoClause,
-											   Query *query);
+extern DestReceiver *CreateIntoRelDestReceiver(IntoClause *intoClause);
 
 #endif   /* CREATEAS_H */

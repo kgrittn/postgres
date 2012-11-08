@@ -61,6 +61,46 @@ static void intorel_shutdown(DestReceiver *self);
 static void intorel_destroy(DestReceiver *self);
 
 
+Query *
+SetupForCreateTableAs(Query *query, IntoClause *into, DestReceiver *dest)
+{
+	List	   *rewritten;
+
+	Assert(query->commandType == CMD_SELECT);
+
+	/*
+	 * Parse analysis was done already, but we still have to run the rule
+	 * rewriter.  We do not do AcquireRewriteLocks: we assume the query either
+	 * came straight from the parser, or suitable locks were acquired by
+	 * plancache.c.
+	 *
+	 * Because the rewriter and planner tend to scribble on the input, we make
+	 * a preliminary copy of the source querytree.	This prevents problems in
+	 * the case that CTAS is in a portal or plpgsql function and is executed
+	 * repeatedly.	(See also the same hack in EXPLAIN and PREPARE.)
+	 */
+	rewritten = QueryRewrite((Query *) copyObject(query));
+
+	/* SELECT should never rewrite to more or less than one SELECT query */
+	if (list_length(rewritten) != 1)
+		elog(ERROR, "unexpected rewrite result for CREATE TABLE AS SELECT");
+	query = (Query *) linitial(rewritten);
+	Assert(query->commandType == CMD_SELECT);
+
+	/* Save the query after rewrite but before planning. */
+	((DR_intorel *) dest)->query = query;
+	((DR_intorel *) dest)->into = into;
+
+	/*
+	 * For a materialized view, we don't want the planner scribbling on the
+	 * query, because it will need to be planned again.
+	 */
+	if (into->relkind == RELKIND_MATVIEW)
+		query = (Query *) copyObject(query);
+
+	return query;
+}
+
 /*
  * ExecCreateTableAs -- execute a CREATE TABLE AS command
  */
@@ -71,7 +111,6 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 	Query	   *query = (Query *) stmt->query;
 	IntoClause *into = stmt->into;
 	DestReceiver *dest;
-	List	   *rewritten;
 	PlannedStmt *plan;
 	QueryDesc  *queryDesc;
 	ScanDirection dir;
@@ -79,7 +118,7 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 	/*
 	 * Create the tuple receiver object and insert info it will need
 	 */
-	dest = CreateIntoRelDestReceiver(into, query);
+	dest = CreateIntoRelDestReceiver(into);
 
 	/*
 	 * The contained Query could be a SELECT, or an EXECUTE utility command.
@@ -95,37 +134,8 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 
 		return;
 	}
-	Assert(query->commandType == CMD_SELECT);
 
-	/*
-	 * Parse analysis was done already, but we still have to run the rule
-	 * rewriter.  We do not do AcquireRewriteLocks: we assume the query either
-	 * came straight from the parser, or suitable locks were acquired by
-	 * plancache.c.
-	 *
-	 * Because the rewriter and planner tend to scribble on the input, we make
-	 * a preliminary copy of the source querytree.	This prevents problems in
-	 * the case that CTAS is in a portal or plpgsql function and is executed
-	 * repeatedly.	(See also the same hack in EXPLAIN and PREPARE.)
-	 */
-	rewritten = QueryRewrite((Query *) copyObject(stmt->query));
-
-	/* SELECT should never rewrite to more or less than one SELECT query */
-	if (list_length(rewritten) != 1)
-		elog(ERROR, "unexpected rewrite result for CREATE TABLE AS SELECT");
-	query = (Query *) linitial(rewritten);
-	Assert(query->commandType == CMD_SELECT);
-
-	((DR_intorel *) dest)->query = query;
-
-	if (stmt->relkind == OBJECT_MATVIEW)
-	{
-		/*
-		 * We need to rewrite the query again so that we can store a version
-		 * that the planner has not scribbled on for reloading the MV later.
-		 */
-		query = (Query *) copyObject(query);
-	}
+	query = SetupForCreateTableAs(query, into, dest);
 
 	/* plan the query */
 	plan = pg_plan_query(query, 0, params);
@@ -204,7 +214,7 @@ GetIntoRelEFlags(IntoClause *intoClause)
  * self->into to be filled in immediately for other callers.
  */
 DestReceiver *
-CreateIntoRelDestReceiver(IntoClause *intoClause, Query *query)
+CreateIntoRelDestReceiver(IntoClause *intoClause)
 {
 	DR_intorel *self = (DR_intorel *) palloc0(sizeof(DR_intorel));
 
@@ -214,7 +224,6 @@ CreateIntoRelDestReceiver(IntoClause *intoClause, Query *query)
 	self->pub.rDestroy = intorel_destroy;
 	self->pub.mydest = DestIntoRel;
 	self->into = intoClause;
-	self->query = query;
 	/* other private fields will be set during intorel_startup */
 
 	return (DestReceiver *) self;

@@ -665,9 +665,9 @@ ExplainExecuteQuery(ExecuteStmt *execstmt, IntoClause *into, ExplainState *es,
 		PlannedStmt *pstmt = (PlannedStmt *) lfirst(p);
 
 		if (IsA(pstmt, PlannedStmt))
-			ExplainOnePlan(pstmt, into, es, query_string, paramLI);
+			ExplainOnePlan(pstmt, into, es, query_string, None_Receiver, paramLI);
 		else
-			ExplainOneUtility((Node *) pstmt, into, es, query_string, paramLI);
+			ExplainOneUtility((Node *) pstmt, into, es, query_string, None_Receiver, paramLI);
 
 		/* No need for CommandCounterIncrement, as ExplainOnePlan did it */
 
