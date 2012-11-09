@@ -40,5 +40,27 @@ void
 ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 				  ParamListInfo params, char *completionTag)
 {
+	Oid			tableOid;
+	Relation	rel;
+
+	tableOid = RangeVarGetRelidExtended(stmt->relation,
+										 AccessExclusiveLock,
+										 false, false,
+										 RangeVarCallbackOwnsTable, NULL);
+	rel = heap_open(tableOid, NoLock);
+
+	/*
+	 * Reject clustering a remote temp table ... their local buffer
+	 * manager is not going to cope.
+	 */
+	if (RELATION_IS_OTHER_TEMP(rel))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot load temporary materialized views of other sessions")));
+
+		
+
+	heap_close(rel, NoLock);
+
 	
 }
