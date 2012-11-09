@@ -14,24 +14,41 @@
  */
 #include "postgres.h"
 
-#include "access/reloptions.h"
-#include "access/htup_details.h"
-#include "access/sysattr.h"
+#include "access/relscan.h"
+#include "access/rewriteheap.h"
+#include "access/transam.h"
 #include "access/xact.h"
+#include "catalog/catalog.h"
+#include "catalog/dependency.h"
+#include "catalog/heap.h"
+#include "catalog/index.h"
+#include "catalog/namespace.h"
 #include "catalog/toasting.h"
+#include "commands/cluster.h"
 #include "commands/matview.h"
-#include "commands/prepare.h"
 #include "commands/tablecmds.h"
-#include "commands/view.h"
-#include "parser/parse_clause.h"
-#include "rewrite/rewriteDefine.h"
-#include "rewrite/rewriteHandler.h"
+#include "commands/vacuum.h"
+#include "miscadmin.h"
+#include "optimizer/planner.h"
+#include "storage/bufmgr.h"
+#include "storage/lmgr.h"
+#include "storage/predicate.h"
 #include "storage/smgr.h"
-#include "tcop/tcopprot.h"
-#include "utils/builtins.h"
+#include "utils/acl.h"
+#include "utils/fmgroids.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
-#include "utils/rel.h"
+#include "utils/memutils.h"
+#include "utils/pg_rusage.h"
+#include "utils/relmapper.h"
 #include "utils/snapmgr.h"
+#include "utils/syscache.h"
+#include "utils/tqual.h"
+#include "utils/tuplesort.h"
+
+
+
+static void load_matview(Oid matviewOid, Query *dataQuery);
 
 /*
  * ExecLoadMatView -- execute a LOAD MATERIALIZED VIEW command
@@ -40,27 +57,79 @@ void
 ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 				  ParamListInfo params, char *completionTag)
 {
-	Oid			tableOid;
-	Relation	rel;
+	Oid			matviewOid;
+	Relation	matviewRel;
+	Relation	rewriteRel;
+	HeapTuple	rewriteTup;
+	ScanKeyData key;
+	Query	   *dataQuery;
 
-	tableOid = RangeVarGetRelidExtended(stmt->relation,
+	matviewOid = RangeVarGetRelidExtended(stmt->relation,
 										 AccessExclusiveLock,
 										 false, false,
 										 RangeVarCallbackOwnsTable, NULL);
-	rel = heap_open(tableOid, NoLock);
+	matviewRel = heap_open(matviewOid, NoLock);
+
+	if (matviewRel->rd_rel->relkind != RELKIND_MATVIEW)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("\"%s\" is not a materialized view",
+						stmt->relation->relname)));
 
 	/*
 	 * Reject clustering a remote temp table ... their local buffer
 	 * manager is not going to cope.
 	 */
-	if (RELATION_IS_OTHER_TEMP(rel))
+	if (RELATION_IS_OTHER_TEMP(matviewRel))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot load temporary materialized views of other sessions")));
 
-		
+	heap_close(matviewRel, NoLock);
 
-	heap_close(rel, NoLock);
+	rewriteRel = heap_open(RewriteRelationId, AccessShareLock);
+	rewriteTup = SearchSysCache2(RULERELNAME,
+							 ObjectIdGetDatum(matviewOid),
+							 CStringGetDatum("_RETURN"));
+
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR,
+			 errmsg("materialized view \"%s\" is missing rewrite information",
+					stmt->relation->relname));
 
 	
+
+	heap_close(RewriteRelationId, AccessShareLock);
+
+	load_matview(matviewOid, dataQuery);
+}
+
+/*
+ * load_matview
+ *
+ * This loads the materialized view by creating a new table and swapping the
+ * relfilenodes of the new table and the old materialized view, so the OID of
+ * the original materialized view is preserved. Thus we do not lose GRANT nor
+ * references to this materialized view.
+ *
+ * Indexes are rebuilt too, via REINDEX. Since we are effectively bulk-loading
+ * the new heap, it's better to create the indexes afterwards than to fill them
+ * incrementally while we load.
+ *
+ * If the materialized view was flagged with relisvalid == false, success of
+ * this command will change it to true.
+ */
+static void
+load_matview(Oid matviewOid, Query *dataQuery)
+{
+	Relation	OldHeap;
+
+	
+	
+	
+	
+	
+	
+	
+	SetRelationIsValid(true);
 }
