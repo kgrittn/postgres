@@ -23,6 +23,7 @@
 #include "catalog/heap.h"
 #include "catalog/index.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_rewrite.h"
 #include "catalog/toasting.h"
 #include "commands/cluster.h"
 #include "commands/matview.h"
@@ -61,7 +62,6 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 	Relation	matviewRel;
 	Relation	rewriteRel;
 	HeapTuple	rewriteTup;
-	ScanKeyData key;
 	Query	   *dataQuery;
 
 	matviewOid = RangeVarGetRelidExtended(stmt->relation,
@@ -92,14 +92,14 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 							 ObjectIdGetDatum(matviewOid),
 							 CStringGetDatum("_RETURN"));
 
-	if (!HeapTupleIsValid(oldtup))
+	if (!HeapTupleIsValid(rewriteTup))
 		elog(ERROR,
-			 errmsg("materialized view \"%s\" is missing rewrite information",
-					stmt->relation->relname));
+			 "materialized view \"%s\" is missing rewrite information",
+			 stmt->relation->relname);
 
 	
 
-	heap_close(RewriteRelationId, AccessShareLock);
+	heap_close(rewriteRel, AccessShareLock);
 
 	load_matview(matviewOid, dataQuery);
 }
@@ -131,5 +131,5 @@ load_matview(Oid matviewOid, Query *dataQuery)
 	
 	
 	
-	SetRelationIsValid(true);
+	SetRelationIsValid(matviewOid, true);
 }
