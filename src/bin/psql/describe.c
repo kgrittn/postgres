@@ -1867,7 +1867,7 @@ describeOneTableDetails(const char *schemaname,
 		}
 
 		/* print rules */
-		if (tableinfo.hasrules)
+		if (tableinfo.hasrules && tableinfo.relkind != 'm')
 		{
 			if (pset.sversion >= 80300)
 			{

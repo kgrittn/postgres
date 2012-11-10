@@ -392,7 +392,10 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	{
 		StoreViewQuery(intoRelationId, myState->query, false);
 		if (into->skipData)
+		{
+			CommandCounterIncrement();
 			SetRelationIsValid(intoRelationId, false);
+		}
 	}
 
 	/*
