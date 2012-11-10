@@ -60,21 +60,24 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 {
 	Oid			matviewOid;
 	Relation	matviewRel;
-	Relation	rewriteRel;
-	HeapTuple	rewriteTup;
+	RewriteRule *rule;
+	List	   *actions;
 	Query	   *dataQuery;
 
+	/*
+	 * Get a lock until end of transaction.
+	 */
 	matviewOid = RangeVarGetRelidExtended(stmt->relation,
-										 AccessExclusiveLock,
-										 false, false,
-										 RangeVarCallbackOwnsTable, NULL);
+										   AccessExclusiveLock, false, false,
+										   RangeVarCallbackOwnsTable, NULL);
 	matviewRel = heap_open(matviewOid, NoLock);
 
+	/* Make sure it is a materialized view. */
 	if (matviewRel->rd_rel->relkind != RELKIND_MATVIEW)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("\"%s\" is not a materialized view",
-						stmt->relation->relname)));
+						RelationGetRelationName(matviewRel))));
 
 	/*
 	 * Reject clustering a remote temp table ... their local buffer
@@ -85,21 +88,41 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot load temporary materialized views of other sessions")));
 
-	heap_close(matviewRel, NoLock);
-
-	rewriteRel = heap_open(RewriteRelationId, AccessShareLock);
-	rewriteTup = SearchSysCache2(RULERELNAME,
-							 ObjectIdGetDatum(matviewOid),
-							 CStringGetDatum("_RETURN"));
-
-	if (!HeapTupleIsValid(rewriteTup))
+	/*
+	 * Check that everything is correct for a load. Problems at this point are
+	 * internal errors, so elog is sufficient.
+	 */
+	if (matviewRel->rd_rel->relhasrules == false ||
+		matviewRel->rd_rules->numLocks < 1)
 		elog(ERROR,
 			 "materialized view \"%s\" is missing rewrite information",
-			 stmt->relation->relname);
+			 RelationGetRelationName(matviewRel));
 
-	
+	if (matviewRel->rd_rules->numLocks > 1)
+		elog(ERROR,
+			 "materialized view \"%s\" has too many rules",
+			 RelationGetRelationName(matviewRel));
 
-	heap_close(rewriteRel, AccessShareLock);
+	rule = matviewRel->rd_rules->rules[0];
+	if (rule->event != CMD_SELECT || !(rule->isInstead))
+		elog(ERROR,
+			 "the rule for materialized view \"%s\" is not a SELECT INSTEAD OF rule",
+			 RelationGetRelationName(matviewRel));
+
+	actions = rule->actions;
+	if (list_length(actions) != 1)
+		elog(ERROR,
+			 "the rule for materialized view \"%s\" is not a single action",
+			 RelationGetRelationName(matviewRel));
+
+	/*
+	 * The stored query was rewritten at the time of the MV definition, but
+	 * has not been scribbled on by the planner.
+	 */
+	dataQuery = (Query *) linitial(actions);
+	Assert(IsA(dataQuery, Query));
+
+	heap_close(matviewRel, NoLock);
 
 	load_matview(matviewOid, dataQuery);
 }
@@ -122,7 +145,7 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 static void
 load_matview(Oid matviewOid, Query *dataQuery)
 {
-	Relation	OldHeap;
+	//Relation	OldHeap;
 
 	
 	
@@ -131,5 +154,5 @@ load_matview(Oid matviewOid, Query *dataQuery)
 	
 	
 	
-	SetRelationIsValid(matviewOid, true);
+	//SetRelationIsValid(matviewOid, true);
 }

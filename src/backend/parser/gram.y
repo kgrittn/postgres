@@ -3242,6 +3242,7 @@ LoadMatViewStmt:
 				{
 					LoadMatViewStmt *n = makeNode(LoadMatViewStmt);
 					n->relation = $4;
+					$$ = (Node *) n;
 				}
 		;
 

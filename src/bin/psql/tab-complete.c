@@ -2706,6 +2706,14 @@ psql_completion(char *text, int start, int end)
 			 pg_strcasecmp(prev2_wd, "DEFAULT") != 0)
 		COMPLETE_WITH_CONST("(");
 
+/* LOAD MATERIALIZED VIEW */
+	else if (pg_strcasecmp(prev_wd, "LOAD") == 0)
+		COMPLETE_WITH_CONST("MATERIALIZED VIEW");
+	else if (pg_strcasecmp(prev3_wd, "LOAD") == 0 &&
+			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev_wd, "VIEW") == 0)
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
+
 /* LOCK */
 	/* Complete LOCK [TABLE] with a list of tables */
 	else if (pg_strcasecmp(prev_wd, "LOCK") == 0)

@@ -224,6 +224,7 @@ check_xact_readonly(Node *parsetree)
 		case T_CreateSeqStmt:
 		case T_CreateStmt:
 		case T_CreateTableAsStmt:
+		case T_LoadMatViewStmt:
 		case T_CreateTableSpaceStmt:
 		case T_CreateTrigStmt:
 		case T_CompositeTypeStmt:
@@ -2147,6 +2148,10 @@ CreateCommandTag(Node *parsetree)
 			}
 			break;
 
+		case T_LoadMatViewStmt:
+			tag = "LOAD MATERIALIZED VIEW";
+			break;
+
 		case T_VariableSetStmt:
 			switch (((VariableSetStmt *) parsetree)->kind)
 			{
@@ -2674,6 +2679,10 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_CreateTableAsStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_LoadMatViewStmt:
 			lev = LOGSTMT_DDL;
 			break;
 
