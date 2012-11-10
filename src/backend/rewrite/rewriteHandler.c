@@ -1592,6 +1592,16 @@ fireRIRrules(Query *parsetree, List *activeRIRs, bool forUpdatePushedDown)
 		rel = heap_open(rte->relid, NoLock);
 
 		/*
+		 * Skip materialized view expansion when resultRelation is set.
+		 */
+		if (rel->rd_rel->relkind == RELKIND_MATVIEW &&
+			rel->rd_rel->relisvalid)
+		{
+			heap_close(rel, NoLock);
+			break;
+		}
+
+		/*
 		 * Collect the RIR rules that we must apply
 		 */
 		rules = rel->rd_rules;

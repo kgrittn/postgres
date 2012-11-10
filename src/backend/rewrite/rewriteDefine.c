@@ -505,12 +505,9 @@ DefineQueryRewrite(char *rulename,
 		 *
 		 * Important side effect: an SI notice is broadcast to force all
 		 * backends (including me!) to update relcache entries with the new
-		 * rule. The exception to that is materialized views, which are just
-		 * saving the query definition for possible use in regenerating the
-		 * contents of the relation.
+		 * rule.
 		 */
-		if (event_relation->rd_rel->relkind != RELKIND_MATVIEW)
-			SetRelationRuleStatus(event_relid, true, RelisBecomingView);
+		SetRelationRuleStatus(event_relid, true, RelisBecomingView);
 	}
 
 	/*
