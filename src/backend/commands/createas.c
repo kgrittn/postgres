@@ -33,7 +33,6 @@
 #include "commands/tablecmds.h"
 #include "commands/view.h"
 #include "parser/parse_clause.h"
-#include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"

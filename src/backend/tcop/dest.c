@@ -203,6 +203,7 @@ NullCommand(CommandDest dest)
 		case DestIntoRel:
 		case DestCopyOut:
 		case DestSQLFunction:
+		case DestTransientRel:
 			break;
 	}
 }
@@ -246,6 +247,7 @@ ReadyForQuery(CommandDest dest)
 		case DestIntoRel:
 		case DestCopyOut:
 		case DestSQLFunction:
+		case DestTransientRel:
 			break;
 	}
 }

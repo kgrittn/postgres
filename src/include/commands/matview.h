@@ -15,7 +15,6 @@
 #define MATVIEW_H
 
 #include "nodes/params.h"
-#include "nodes/parsenodes.h"
 #include "tcop/dest.h"
 
 extern void ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
