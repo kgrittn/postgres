@@ -49,7 +49,7 @@
 
 
 
-static void load_matview(Oid matviewOid, Query *dataQuery);
+static void load_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery);
 
 /*
  * ExecLoadMatView -- execute a LOAD MATERIALIZED VIEW command
@@ -63,6 +63,7 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 	RewriteRule *rule;
 	List	   *actions;
 	Query	   *dataQuery;
+	Oid			tableSpace;
 
 	/*
 	 * Get a lock until end of transaction.
@@ -78,6 +79,11 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("\"%s\" is not a materialized view",
 						RelationGetRelationName(matviewRel))));
+
+	/*
+	 * We're not using materialized views in the system catalogs.
+	 */
+	Assert(!IsSystemRelation(matviewRel));
 
 	/*
 	 * Reject clustering a remote temp table ... their local buffer
@@ -122,9 +128,17 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 	dataQuery = (Query *) linitial(actions);
 	Assert(IsA(dataQuery, Query));
 
+	/*
+	 * Check for active uses of the relation in the current transaction, such
+	 * as open scans.
+	 */
+	CheckTableNotInUse(matviewRel, "LOAD MATERIALIZED VIEW");
+
+	tableSpace = matviewRel->rd_rel->reltablespace;
+
 	heap_close(matviewRel, NoLock);
 
-	load_matview(matviewOid, dataQuery);
+	load_matview(matviewOid, tableSpace, dataQuery);
 }
 
 /*
@@ -143,16 +157,27 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
  * this command will change it to true.
  */
 static void
-load_matview(Oid matviewOid, Query *dataQuery)
+load_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery)
 {
-	//Relation	OldHeap;
+	Oid			OIDNewHeap;
+
+	/* Check for user-requested abort. */
+	CHECK_FOR_INTERRUPTS();
+
+	/* Create the transient table that will receive the regenerated data. */
+	OIDNewHeap = make_new_heap(matviewOid, tableSpace);
 
 	
 	
 	
 	
 	
-	
-	
-	//SetRelationIsValid(matviewOid, true);
+
+	/*
+	 * Swap the physical files of the target and transient tables, then
+	 * rebuild the target's indexes and throw away the transient table.
+	 */
+	finish_heap_swap(matviewOid, OIDNewHeap, false, false, false, RecentXmin);
+
+	SetRelationIsValid(matviewOid, true);
 }
