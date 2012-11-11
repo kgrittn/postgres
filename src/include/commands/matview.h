@@ -18,8 +18,9 @@
 #include "nodes/parsenodes.h"
 #include "tcop/dest.h"
 
-extern void
-ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
+extern void ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 				  ParamListInfo params, char *completionTag);
+
+extern DestReceiver *CreateTransientRelDestReceiver(Oid oid);
 
 #endif   /* MATVIEW_H */

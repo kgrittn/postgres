@@ -29,6 +29,7 @@
 #include "commands/matview.h"
 #include "commands/tablecmds.h"
 #include "commands/vacuum.h"
+#include "executor/executor.h"
 #include "miscadmin.h"
 #include "optimizer/planner.h"
 #include "storage/bufmgr.h"
@@ -50,7 +51,24 @@
 
 
 
-static void load_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery);
+
+typedef struct
+{
+	DestReceiver pub;			/* publicly-known function pointers */
+	Oid			transientoid;	/* OID of new heap into which to store */
+	/* These fields are filled by transientrel_startup: */
+	Relation	transientrel;	/* relation to write to */
+	CommandId	output_cid;		/* cmin to insert in output tuples */
+	int			hi_options;		/* heap_insert performance options */
+	BulkInsertState bistate;	/* bulk insert state */
+} DR_transientrel;
+
+static void transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
+static void transientrel_receive(TupleTableSlot *slot, DestReceiver *self);
+static void transientrel_shutdown(DestReceiver *self);
+static void transientrel_destroy(DestReceiver *self);
+static void load_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
+						  Query *dataQuery, const char *queryString);
 
 /*
  * ExecLoadMatView -- execute a LOAD MATERIALIZED VIEW command
@@ -65,6 +83,7 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 	List	   *actions;
 	Query	   *dataQuery;
 	Oid			tableSpace;
+	bool		isWithOids;
 
 	/*
 	 * Get a lock until end of transaction.
@@ -136,10 +155,11 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 	CheckTableNotInUse(matviewRel, "LOAD MATERIALIZED VIEW");
 
 	tableSpace = matviewRel->rd_rel->reltablespace;
+	isWithOids = matviewRel->rd_rel->relhasoids;
 
 	heap_close(matviewRel, NoLock);
 
-	load_matview(matviewOid, tableSpace, dataQuery);
+	load_matview(matviewOid, tableSpace, isWithOids, dataQuery, queryString);
 }
 
 /*
@@ -158,25 +178,52 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
  * this command will change it to true.
  */
 static void
-load_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery)
+load_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
+			 Query *dataQuery, const char *queryString)
 {
 	Oid			OIDNewHeap;
 	PlannedStmt *plan;
+	DestReceiver *dest;
+	QueryDesc  *queryDesc;
 
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();
 
-	/* Create the transient table that will receive the regenerated data. */
-	OIDNewHeap = make_new_heap(matviewOid, tableSpace);
-
 	/* Plan the query which will generate data for the load. */
 	plan = pg_plan_query(dataQuery, 0, NULL);
 
-	
-	
-	
-	
-	
+	/* Create the transient table that will receive the regenerated data. */
+	OIDNewHeap = make_new_heap(matviewOid, tableSpace);
+	dest = CreateTransientRelDestReceiver(OIDNewHeap);
+
+	/*
+	 * Use a snapshot with an updated command ID to ensure this query sees
+	 * results of any previously executed queries.	(This could only matter if
+	 * the planner executed an allegedly-stable function that changed the
+	 * database contents, but let's do it anyway to be safe.)
+	 */
+	PushCopiedSnapshot(GetActiveSnapshot());
+	UpdateActiveSnapshotCommandId();
+
+	/* Create a QueryDesc, redirecting output to our tuple receiver */
+	queryDesc = CreateQueryDesc(plan, queryString,
+								GetActiveSnapshot(), InvalidSnapshot,
+								dest, NULL, 0);
+
+	/* call ExecutorStart to prepare the plan for execution */
+	ExecutorStart(queryDesc,
+				  isWithOids ? EXEC_FLAG_WITH_OIDS : EXEC_FLAG_WITHOUT_OIDS);
+
+	/* run the plan */
+	ExecutorRun(queryDesc, ForwardScanDirection, 0L);
+
+	/* and clean up */
+	ExecutorFinish(queryDesc);
+	ExecutorEnd(queryDesc);
+
+	FreeQueryDesc(queryDesc);
+
+	PopActiveSnapshot();
 
 	/*
 	 * Swap the physical files of the target and transient tables, then
@@ -185,4 +232,106 @@ load_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery)
 	finish_heap_swap(matviewOid, OIDNewHeap, false, false, false, RecentXmin);
 
 	SetRelationIsValid(matviewOid, true);
+}
+
+DestReceiver *
+CreateTransientRelDestReceiver(Oid transientoid)
+{
+	DR_transientrel *self = (DR_transientrel *) palloc0(sizeof(DR_transientrel));
+
+	self->pub.receiveSlot = transientrel_receive;
+	self->pub.rStartup = transientrel_startup;
+	self->pub.rShutdown = transientrel_shutdown;
+	self->pub.rDestroy = transientrel_destroy;
+	self->pub.mydest = DestTransientRel;
+	self->transientoid = transientoid;
+
+	return (DestReceiver *) self;
+}
+
+/*
+ * transientrel_startup --- executor startup
+ */
+static void
+transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
+{
+	DR_transientrel *myState = (DR_transientrel *) self;
+	Relation transientrel;
+
+	transientrel = heap_open(myState->transientoid, NoLock);
+
+	/*
+	 * Fill private fields of myState for use by later routines
+	 */
+	myState->transientrel = transientrel;
+	myState->output_cid = GetCurrentCommandId(true);
+
+	/*
+	 * We can skip WAL-logging the insertions, unless PITR or streaming
+	 * replication is in use. We can skip the FSM in any case.
+	 */
+	myState->hi_options = HEAP_INSERT_SKIP_FSM |
+		(XLogIsNeeded() ? 0 : HEAP_INSERT_SKIP_WAL);
+	myState->bistate = GetBulkInsertState();
+
+	/* Not using WAL requires smgr_targblock be initially invalid */
+	Assert(RelationGetTargetBlock(transientrel) == InvalidBlockNumber);
+}
+
+/*
+ * transientrel_receive --- receive one tuple
+ */
+static void
+transientrel_receive(TupleTableSlot *slot, DestReceiver *self)
+{
+	DR_transientrel *myState = (DR_transientrel *) self;
+	HeapTuple	tuple;
+
+	/*
+	 * get the heap tuple out of the tuple table slot, making sure we have a
+	 * writable copy
+	 */
+	tuple = ExecMaterializeSlot(slot);
+
+	/*
+	 * force assignment of new OID (see comments in ExecInsert)
+	 */
+	if (myState->transientrel->rd_rel->relhasoids)
+		HeapTupleSetOid(tuple, InvalidOid);
+
+	heap_insert(myState->transientrel,
+				tuple,
+				myState->output_cid,
+				myState->hi_options,
+				myState->bistate);
+
+	/* We know this is a newly created relation, so there are no indexes */
+}
+
+/*
+ * transientrel_shutdown --- executor end
+ */
+static void
+transientrel_shutdown(DestReceiver *self)
+{
+	DR_transientrel *myState = (DR_transientrel *) self;
+
+	FreeBulkInsertState(myState->bistate);
+
+	/* If we skipped using WAL, must heap_sync before commit */
+	if (myState->hi_options & HEAP_INSERT_SKIP_WAL)
+		heap_sync(myState->transientrel);
+
+	/* close transientrel, but keep lock until commit */
+	heap_close(myState->transientrel, NoLock);
+	myState->transientrel = NULL;
+}
+
+/*
+ * transientrel_destroy --- release DestReceiver object
+ */
+static void
+transientrel_destroy(DestReceiver *self)
+{
+	pfree(self);
 }
