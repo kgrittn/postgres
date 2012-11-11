@@ -20,7 +20,7 @@
 
 
 extern Query *SetupForCreateTableAs(Query *query, IntoClause *into,
-									 DestReceiver *dest);
+									 DestReceiver *dest, ParamListInfo params);
 
 extern void ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 				  ParamListInfo params, char *completionTag);

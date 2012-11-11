@@ -35,6 +35,7 @@
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
 #include "storage/smgr.h"
+#include "tcop/tcopprot.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
@@ -160,12 +161,16 @@ static void
 load_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery)
 {
 	Oid			OIDNewHeap;
+	PlannedStmt *plan;
 
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();
 
 	/* Create the transient table that will receive the regenerated data. */
 	OIDNewHeap = make_new_heap(matviewOid, tableSpace);
+
+	/* Plan the query which will generate data for the load. */
+	plan = pg_plan_query(dataQuery, 0, NULL);
 
 	
 	

@@ -61,8 +61,12 @@ static void intorel_shutdown(DestReceiver *self);
 static void intorel_destroy(DestReceiver *self);
 
 
+/*
+ * Common setup needed by both normal execution and EXPLAIN ANALYZE.
+ */
 Query *
-SetupForCreateTableAs(Query *query, IntoClause *into, DestReceiver *dest)
+SetupForCreateTableAs(Query *query, IntoClause *into, DestReceiver *dest,
+					   ParamListInfo params)
 {
 	List	   *rewritten;
 
@@ -91,12 +95,24 @@ SetupForCreateTableAs(Query *query, IntoClause *into, DestReceiver *dest)
 	((DR_intorel *) dest)->query = query;
 	((DR_intorel *) dest)->into = into;
 
-	/*
-	 * For a materialized view, we don't want the planner scribbling on the
-	 * query, because it will need to be planned again.
-	 */
 	if (into->relkind == RELKIND_MATVIEW)
+	{
+		/*
+		 * A materialized view would either need to save parameters for use in
+		 * maintaining or loading the data or prohibit them entirely. The
+		 * latter seems safer and more sane.
+		 */
+		if (params != NULL && params->numParams > 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("materialized views may not be defined using bound parameters")));
+
+		/*
+		 * For a materialized view, we don't want the planner scribbling on
+		 * the query, because it will need to be planned again.
+		 */
 		query = (Query *) copyObject(query);
+	}
 
 	return query;
 }
@@ -135,7 +151,7 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 		return;
 	}
 
-	query = SetupForCreateTableAs(query, into, dest);
+	query = SetupForCreateTableAs(query, into, dest, params);
 
 	/* plan the query */
 	plan = pg_plan_query(query, 0, params);
