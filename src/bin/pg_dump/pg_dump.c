@@ -1604,14 +1604,11 @@ dumpTableData(Archive *fout, TableDataInfo *tdinfo)
 	destroyPQExpBuffer(copyBuf);
 }
 
-
-
 /*
  * dumpMatViewData -
- *	  dump the contents of a single table
+ *	  dump the contents of a single materialized view
  *
- * Actually, this just makes an ArchiveEntry for the table contents.
- * And it doesn't actually dump data, it dumps a LOAD MATERIALIZED VIEW
+ * Actually, this just makes an ArchiveEntry for the LOAD MATERIALIZED VIEW
  * statement.
  */
 static void
@@ -1619,23 +1616,20 @@ dumpMatViewData(Archive *fout, TableDataInfo *tdinfo)
 {
 	TableInfo  *tbinfo = tdinfo->tdtable;
 	PQExpBuffer copyBuf = createPQExpBuffer();
-	DataDumperPtr dumpFn;
 	char	   *copyStmt;
 
-	/* Dump/restore using COPY */
-	dumpFn = dumpTableData_copy;
-	/* must use 2 steps here 'cause fmtId is nonreentrant */
-	appendPQExpBuffer(copyBuf, "COPY %s ",
+	appendPQExpBuffer(copyBuf, "LOAD MATERIALIZED VIEW %s;\n",
 					  fmtId(tbinfo->dobj.name));
-	appendPQExpBuffer(copyBuf, "%s %sFROM stdin;\n",
-					  fmtCopyColumnList(tbinfo),
-				  (tdinfo->oids && tbinfo->hasoids) ? "WITH OIDS " : "");
 	copyStmt = copyBuf->data;
 
 	/*
-	 * Note: although the TableDataInfo is a full DumpableObject, we treat its
-	 * dependency on its table as "special" and pass it to ArchiveEntry now.
-	 * See comments for BuildArchiveDependencies.
+	 * TODO: Somehow we must get this statement to run after table creation
+	 * and before index creation. Since later materialized views may depend
+	 * on the data from this one, possibly through regualr views, it should
+	 * fall in dependency order amongst all views and materialized views, and
+	 * should fall after the data is loaded for any tables on which this is
+	 * dependent. Ideally, all tables should be created, populated, indexed,
+	 * and analyzed before this is run.  Do we need a whole new phase?
 	 */
 	ArchiveEntry(fout, tdinfo->dobj.catId, tdinfo->dobj.dumpId,
 				 tbinfo->dobj.name, tbinfo->dobj.namespace->dobj.name,
@@ -1643,11 +1637,10 @@ dumpMatViewData(Archive *fout, TableDataInfo *tdinfo)
 				 false, "TABLE DATA", SECTION_DATA,
 				 "", "", copyStmt,
 				 &(tbinfo->dobj.dumpId), 1,
-				 dumpFn, tdinfo);
+				 NULL, tdinfo);
 
 	destroyPQExpBuffer(copyBuf);
 }
-
 
 /*
  * getTableData -
@@ -12347,6 +12340,58 @@ dumpTable(Archive *fout, TableInfo *tbinfo)
 	}
 }
 
+static char *
+create_view_as_clause(Archive *fout, TableInfo *tbinfo)
+{
+	PQExpBuffer query = createPQExpBuffer();
+	PGresult   *res;
+	char	   *viewdef;
+	size_t		len;
+
+	/* Fetch the view definition */
+	if (fout->remoteVersion >= 70300)
+	{
+		/* Beginning in 7.3, viewname is not unique; rely on OID */
+		appendPQExpBuffer(query,
+						  "SELECT pg_catalog.pg_get_viewdef('%u'::pg_catalog.oid) AS viewdef",
+						  tbinfo->dobj.catId.oid);
+	}
+	else
+	{
+		appendPQExpBuffer(query, "SELECT definition AS viewdef "
+						  "FROM pg_views WHERE viewname = ");
+		appendStringLiteralAH(query, tbinfo->dobj.name, fout);
+		appendPQExpBuffer(query, ";");
+	}
+
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+	if (PQntuples(res) != 1)
+	{
+		if (PQntuples(res) < 1)
+			exit_horribly(NULL, "query to obtain definition of view \"%s\" returned no data\n",
+						  tbinfo->dobj.name);
+		else
+			exit_horribly(NULL, "query to obtain definition of view \"%s\" returned more than one definition\n",
+						  tbinfo->dobj.name);
+	}
+
+	viewdef = PQgetvalue(res, 0, 0);
+	len = strlen(viewdef);
+
+	if (len == 0)
+		exit_horribly(NULL, "definition of view \"%s\" appears to be empty (length zero)\n",
+					  tbinfo->dobj.name);
+
+	PQclear(res);
+	destroyPQExpBuffer(query);
+
+	/* Strip off the trailing semicolon so that other things may follow. */
+	viewdef[len - 1] = '\0';
+
+	return viewdef;
+}
+
 /*
  * dumpTableSchema
  *	  write the declaration (not data) of one user-defined table or view
@@ -12354,11 +12399,9 @@ dumpTable(Archive *fout, TableInfo *tbinfo)
 static void
 dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 {
-	PQExpBuffer query = createPQExpBuffer();
 	PQExpBuffer q = createPQExpBuffer();
 	PQExpBuffer delq = createPQExpBuffer();
 	PQExpBuffer labelq = createPQExpBuffer();
-	PGresult   *res;
 	int			numParents;
 	TableInfo **parents;
 	int			actual_atts;	/* number of attrs in this CREATE statement */
@@ -12379,43 +12422,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 	/* Is it a table or a view? */
 	if (tbinfo->relkind == RELKIND_VIEW)
 	{
-		char	   *viewdef;
-
 		reltypename = "VIEW";
-
-		/* Fetch the view definition */
-		if (fout->remoteVersion >= 70300)
-		{
-			/* Beginning in 7.3, viewname is not unique; rely on OID */
-			appendPQExpBuffer(query,
-							  "SELECT pg_catalog.pg_get_viewdef('%u'::pg_catalog.oid) AS viewdef",
-							  tbinfo->dobj.catId.oid);
-		}
-		else
-		{
-			appendPQExpBuffer(query, "SELECT definition AS viewdef "
-							  "FROM pg_views WHERE viewname = ");
-			appendStringLiteralAH(query, tbinfo->dobj.name, fout);
-			appendPQExpBuffer(query, ";");
-		}
-
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
-
-		if (PQntuples(res) != 1)
-		{
-			if (PQntuples(res) < 1)
-				exit_horribly(NULL, "query to obtain definition of view \"%s\" returned no data\n",
-							  tbinfo->dobj.name);
-			else
-				exit_horribly(NULL, "query to obtain definition of view \"%s\" returned more than one definition\n",
-							  tbinfo->dobj.name);
-		}
-
-		viewdef = PQgetvalue(res, 0, 0);
-
-		if (strlen(viewdef) == 0)
-			exit_horribly(NULL, "definition of view \"%s\" appears to be empty (length zero)\n",
-						  tbinfo->dobj.name);
 
 		/*
 		 * DROP must be fully qualified in case same name appears in
@@ -12433,49 +12440,59 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		appendPQExpBuffer(q, "CREATE VIEW %s", fmtId(tbinfo->dobj.name));
 		if (tbinfo->reloptions && strlen(tbinfo->reloptions) > 0)
 			appendPQExpBuffer(q, " WITH (%s)", tbinfo->reloptions);
-		appendPQExpBuffer(q, " AS\n    %s\n", viewdef);
+		appendPQExpBuffer(q, " AS\n    %s;\n",
+						  create_view_as_clause(fout, tbinfo));
 
 		appendPQExpBuffer(labelq, "VIEW %s",
 						  fmtId(tbinfo->dobj.name));
-
-		PQclear(res);
 	}
 	else
 	{
-		if (tbinfo->relkind == RELKIND_FOREIGN_TABLE)
+		switch (tbinfo->relkind)
 		{
-			int			i_srvname;
-			int			i_ftoptions;
+			case (RELKIND_FOREIGN_TABLE):
+			{
+				PQExpBuffer query = createPQExpBuffer();
+				PGresult   *res;
+				int			i_srvname;
+				int			i_ftoptions;
 
-			reltypename = "FOREIGN TABLE";
+				reltypename = "FOREIGN TABLE";
 
-			/* retrieve name of foreign server and generic options */
-			appendPQExpBuffer(query,
-							  "SELECT fs.srvname, "
-							  "pg_catalog.array_to_string(ARRAY("
-							  "SELECT pg_catalog.quote_ident(option_name) || "
-							  "' ' || pg_catalog.quote_literal(option_value) "
-							"FROM pg_catalog.pg_options_to_table(ftoptions) "
-							  "ORDER BY option_name"
-							  "), E',\n    ') AS ftoptions "
-							  "FROM pg_catalog.pg_foreign_table ft "
-							  "JOIN pg_catalog.pg_foreign_server fs "
-							  "ON (fs.oid = ft.ftserver) "
-							  "WHERE ft.ftrelid = '%u'",
-							  tbinfo->dobj.catId.oid);
-			res = ExecuteSqlQueryForSingleRow(fout, query->data);
-			i_srvname = PQfnumber(res, "srvname");
-			i_ftoptions = PQfnumber(res, "ftoptions");
-			srvname = pg_strdup(PQgetvalue(res, 0, i_srvname));
-			ftoptions = pg_strdup(PQgetvalue(res, 0, i_ftoptions));
-			PQclear(res);
+				/* retrieve name of foreign server and generic options */
+				appendPQExpBuffer(query,
+								  "SELECT fs.srvname, "
+								  "pg_catalog.array_to_string(ARRAY("
+								  "SELECT pg_catalog.quote_ident(option_name) || "
+								  "' ' || pg_catalog.quote_literal(option_value) "
+								"FROM pg_catalog.pg_options_to_table(ftoptions) "
+								  "ORDER BY option_name"
+								  "), E',\n    ') AS ftoptions "
+								  "FROM pg_catalog.pg_foreign_table ft "
+								  "JOIN pg_catalog.pg_foreign_server fs "
+								  "ON (fs.oid = ft.ftserver) "
+								  "WHERE ft.ftrelid = '%u'",
+								  tbinfo->dobj.catId.oid);
+				res = ExecuteSqlQueryForSingleRow(fout, query->data);
+				i_srvname = PQfnumber(res, "srvname");
+				i_ftoptions = PQfnumber(res, "ftoptions");
+				srvname = pg_strdup(PQgetvalue(res, 0, i_srvname));
+				ftoptions = pg_strdup(PQgetvalue(res, 0, i_ftoptions));
+				PQclear(res);
+				destroyPQExpBuffer(query);
+				break;
+			}
+			case (RELKIND_MATVIEW):
+				reltypename = "TABLE";
+				srvname = NULL;
+				ftoptions = NULL;
+				break;
+			default:
+				reltypename = "TABLE";
+				srvname = NULL;
+				ftoptions = NULL;
 		}
-		else
-		{
-			reltypename = "TABLE";
-			srvname = NULL;
-			ftoptions = NULL;
-		}
+
 		numParents = tbinfo->numParents;
 		parents = tbinfo->parents;
 
@@ -12682,7 +12699,14 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		if (ftoptions && ftoptions[0])
 			appendPQExpBuffer(q, "\nOPTIONS (\n    %s\n)", ftoptions);
 
-		appendPQExpBuffer(q, ";\n");
+		/*
+		 * For materialized views, create the AS clause just like a view.
+		 */
+		if (tbinfo->relkind == RELKIND_MATVIEW)
+			appendPQExpBuffer(q, " AS\n    %s\n  WITH NO DATA;\n",
+							  create_view_as_clause(fout, tbinfo));
+		else
+			appendPQExpBuffer(q, ";\n");
 
 		/*
 		 * To create binary-compatible heap files, we have to ensure the same
@@ -12938,7 +12962,6 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		dumpTableConstraintComment(fout, constr);
 	}
 
-	destroyPQExpBuffer(query);
 	destroyPQExpBuffer(q);
 	destroyPQExpBuffer(delq);
 	destroyPQExpBuffer(labelq);
