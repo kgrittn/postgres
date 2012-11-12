@@ -1042,9 +1042,9 @@ expand_table_name_patterns(Archive *fout,
 						  "SELECT c.oid"
 						  "\nFROM pg_catalog.pg_class c"
 		"\n     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
-						  "\nWHERE c.relkind in ('%c', '%c', '%c', '%c')\n",
+						  "\nWHERE c.relkind in ('%c', '%c', '%c', '%c', '%c')\n",
 						  RELKIND_RELATION, RELKIND_SEQUENCE, RELKIND_VIEW,
-						  RELKIND_FOREIGN_TABLE);
+						  RELKIND_MATVIEW, RELKIND_FOREIGN_TABLE);
 		processSQLNamePattern(GetConnection(fout), query, cell->val, true,
 							  false, "n.nspname", "c.relname", NULL,
 							  "pg_catalog.pg_table_is_visible(c.oid)");
@@ -1604,6 +1604,51 @@ dumpTableData(Archive *fout, TableDataInfo *tdinfo)
 	destroyPQExpBuffer(copyBuf);
 }
 
+
+
+/*
+ * dumpMatViewData -
+ *	  dump the contents of a single table
+ *
+ * Actually, this just makes an ArchiveEntry for the table contents.
+ * And it doesn't actually dump data, it dumps a LOAD MATERIALIZED VIEW
+ * statement.
+ */
+static void
+dumpMatViewData(Archive *fout, TableDataInfo *tdinfo)
+{
+	TableInfo  *tbinfo = tdinfo->tdtable;
+	PQExpBuffer copyBuf = createPQExpBuffer();
+	DataDumperPtr dumpFn;
+	char	   *copyStmt;
+
+	/* Dump/restore using COPY */
+	dumpFn = dumpTableData_copy;
+	/* must use 2 steps here 'cause fmtId is nonreentrant */
+	appendPQExpBuffer(copyBuf, "COPY %s ",
+					  fmtId(tbinfo->dobj.name));
+	appendPQExpBuffer(copyBuf, "%s %sFROM stdin;\n",
+					  fmtCopyColumnList(tbinfo),
+				  (tdinfo->oids && tbinfo->hasoids) ? "WITH OIDS " : "");
+	copyStmt = copyBuf->data;
+
+	/*
+	 * Note: although the TableDataInfo is a full DumpableObject, we treat its
+	 * dependency on its table as "special" and pass it to ArchiveEntry now.
+	 * See comments for BuildArchiveDependencies.
+	 */
+	ArchiveEntry(fout, tdinfo->dobj.catId, tdinfo->dobj.dumpId,
+				 tbinfo->dobj.name, tbinfo->dobj.namespace->dobj.name,
+				 NULL, tbinfo->rolname,
+				 false, "TABLE DATA", SECTION_DATA,
+				 "", "", copyStmt,
+				 &(tbinfo->dobj.dumpId), 1,
+				 dumpFn, tdinfo);
+
+	destroyPQExpBuffer(copyBuf);
+}
+
+
 /*
  * getTableData -
  *	  set up dumpable objects representing the contents of tables
@@ -1756,9 +1801,10 @@ guessConstraintInheritance(TableInfo *tblinfo, int numTables)
 		TableInfo **parents;
 		TableInfo  *parent;
 
-		/* Sequences and views never have parents */
+		/* Sequences, views, and materialized views never have parents */
 		if (tbinfo->relkind == RELKIND_SEQUENCE ||
-			tbinfo->relkind == RELKIND_VIEW)
+			tbinfo->relkind == RELKIND_VIEW ||
+			tbinfo->relkind == RELKIND_MATVIEW)
 			continue;
 
 		/* Don't bother computing anything for non-target tables, either */
@@ -4501,7 +4547,10 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 		TableInfo  *tbinfo = &tblinfo[i];
 
 		/* Only plain tables have indexes */
-		if (tbinfo->relkind != RELKIND_RELATION || !tbinfo->hasindex)
+		if (tbinfo->relkind != RELKIND_RELATION &&
+			tbinfo->relkind != RELKIND_MATVIEW)
+			continue;
+		if (!tbinfo->hasindex)
 			continue;
 
 		/* Ignore indexes of tables not to be dumped */
@@ -5083,12 +5132,14 @@ getRules(Archive *fout, int *numRules)
 		if (ruleinfo[i].ruletable)
 		{
 			/*
-			 * If the table is a view, force its ON SELECT rule to be sorted
-			 * before the view itself --- this ensures that any dependencies
-			 * for the rule affect the table's positioning. Other rules are
-			 * forced to appear after their table.
+			 * If the table is a view or materialized view, force its ON
+			 * SELECT rule to be sorted before the view itself --- this
+			 * ensures that any dependencies for the rule affect the table's
+			 * positioning. Other rules are forced to appear after their
+			 * table.
 			 */
-			if (ruleinfo[i].ruletable->relkind == RELKIND_VIEW &&
+			if ((ruleinfo[i].ruletable->relkind == RELKIND_VIEW ||
+			     ruleinfo[i].ruletable->relkind == RELKIND_MATVIEW) &&
 				ruleinfo[i].ev_type == '1' && ruleinfo[i].is_instead)
 			{
 				addObjectDependency(&ruleinfo[i].ruletable->dobj,
@@ -7318,6 +7369,8 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 		case DO_TABLE_DATA:
 			if (((TableDataInfo *) dobj)->tdtable->relkind == RELKIND_SEQUENCE)
 				dumpSequenceData(fout, (TableDataInfo *) dobj);
+			else if (((TableDataInfo *) dobj)->tdtable->relkind == RELKIND_MATVIEW)
+				dumpMatViewData(fout, (TableDataInfo *) dobj);
 			else
 				dumpTableData(fout, (TableDataInfo *) dobj);
 			break;
