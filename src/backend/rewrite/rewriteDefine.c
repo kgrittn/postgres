@@ -351,7 +351,8 @@ DefineQueryRewrite(char *rulename,
 		 */
 		checkRuleResultList(query->targetList,
 							RelationGetDescr(event_relation),
-							true);
+							event_relation->rd_rel->relkind !=
+								RELKIND_MATVIEW);
 
 		/*
 		 * ... there must not be another ON SELECT rule already ...
