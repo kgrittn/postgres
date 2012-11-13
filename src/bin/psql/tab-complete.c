@@ -773,6 +773,7 @@ static const pgsql_thing_t words_after_create[] = {
 	{"GROUP", Query_for_list_of_roles},
 	{"LANGUAGE", Query_for_list_of_languages},
 	{"INDEX", NULL, &Query_for_list_of_indexes},
+	{"MATERIALIZED VIEW", NULL, NULL},
 	{"OPERATOR", NULL, NULL},	/* Querying for this is probably not such a
 								 * good idea. */
 	{"OWNED", NULL, NULL, THING_NO_CREATE},		/* for DROP OWNED BY ... */
@@ -794,7 +795,6 @@ static const pgsql_thing_t words_after_create[] = {
 												 * ... */
 	{"USER", Query_for_list_of_roles},
 	{"USER MAPPING FOR", NULL, NULL},
-	{"MATERIALIZED VIEW", NULL, &Query_for_list_of_matviews},
 	{"VIEW", NULL, &Query_for_list_of_views},
 	{NULL}						/* end of list */
 };
@@ -1122,6 +1122,14 @@ psql_completion(char *text, int start, int end)
 		{"OWNER TO", NULL};
 
 		COMPLETE_WITH_LIST(list_ALTERLARGEOBJECT);
+	}
+
+	/* ALTER MATERIALIZED VIEW */
+	else if (pg_strcasecmp(prev3_wd, "ALTER") == 0 &&
+			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev_wd, "VIEW") == 0)
+	{
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
 	}
 
 	/* ALTER USER,ROLE <name> */
@@ -2403,6 +2411,15 @@ psql_completion(char *text, int start, int end)
 
 		COMPLETE_WITH_LIST(drop_CREATE_FOREIGN);
 	}
+
+	/* DROP MATERIALIZED VIEW */
+	else if (pg_strcasecmp(prev3_wd, "DROP") == 0 &&
+			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev_wd, "VIEW") == 0)
+	{
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
+	}
+
 	else if (pg_strcasecmp(prev4_wd, "DROP") == 0 &&
 			 (pg_strcasecmp(prev3_wd, "AGGREGATE") == 0 ||
 			  pg_strcasecmp(prev3_wd, "FUNCTION") == 0) &&
