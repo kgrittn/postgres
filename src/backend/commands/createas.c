@@ -358,6 +358,16 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 					 errmsg("materialized views must not use data-modifying statements in WITH")));
 
 		/*
+		 * Unlogged materialized views would be useful, but there has not yet
+		 * been a solution to the question of how to flag them as invalid
+		 * after a crash.
+		 */
+		if (into->rel->relpersistence == RELPERSISTENCE_UNLOGGED)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("unlogged materialized views are not supported")));
+
+		/*
 		 * If the user didn't explicitly ask for a temporary materialized
 		 * view, check whether any temporary database objects are used in its
 		 * creation query. It would be hard to refresh data or incrementally
