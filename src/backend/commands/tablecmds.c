@@ -3047,12 +3047,12 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_SetOptions:		/* ALTER COLUMN SET ( options ) */
 		case AT_ResetOptions:	/* ALTER COLUMN RESET ( options ) */
-			ATSimplePermissions(rel, ATT_TABLE | ATT_INDEX | ATT_FOREIGN_TABLE);
+			ATSimplePermissions(rel, ATT_TABLE | ATT_MATVIEW | ATT_INDEX | ATT_FOREIGN_TABLE);
 			/* This command never recurses */
 			pass = AT_PASS_MISC;
 			break;
 		case AT_SetStorage:		/* ALTER COLUMN SET STORAGE */
-			ATSimplePermissions(rel, ATT_TABLE);
+			ATSimplePermissions(rel, ATT_TABLE | ATT_MATVIEW);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode);
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -3065,7 +3065,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_AddIndex:		/* ADD INDEX */
-			ATSimplePermissions(rel, ATT_TABLE);
+			ATSimplePermissions(rel, ATT_TABLE | ATT_MATVIEW);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_INDEX;
@@ -3112,7 +3112,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_ClusterOn:		/* CLUSTER ON */
 		case AT_DropCluster:	/* SET WITHOUT CLUSTER */
-			ATSimplePermissions(rel, ATT_TABLE);
+			ATSimplePermissions(rel, ATT_TABLE | ATT_MATVIEW);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -3139,7 +3139,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_SetTableSpace:	/* SET TABLESPACE */
-			ATSimplePermissions(rel, ATT_TABLE | ATT_INDEX);
+			ATSimplePermissions(rel, ATT_TABLE | ATT_MATVIEW | ATT_INDEX);
 			/* This command never recurses */
 			ATPrepSetTableSpace(tab, rel, cmd->name, lockmode);
 			pass = AT_PASS_MISC;	/* doesn't actually matter */
@@ -3147,7 +3147,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_SetRelOptions:	/* SET (...) */
 		case AT_ResetRelOptions:		/* RESET (...) */
 		case AT_ReplaceRelOptions:		/* reset them all, then set just these */
-			ATSimplePermissions(rel, ATT_TABLE | ATT_INDEX | ATT_VIEW);
+			ATSimplePermissions(rel, ATT_TABLE | ATT_VIEW | ATT_MATVIEW | ATT_INDEX);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -4042,17 +4042,26 @@ ATWrongRelkindError(Relation rel, int allowed_targets)
 		case ATT_TABLE:
 			msg = _("\"%s\" is not a table");
 			break;
-		case ATT_TABLE | ATT_INDEX:
-			msg = _("\"%s\" is not a table or index");
-			break;
 		case ATT_TABLE | ATT_VIEW:
 			msg = _("\"%s\" is not a table or view");
+			break;
+		case ATT_TABLE | ATT_VIEW | ATT_MATVIEW | ATT_INDEX:
+			msg = _("\"%s\" is not a table, view, materialized view, or index");
+			break;
+		case ATT_TABLE | ATT_MATVIEW:
+			msg = _("\"%s\" is not a table or materialized view");
+			break;
+		case ATT_TABLE | ATT_MATVIEW | ATT_INDEX:
+			msg = _("\"%s\" is not a table, materialized view, or index");
 			break;
 		case ATT_TABLE | ATT_FOREIGN_TABLE:
 			msg = _("\"%s\" is not a table or foreign table");
 			break;
 		case ATT_TABLE | ATT_COMPOSITE_TYPE | ATT_FOREIGN_TABLE:
 			msg = _("\"%s\" is not a table, composite type, or foreign table");
+			break;
+		case ATT_TABLE | ATT_MATVIEW | ATT_INDEX | ATT_FOREIGN_TABLE:
+			msg = _("\"%s\" is not a table, materialized view, composite type, or foreign table");
 			break;
 		case ATT_VIEW:
 			msg = _("\"%s\" is not a view");
