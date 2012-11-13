@@ -4390,8 +4390,6 @@ getTables(Archive *fout, int *numTables)
 		 *
 		 * NOTE: it'd be kinda nice to lock other relations too, not only
 		 * plain tables, but the backend doesn't presently allow that.
-		 * 
-		 * TODO: Do we need to allow lock on materialized view because of this?
 		 */
 		if (tblinfo[i].dobj.dump && tblinfo[i].relkind == RELKIND_RELATION)
 		{
