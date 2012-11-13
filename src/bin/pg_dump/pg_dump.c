@@ -12340,13 +12340,19 @@ dumpTable(Archive *fout, TableInfo *tbinfo)
 	}
 }
 
-static char *
-create_view_as_clause(Archive *fout, TableInfo *tbinfo)
+/*
+ * Create the AS clause for a view or materialized view. The semicolon is
+ * stripped because a materialized view must add a WITH NO DATA clause.
+ * 
+ * This returns a new buffer which must be freed by the caller.
+ */
+static PQExpBuffer
+createViewAsClause(Archive *fout, TableInfo *tbinfo)
 {
 	PQExpBuffer query = createPQExpBuffer();
+	PQExpBuffer result = createPQExpBuffer();
 	PGresult   *res;
-	char	   *viewdef;
-	size_t		len;
+	int			len;
 
 	/* Fetch the view definition */
 	if (fout->remoteVersion >= 70300)
@@ -12376,20 +12382,19 @@ create_view_as_clause(Archive *fout, TableInfo *tbinfo)
 						  tbinfo->dobj.name);
 	}
 
-	viewdef = PQgetvalue(res, 0, 0);
-	len = strlen(viewdef);
+	len = PQgetlength(res, 0, 0);
 
 	if (len == 0)
 		exit_horribly(NULL, "definition of view \"%s\" appears to be empty (length zero)\n",
 					  tbinfo->dobj.name);
 
+	/* Strip off the trailing semicolon so that other things may follow. */
+	appendBinaryPQExpBuffer(result, PQgetvalue(res, 0, 0), len - 1);
+
 	PQclear(res);
 	destroyPQExpBuffer(query);
 
-	/* Strip off the trailing semicolon so that other things may follow. */
-	viewdef[len - 1] = '\0';
-
-	return viewdef;
+	return result;
 }
 
 /*
@@ -12422,6 +12427,8 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 	/* Is it a table or a view? */
 	if (tbinfo->relkind == RELKIND_VIEW)
 	{
+		PQExpBuffer result;
+
 		reltypename = "VIEW";
 
 		/*
@@ -12440,8 +12447,9 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		appendPQExpBuffer(q, "CREATE VIEW %s", fmtId(tbinfo->dobj.name));
 		if (tbinfo->reloptions && strlen(tbinfo->reloptions) > 0)
 			appendPQExpBuffer(q, " WITH (%s)", tbinfo->reloptions);
-		appendPQExpBuffer(q, " AS\n    %s;\n",
-						  create_view_as_clause(fout, tbinfo));
+		result = createViewAsClause(fout, tbinfo);
+		appendPQExpBuffer(q, " AS\n    %s;\n", result->data);
+		destroyPQExpBuffer(result);
 
 		appendPQExpBuffer(labelq, "VIEW %s",
 						  fmtId(tbinfo->dobj.name));
@@ -12703,8 +12711,14 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		 * For materialized views, create the AS clause just like a view.
 		 */
 		if (tbinfo->relkind == RELKIND_MATVIEW)
+		{
+			PQExpBuffer result;
+
+			result = createViewAsClause(fout, tbinfo);
 			appendPQExpBuffer(q, " AS\n    %s\n  WITH NO DATA;\n",
-							  create_view_as_clause(fout, tbinfo));
+							  result->data);
+			destroyPQExpBuffer(result);
+		}
 		else
 			appendPQExpBuffer(q, ";\n");
 
