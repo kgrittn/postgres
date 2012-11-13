@@ -49,6 +49,7 @@
    &alterIndex;
    &alterLanguage;
    &alterLargeObject;
+   &alterMaterializedView;
    &alterOperator;
    &alterOperatorClass;
    &alterOperatorFamily;
@@ -90,6 +91,7 @@
    &createGroup;
    &createIndex;
    &createLanguage;
+   &createMaterializedView;
    &createOperator;
    &createOperatorClass;
    &createOperatorFamily;
@@ -129,6 +131,7 @@
    &dropGroup;
    &dropIndex;
    &dropLanguage;
+   &dropMaterializedView;
    &dropOperator;
    &dropOperatorClass;
    &dropOperatorFamily;
