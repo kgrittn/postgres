@@ -1615,31 +1615,34 @@ static void
 dumpMatViewData(Archive *fout, TableDataInfo *tdinfo)
 {
 	TableInfo  *tbinfo = tdinfo->tdtable;
-	PQExpBuffer copyBuf = createPQExpBuffer();
-	char	   *copyStmt;
+	PQExpBuffer q;
 
-	appendPQExpBuffer(copyBuf, "LOAD MATERIALIZED VIEW %s;\n",
+	if (!(tbinfo->relisvalid))
+		return;
+
+	q = createPQExpBuffer();
+	appendPQExpBuffer(q, "LOAD MATERIALIZED VIEW %s;\n",
 					  fmtId(tbinfo->dobj.name));
-	copyStmt = copyBuf->data;
 
-	/*
-	 * TODO: Somehow we must get this statement to run after table creation
-	 * and before index creation. Since later materialized views may depend
-	 * on the data from this one, possibly through regualr views, it should
-	 * fall in dependency order amongst all views and materialized views, and
-	 * should fall after the data is loaded for any tables on which this is
-	 * dependent. Ideally, all tables should be created, populated, indexed,
-	 * and analyzed before this is run.  Do we need a whole new phase?
-	 */
-	ArchiveEntry(fout, tdinfo->dobj.catId, tdinfo->dobj.dumpId,
-				 tbinfo->dobj.name, tbinfo->dobj.namespace->dobj.name,
-				 NULL, tbinfo->rolname,
-				 false, "TABLE DATA", SECTION_DATA,
-				 "", "", copyStmt,
-				 &(tbinfo->dobj.dumpId), 1,
-				 NULL, tdinfo);
+	ArchiveEntry(fout,
+				 tdinfo->dobj.catId,					/* catalog ID */
+				 tdinfo->dobj.dumpId,					/* dump ID */
+				 tbinfo->dobj.name,						/* Name */
+				 tbinfo->dobj.namespace->dobj.name,	/* Namespace */
+				 NULL,									/* Tablespace */
+				 tbinfo->rolname,						/* Owner */
+				 false,									/* with oids */
+				 "MATERIALIZED VIEW DATA",				/* Desc */
+				 SECTION_POST_DATA,						/* Section */
+				 q->data,								/* Create */
+				 "",									/* Del */
+				 NULL,									/* Copy */
+				 &(tbinfo->dobj.dumpId),				/* Deps */
+				 1,										/* # Deps */
+				 NULL,									/* Dumper */
+				 NULL);									/* Dumper Arg */
 
-	destroyPQExpBuffer(copyBuf);
+	destroyPQExpBuffer(q);
 }
 
 /*
@@ -12489,7 +12492,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				break;
 			}
 			case (RELKIND_MATVIEW):
-				reltypename = "TABLE";
+				reltypename = "MATERIALIZED VIEW";
 				srvname = NULL;
 				ftoptions = NULL;
 				break;
@@ -12570,8 +12573,12 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				actual_atts++;
 
 				/* Attribute name */
-				appendPQExpBuffer(q, "%s ",
+				appendPQExpBuffer(q, "%s",
 								  fmtId(tbinfo->attnames[j]));
+
+				/* Materialized views just have column names, not types. */
+				if (tbinfo->relkind == RELKIND_MATVIEW)
+					continue;
 
 				if (tbinfo->attisdropped[j])
 				{
@@ -12580,7 +12587,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 					 * so we will not have gotten a valid type name; insert
 					 * INTEGER as a stopgap.  We'll clean things up later.
 					 */
-					appendPQExpBuffer(q, "INTEGER /* dummy */");
+					appendPQExpBuffer(q, " INTEGER /* dummy */");
 					/* Skip all the rest, too */
 					continue;
 				}
@@ -12588,17 +12595,17 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				/* Attribute type */
 				if (tbinfo->reloftype && !binary_upgrade)
 				{
-					appendPQExpBuffer(q, "WITH OPTIONS");
+					appendPQExpBuffer(q, " WITH OPTIONS");
 				}
 				else if (fout->remoteVersion >= 70100)
 				{
-					appendPQExpBuffer(q, "%s",
+					appendPQExpBuffer(q, " %s",
 									  tbinfo->atttypnames[j]);
 				}
 				else
 				{
 					/* If no format_type, fake it */
-					appendPQExpBuffer(q, "%s",
+					appendPQExpBuffer(q, " %s",
 									  myFormatType(tbinfo->atttypnames[j],
 												   tbinfo->atttypmod[j]));
 				}
