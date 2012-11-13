@@ -1,0 +1,83 @@
+<!--
+doc/src/sgml/ref/load_materialized_view.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="SQL-LOADMATERIALIZEDVIEW">
+ <refmeta>
+  <refentrytitle>LOAD MATERIALIZED VIEW</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>SQL - Language Statements</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>LOAD MATERIALIZED VIEW</refname>
+  <refpurpose>refresh a materialized view</refpurpose>
+ </refnamediv>
+
+ <indexterm zone="sql-dropmaterializedview">
+  <primary>LOAD MATERIALIZED VIEW</primary>
+ </indexterm>
+
+ <refsynopsisdiv>
+<synopsis>
+LOAD MATERIALIZED VIEW <replaceable class="PARAMETER">name</replaceable>
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <command>LOAD MATERIALIZED VIEW</command> refreshes the contents of a
+   materialized view by re-executing the backing query.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Parameters</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="PARAMETER">name</replaceable></term>
+    <listitem>
+     <para>
+      The name (optionally schema-qualified) of the materialized view to
+      refresh.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Examples</title>
+
+  <para>
+   This command will refresh the materialized view called
+   <literal>order_summary</literal>:
+<programlisting>
+LOAD MATERIALIZED VIEW order_summary;
+</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Compatibility</title>
+
+  <para>
+   <command>LOAD MATERIALIZED VIEW</command> is a
+   <productname>PostgreSQL</productname> extension.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>See Also</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-creatematerializedview"></member>
+   <member><xref linkend="sql-altermaterializedview"></member>
+   <member><xref linkend="sql-dropmaterializedview"></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

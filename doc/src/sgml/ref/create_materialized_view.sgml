@@ -237,6 +237,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] MATERIALIZED VIEW 
    <member><xref linkend="sql-createtableas"></member>
    <member><xref linkend="sql-createview"></member>
    <member><xref linkend="sql-dropmaterializedview"></member>
+   <member><xref linkend="sql-loadmaterializedview"></member>
   </simplelist>
  </refsect1>
 

@@ -160,6 +160,7 @@
    &insert;
    &listen;
    &load;
+   &loadMaterializedView;
    &lock;
    &move;
    &notify;
