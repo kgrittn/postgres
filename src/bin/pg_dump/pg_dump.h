@@ -121,7 +121,9 @@ typedef enum
 	DO_BLOB_DATA,
 	DO_PRE_DATA_BOUNDARY,
 	DO_POST_DATA_BOUNDARY,
-	DO_EVENT_TRIGGER
+	DO_EVENT_TRIGGER,
+	DO_LOAD_MATVIEW,
+	DO_MATVIEW_INDEX
 } DumpableObjectType;
 
 typedef struct _dumpableObject

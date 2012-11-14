@@ -1605,14 +1605,14 @@ dumpTableData(Archive *fout, TableDataInfo *tdinfo)
 }
 
 /*
- * dumpMatViewData -
- *	  dump the contents of a single materialized view
+ * loadMatViewData -
+ *	  load the contents of a single materialized view
  *
  * Actually, this just makes an ArchiveEntry for the LOAD MATERIALIZED VIEW
  * statement.
  */
 static void
-dumpMatViewData(Archive *fout, TableDataInfo *tdinfo)
+loadMatViewData(Archive *fout, TableDataInfo *tdinfo)
 {
 	TableInfo  *tbinfo = tdinfo->tdtable;
 	PQExpBuffer q;
@@ -1699,7 +1699,10 @@ makeTableDataInfo(TableInfo *tbinfo, bool oids)
 	/* OK, let's dump it */
 	tdinfo = (TableDataInfo *) pg_malloc(sizeof(TableDataInfo));
 
-	tdinfo->dobj.objType = DO_TABLE_DATA;
+	if (tbinfo->relkind == RELKIND_MATVIEW)
+		tdinfo->dobj.objType = DO_LOAD_MATVIEW;
+	else
+		tdinfo->dobj.objType = DO_TABLE_DATA;
 
 	/*
 	 * Note: use tableoid 0 so that this object won't be mistaken for
@@ -1797,10 +1800,9 @@ guessConstraintInheritance(TableInfo *tblinfo, int numTables)
 		TableInfo **parents;
 		TableInfo  *parent;
 
-		/* Sequences, views, and materialized views never have parents */
+		/* Sequences and views never have parents */
 		if (tbinfo->relkind == RELKIND_SEQUENCE ||
-			tbinfo->relkind == RELKIND_VIEW ||
-			tbinfo->relkind == RELKIND_MATVIEW)
+			tbinfo->relkind == RELKIND_VIEW)
 			continue;
 
 		/* Don't bother computing anything for non-target tables, either */
@@ -4763,7 +4765,10 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 		{
 			char		contype;
 
-			indxinfo[j].dobj.objType = DO_INDEX;
+			if (tbinfo->relkind == RELKIND_MATVIEW)
+				indxinfo[j].dobj.objType = DO_MATVIEW_INDEX;
+			else
+				indxinfo[j].dobj.objType = DO_INDEX;
 			indxinfo[j].dobj.catId.tableoid = atooid(PQgetvalue(res, j, i_tableoid));
 			indxinfo[j].dobj.catId.oid = atooid(PQgetvalue(res, j, i_oid));
 			AssignDumpId(&indxinfo[j].dobj);
@@ -7344,6 +7349,12 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 		case DO_INDEX:
 			dumpIndex(fout, (IndxInfo *) dobj);
 			break;
+		case DO_LOAD_MATVIEW:
+			loadMatViewData(fout, (TableDataInfo *) dobj);
+			break;
+		case DO_MATVIEW_INDEX:
+			dumpMatViewIndex(fout, (IndxInfo *) dobj);
+			break;
 		case DO_RULE:
 			dumpRule(fout, (RuleInfo *) dobj);
 			break;
@@ -7368,8 +7379,6 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 		case DO_TABLE_DATA:
 			if (((TableDataInfo *) dobj)->tdtable->relkind == RELKIND_SEQUENCE)
 				dumpSequenceData(fout, (TableDataInfo *) dobj);
-			else if (((TableDataInfo *) dobj)->tdtable->relkind == RELKIND_MATVIEW)
-				dumpMatViewData(fout, (TableDataInfo *) dobj);
 			else
 				dumpTableData(fout, (TableDataInfo *) dobj);
 			break;
@@ -14474,6 +14483,8 @@ addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 				addObjectDependency(postDataBound, dobj->dumpId);
 				break;
 			case DO_INDEX:
+			case DO_LOAD_MATVIEW:
+			case DO_MATVIEW_INDEX:
 			case DO_TRIGGER:
 			case DO_EVENT_TRIGGER:
 			case DO_DEFAULT_ACL:
