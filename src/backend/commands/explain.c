@@ -358,7 +358,7 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
 
 		Assert(IsA(ctas->query, Query));
 
-		query = SetupForCreateTableAs(query, ctas->into, dest, params);
+		query = SetupForCreateTableAs(query, ctas->into, queryString, params, dest);
 
 		ExplainOneQuery(query, ctas->into, es, queryString, dest, params);
 	}

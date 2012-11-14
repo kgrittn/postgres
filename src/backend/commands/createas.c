@@ -32,6 +32,7 @@
 #include "commands/prepare.h"
 #include "commands/tablecmds.h"
 #include "commands/view.h"
+#include "parser/analyze.h"
 #include "parser/parse_clause.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/smgr.h"
@@ -64,11 +65,9 @@ static void intorel_destroy(DestReceiver *self);
  * Common setup needed by both normal execution and EXPLAIN ANALYZE.
  */
 Query *
-SetupForCreateTableAs(Query *query, IntoClause *into, DestReceiver *dest,
-					   ParamListInfo params)
+SetupForCreateTableAs(Query *query, IntoClause *into, const char *queryString,
+					   ParamListInfo params, DestReceiver *dest)
 {
-	List	   *rewritten;
-
 	Assert(query->commandType == CMD_SELECT);
 
 	/*
@@ -82,12 +81,9 @@ SetupForCreateTableAs(Query *query, IntoClause *into, DestReceiver *dest,
 	 * the case that CTAS is in a portal or plpgsql function and is executed
 	 * repeatedly.	(See also the same hack in EXPLAIN and PREPARE.)
 	 */
-	rewritten = QueryRewrite((Query *) copyObject(query));
+	query = (Query *) parse_analyze((Node *) copyObject(query),
+							  queryString, NULL, 0)->utilityStmt;
 
-	/* SELECT should never rewrite to more or less than one SELECT query */
-	if (list_length(rewritten) != 1)
-		elog(ERROR, "unexpected rewrite result for CREATE TABLE AS SELECT");
-	query = (Query *) linitial(rewritten);
 	Assert(query->commandType == CMD_SELECT);
 
 	/* Save the query after rewrite but before planning. */
@@ -150,7 +146,7 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 		return;
 	}
 
-	query = SetupForCreateTableAs(query, into, dest, params);
+	query = SetupForCreateTableAs(query, into, queryString, params, dest);
 
 	/* plan the query */
 	plan = pg_plan_query(query, 0, params);
