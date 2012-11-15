@@ -81,8 +81,20 @@ SetupForCreateTableAs(Query *query, IntoClause *into, const char *queryString,
 	 * the case that CTAS is in a portal or plpgsql function and is executed
 	 * repeatedly.	(See also the same hack in EXPLAIN and PREPARE.)
 	 */
-	query = (Query *) parse_analyze((Node *) copyObject(query),
-							  queryString, NULL, 0)->utilityStmt;
+	if (into->relkind == RELKIND_MATVIEW)
+		query = (Query *) parse_analyze((Node *) copyObject(query),
+										 queryString, NULL, 0)->utilityStmt;
+	else
+	{
+		List       *rewritten;
+
+		rewritten = QueryRewrite((Query *) copyObject(query));
+
+		/* SELECT should never rewrite to more or less than one SELECT query */
+		if (list_length(rewritten) != 1)
+			elog(ERROR, "unexpected rewrite result for CREATE TABLE AS SELECT");
+		query = (Query *) linitial(rewritten);
+	}
 
 	Assert(query->commandType == CMD_SELECT);
 
