@@ -498,6 +498,7 @@ ExecutorRewind(QueryDesc *queryDesc)
 static void
 ExecCheckRelationsValid(List *rangeTable)
 {
+/*
 	ListCell   *l;
 
 	foreach(l, rangeTable)
@@ -522,6 +523,7 @@ ExecCheckRelationsValid(List *rangeTable)
 								get_rel_name(rte->relid))));
 		}
 	}
+*/
 }
 
 /*
