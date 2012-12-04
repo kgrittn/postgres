@@ -128,6 +128,9 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 	/*
 	 * Check for active uses of the relation in the current transaction, such
 	 * as open scans.
+	 *
+	 * NB: We count on this to protect us against problems with loading the
+	 * data using HEAP_INSERT_FROZEN.
 	 */
 	CheckTableNotInUse(matviewRel, "LOAD MATERIALIZED VIEW");
 
@@ -247,8 +250,9 @@ transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	 * We can skip WAL-logging the insertions, unless PITR or streaming
 	 * replication is in use. We can skip the FSM in any case.
 	 */
-	myState->hi_options = HEAP_INSERT_SKIP_FSM |
-		(XLogIsNeeded() ? 0 : HEAP_INSERT_SKIP_WAL);
+	myState->hi_options = HEAP_INSERT_SKIP_FSM | HEAP_INSERT_FROZEN;
+	if (!XLogIsNeeded())
+		myState->hi_options |= HEAP_INSERT_SKIP_WAL;
 	myState->bistate = GetBulkInsertState();
 
 	/* Not using WAL requires smgr_targblock be initially invalid */
