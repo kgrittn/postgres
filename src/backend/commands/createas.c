@@ -376,18 +376,14 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 					 errmsg("unlogged materialized views are not supported")));
 
 		/*
-		 * If the user didn't explicitly ask for a temporary materialized
-		 * view, check whether any temporary database objects are used in its
+		 * Check whether any temporary database objects are used in the
 		 * creation query. It would be hard to refresh data or incrementally
 		 * maintain it if a source disappeared.
 		 */
-		if (into->rel->relpersistence == RELPERSISTENCE_PERMANENT
-			&& isQueryUsingTempRelation(myState->query))
-		{
+		if (isQueryUsingTempRelation(myState->query))
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("permanent materialized views must not use temporary tables or views")));
-		}
+					 errmsg("materialized views must not use temporary tables or views")));
 	}
 
 	/*

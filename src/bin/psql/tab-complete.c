@@ -2092,7 +2092,7 @@ psql_completion(char *text, int start, int end)
 			  pg_strcasecmp(prev_wd, "TEMPORARY") == 0))
 	{
 		static const char *const list_TEMP[] =
-		{"SEQUENCE", "TABLE", "VIEW", "MATERIALIZED VIEW", NULL};
+		{"SEQUENCE", "TABLE", "VIEW", NULL};
 
 		COMPLETE_WITH_LIST(list_TEMP);
 	}
