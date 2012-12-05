@@ -107,7 +107,7 @@ DROP MATERIALIZED VIEW order_summary;
   <simplelist type="inline">
    <member><xref linkend="sql-creatematerializedview"></member>
    <member><xref linkend="sql-altermaterializedview"></member>
-   <member><xref linkend="sql-loadmaterializedview"></member>
+   <member><xref linkend="sql-refreshmaterializedview"></member>
   </simplelist>
  </refsect1>
 

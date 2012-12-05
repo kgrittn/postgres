@@ -875,7 +875,7 @@ psql_completion(char *text, int start, int end)
 		"COMMENT", "COMMIT", "COPY", "CREATE", "DEALLOCATE", "DECLARE",
 		"DELETE FROM", "DISCARD", "DO", "DROP", "END", "EXECUTE", "EXPLAIN", "FETCH",
 		"GRANT", "INSERT", "LISTEN", "LOAD", "LOCK", "MOVE", "NOTIFY", "PREPARE",
-		"REASSIGN", "REINDEX", "RELEASE", "RESET", "REVOKE", "ROLLBACK",
+		"REASSIGN", "REFRESH", "REINDEX", "RELEASE", "RESET", "REVOKE", "ROLLBACK",
 		"SAVEPOINT", "SECURITY LABEL", "SELECT", "SET", "SHOW", "START",
 		"TABLE", "TRUNCATE", "UNLISTEN", "UPDATE", "VACUUM", "VALUES", "WITH",
 		NULL
@@ -2723,14 +2723,6 @@ psql_completion(char *text, int start, int end)
 			 pg_strcasecmp(prev2_wd, "DEFAULT") != 0)
 		COMPLETE_WITH_CONST("(");
 
-/* LOAD MATERIALIZED VIEW */
-	else if (pg_strcasecmp(prev_wd, "LOAD") == 0)
-		COMPLETE_WITH_CONST("MATERIALIZED VIEW");
-	else if (pg_strcasecmp(prev3_wd, "LOAD") == 0 &&
-			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
-			 pg_strcasecmp(prev_wd, "VIEW") == 0)
-		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
-
 /* LOCK */
 	/* Complete LOCK [TABLE] with a list of tables */
 	else if (pg_strcasecmp(prev_wd, "LOCK") == 0)
@@ -2821,6 +2813,14 @@ psql_completion(char *text, int start, int end)
 			 pg_strcasecmp(prev4_wd, "OWNED") == 0 &&
 			 pg_strcasecmp(prev5_wd, "REASSIGN") == 0)
 		COMPLETE_WITH_QUERY(Query_for_list_of_roles);
+
+/* REFRESH MATERIALIZED VIEW */
+	else if (pg_strcasecmp(prev_wd, "REFRESH") == 0)
+		COMPLETE_WITH_CONST("MATERIALIZED VIEW");
+	else if (pg_strcasecmp(prev3_wd, "REFRESH") == 0 &&
+			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev_wd, "VIEW") == 0)
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
 
 /* REINDEX */
 	else if (pg_strcasecmp(prev_wd, "REINDEX") == 0)

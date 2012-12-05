@@ -224,7 +224,7 @@ check_xact_readonly(Node *parsetree)
 		case T_CreateSeqStmt:
 		case T_CreateStmt:
 		case T_CreateTableAsStmt:
-		case T_LoadMatViewStmt:
+		case T_RefreshMatViewStmt:
 		case T_CreateTableSpaceStmt:
 		case T_CreateTrigStmt:
 		case T_CompositeTypeStmt:
@@ -1161,11 +1161,11 @@ standard_ProcessUtility(Node *parsetree,
 							  queryString, params, completionTag);
 			break;
 
-		case T_LoadMatViewStmt:
+		case T_RefreshMatViewStmt:
 			if (isCompleteQuery)
 				EventTriggerDDLCommandStart(parsetree);
-			ExecLoadMatView((LoadMatViewStmt *) parsetree,
-							  queryString, params, completionTag);
+			ExecRefreshMatView((RefreshMatViewStmt *) parsetree,
+								queryString, params, completionTag);
 			break;
 
 		case T_VariableSetStmt:
@@ -2141,8 +2141,8 @@ CreateCommandTag(Node *parsetree)
 			}
 			break;
 
-		case T_LoadMatViewStmt:
-			tag = "LOAD MATERIALIZED VIEW";
+		case T_RefreshMatViewStmt:
+			tag = "REFRESH MATERIALIZED VIEW";
 			break;
 
 		case T_VariableSetStmt:
@@ -2675,7 +2675,7 @@ GetCommandLogLevel(Node *parsetree)
 			lev = LOGSTMT_DDL;
 			break;
 
-		case T_LoadMatViewStmt:
+		case T_RefreshMatViewStmt:
 			lev = LOGSTMT_DDL;
 			break;
 

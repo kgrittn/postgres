@@ -160,13 +160,13 @@
    &insert;
    &listen;
    &load;
-   &loadMaterializedView;
    &lock;
    &move;
    &notify;
    &prepare;
    &prepareTransaction;
    &reassignOwned;
+   &refreshMaterializedView;
    &reindex;
    &releaseSavepoint;
    &reset;

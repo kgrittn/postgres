@@ -254,7 +254,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 		DeallocateStmt PrepareStmt ExecuteStmt
 		DropOwnedStmt ReassignOwnedStmt
 		AlterTSConfigurationStmt AlterTSDictionaryStmt
-		CreateMatViewStmt LoadMatViewStmt
+		CreateMatViewStmt RefreshMatViewStmt
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
@@ -358,7 +358,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 %type <defelt>	fdw_option
 
 %type <range>	OptTempTableName
-%type <into>	into_clause create_as_target
+%type <into>	into_clause create_as_target create_mv_target
 
 %type <defelt>	createfunc_opt_item common_func_opt_item dostmt_opt_item
 %type <fun_param> func_arg func_arg_with_default table_func_column
@@ -367,6 +367,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 
 %type <boolean>  opt_trusted opt_restart_seqs
 %type <ival>	 OptTemp
+%type <ival>	 OptNoLog
 %type <oncommit> OnCommitOption
 
 %type <node>	for_locking_item
@@ -578,7 +579,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 
 	QUOTE
 
-	RANGE READ REAL REASSIGN RECHECK RECURSIVE REF REFERENCES REINDEX
+	RANGE READ REAL REASSIGN RECHECK RECURSIVE REF REFERENCES REFRESH REINDEX
 	RELATIVE_P RELEASE RENAME REPEATABLE REPLACE REPLICA
 	RESET RESTART RESTRICT RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK
 	ROW ROWS RULE
@@ -797,7 +798,7 @@ stmt :
 			| IndexStmt
 			| InsertStmt
 			| ListenStmt
-			| LoadMatViewStmt
+			| RefreshMatViewStmt
 			| LoadStmt
 			| LockStmt
 			| NotifyStmt
@@ -3219,7 +3220,7 @@ opt_with_data:
  *****************************************************************************/
 
 CreateMatViewStmt:
-		CREATE OptTemp MATERIALIZED VIEW create_as_target AS SelectStmt opt_with_data
+		CREATE OptNoLog MATERIALIZED VIEW create_mv_target AS SelectStmt opt_with_data
 				{
 					CreateTableAsStmt *ctas = makeNode(CreateTableAsStmt);
 					ctas->query = $7;
@@ -3233,18 +3234,36 @@ CreateMatViewStmt:
 				}
 		;
 
+create_mv_target:
+			qualified_name opt_column_list OptWith OptTableSpace
+				{
+					$$ = makeNode(IntoClause);
+					$$->rel = $1;
+					$$->colNames = $2;
+					$$->options = $3;
+					$$->onCommit = ONCOMMIT_NOOP;
+					$$->tableSpaceName = $4;
+					$$->skipData = false;		/* might get changed later */
+					$$->relkind = INTO_CLAUSE_RELKIND_DEFAULT;
+				}
+		;
+
+OptNoLog:	UNLOGGED					{ $$ = RELPERSISTENCE_UNLOGGED; }
+			| /*EMPTY*/					{ $$ = RELPERSISTENCE_PERMANENT; }
+		;
+
 
 /*****************************************************************************
  *
  *		QUERY :
- *				LOAD MATERIALIZED VIEW qualified_name
+ *				REFRESH MATERIALIZED VIEW qualified_name
  *
  *****************************************************************************/
 
-LoadMatViewStmt:
-		LOAD MATERIALIZED VIEW qualified_name
+RefreshMatViewStmt:
+		REFRESH MATERIALIZED VIEW qualified_name
 				{
-					LoadMatViewStmt *n = makeNode(LoadMatViewStmt);
+					RefreshMatViewStmt *n = makeNode(RefreshMatViewStmt);
 					n->relation = $4;
 					$$ = (Node *) n;
 				}
@@ -8590,7 +8609,7 @@ ExplainableStmt:
 			| DeclareCursorStmt
 			| CreateAsStmt
 			| CreateMatViewStmt
-			| LoadMatViewStmt
+			| RefreshMatViewStmt
 			| ExecuteStmt					/* by default all are $$=$1 */
 		;
 
@@ -12732,6 +12751,7 @@ unreserved_keyword:
 			| RECHECK
 			| RECURSIVE
 			| REF
+			| REFRESH
 			| REINDEX
 			| RELATIVE_P
 			| RELEASE

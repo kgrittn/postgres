@@ -515,7 +515,7 @@ ExecCheckRelationsValid(List *rangeTable)
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 						 errmsg("materialized view \"%s\" has not been populated",
 								get_rel_name(rte->relid)),
-						 errhint("Use the LOAD MATERIALIZED VIEW command.")));
+						 errhint("Use the REFRESH MATERIALIZED VIEW command.")));
 			else
 				ereport(ERROR,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),

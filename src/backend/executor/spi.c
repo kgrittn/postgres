@@ -1945,10 +1945,10 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 					if (((CreateTableAsStmt *) stmt)->is_select_into)
 						res = SPI_OK_SELINTO;
 				}
-				else if (IsA(stmt, LoadMatViewStmt))
+				else if (IsA(stmt, RefreshMatViewStmt))
 				{
 					Assert(strncmp(completionTag,
-								   "LOAD MATERIALIZED VIEW ", 23) == 0);
+								   "REFRESH MATERIALIZED VIEW ", 23) == 0);
 					_SPI_current->processed = strtoul(completionTag + 23,
 													  NULL, 10);
 				}

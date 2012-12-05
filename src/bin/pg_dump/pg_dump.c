@@ -1606,14 +1606,14 @@ dumpTableData(Archive *fout, TableDataInfo *tdinfo)
 }
 
 /*
- * loadMatViewData -
- *	  load the contents of a single materialized view
+ * refreshMatViewData -
+ *	  load or refresh the contents of a single materialized view
  *
- * Actually, this just makes an ArchiveEntry for the LOAD MATERIALIZED VIEW
+ * Actually, this just makes an ArchiveEntry for the REFRESH MATERIALIZED VIEW
  * statement.
  */
 static void
-loadMatViewData(Archive *fout, TableDataInfo *tdinfo)
+refreshMatViewData(Archive *fout, TableDataInfo *tdinfo)
 {
 	TableInfo  *tbinfo = tdinfo->tdtable;
 	PQExpBuffer q;
@@ -1622,7 +1622,7 @@ loadMatViewData(Archive *fout, TableDataInfo *tdinfo)
 		return;
 
 	q = createPQExpBuffer();
-	appendPQExpBuffer(q, "LOAD MATERIALIZED VIEW %s;\n",
+	appendPQExpBuffer(q, "REFRESH MATERIALIZED VIEW %s;\n",
 					  fmtId(tbinfo->dobj.name));
 
 	ArchiveEntry(fout,
@@ -1701,7 +1701,7 @@ makeTableDataInfo(TableInfo *tbinfo, bool oids)
 	tdinfo = (TableDataInfo *) pg_malloc(sizeof(TableDataInfo));
 
 	if (tbinfo->relkind == RELKIND_MATVIEW)
-		tdinfo->dobj.objType = DO_LOAD_MATVIEW;
+		tdinfo->dobj.objType = DO_REFRESH_MATVIEW;
 	else
 		tdinfo->dobj.objType = DO_TABLE_DATA;
 
@@ -7350,8 +7350,8 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 		case DO_INDEX:
 			dumpIndex(fout, (IndxInfo *) dobj);
 			break;
-		case DO_LOAD_MATVIEW:
-			loadMatViewData(fout, (TableDataInfo *) dobj);
+		case DO_REFRESH_MATVIEW:
+			refreshMatViewData(fout, (TableDataInfo *) dobj);
 			break;
 		case DO_MATVIEW_INDEX:
 			dumpMatViewIndex(fout, (IndxInfo *) dobj);
@@ -14560,7 +14560,7 @@ addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 				addObjectDependency(postDataBound, dobj->dumpId);
 				break;
 			case DO_INDEX:
-			case DO_LOAD_MATVIEW:
+			case DO_REFRESH_MATVIEW:
 			case DO_MATVIEW_INDEX:
 			case DO_TRIGGER:
 			case DO_EVENT_TRIGGER:

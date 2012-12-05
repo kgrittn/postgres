@@ -70,7 +70,7 @@ static const int oldObjectTypePriority[] =
 	10,							/* DO_PRE_DATA_BOUNDARY */
 	13,							/* DO_POST_DATA_BOUNDARY */
 	20,							/* DO_EVENT_TRIGGER */
-	15,							/* DO_LOAD_MATVIEW */
+	15,							/* DO_REFRESH_MATVIEW */
 	15							/* DO_MATVIEW_INDEX */
 };
 
@@ -119,7 +119,7 @@ static const int newObjectTypePriority[] =
 	22,							/* DO_PRE_DATA_BOUNDARY */
 	25,							/* DO_POST_DATA_BOUNDARY */
 	33,							/* DO_EVENT_TRIGGER */
-	28,							/* DO_LOAD_MATVIEW */
+	28,							/* DO_REFRESH_MATVIEW */
 	28							/* DO_MATVIEW_INDEX */
 };
 
@@ -1157,9 +1157,9 @@ describeDumpableObject(DumpableObject *obj, char *buf, int bufsize)
 					 "INDEX %s  (ID %d OID %u)",
 					 obj->name, obj->dumpId, obj->catId.oid);
 			return;
-		case DO_LOAD_MATVIEW:
+		case DO_REFRESH_MATVIEW:
 			snprintf(buf, bufsize,
-					 "LOAD MATERIALIZED VIEW %s  (ID %d OID %u)",
+					 "REFRESH MATERIALIZED VIEW %s  (ID %d OID %u)",
 					 obj->name, obj->dumpId, obj->catId.oid);
 			return;
 		case DO_MATVIEW_INDEX:

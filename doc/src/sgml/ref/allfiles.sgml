@@ -132,13 +132,13 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY insert             SYSTEM "insert.sgml">
 <!ENTITY listen             SYSTEM "listen.sgml">
 <!ENTITY load               SYSTEM "load.sgml">
-<!ENTITY loadMaterializedView SYSTEM "load_materialized_view.sgml">
 <!ENTITY lock               SYSTEM "lock.sgml">
 <!ENTITY move               SYSTEM "move.sgml">
 <!ENTITY notify             SYSTEM "notify.sgml">
 <!ENTITY prepare            SYSTEM "prepare.sgml">
 <!ENTITY prepareTransaction SYSTEM "prepare_transaction.sgml">
 <!ENTITY reassignOwned      SYSTEM "reassign_owned.sgml">
+<!ENTITY refreshMaterializedView SYSTEM "refresh_materialized_view.sgml">
 <!ENTITY reindex            SYSTEM "reindex.sgml">
 <!ENTITY releaseSavepoint   SYSTEM "release_savepoint.sgml">
 <!ENTITY reset              SYSTEM "reset.sgml">

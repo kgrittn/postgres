@@ -361,7 +361,7 @@ typedef enum NodeTag
 	T_AlterExtensionContentsStmt,
 	T_CreateEventTrigStmt,
 	T_AlterEventTrigStmt,
-	T_LoadMatViewStmt,
+	T_RefreshMatViewStmt,
 
 	/*
 	 * TAGS FOR PARSE TREE NODES (parsenodes.h)

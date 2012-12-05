@@ -146,7 +146,7 @@ ALTER MATERIALIZED VIEW foo RENAME TO bar;
   <simplelist type="inline">
    <member><xref linkend="sql-creatematerializedview"></member>
    <member><xref linkend="sql-dropmaterializedview"></member>
-   <member><xref linkend="sql-loadmaterializedview"></member>
+   <member><xref linkend="sql-refreshmaterializedview"></member>
   </simplelist>
  </refsect1>
 </refentry>

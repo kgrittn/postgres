@@ -2454,14 +2454,14 @@ typedef struct CreateTableAsStmt
 } CreateTableAsStmt;
 
 /* ----------------------
- *		LOAD MATERIALIZED VIEW Statement
+ *		REFRESH MATERIALIZED VIEW Statement
  * ----------------------
  */
-typedef struct LoadMatViewStmt
+typedef struct RefreshMatViewStmt
 {
 	NodeTag		type;
 	RangeVar   *relation;		/* relation to insert into */
-} LoadMatViewStmt;
+} RefreshMatViewStmt;
 
 /* ----------------------
  * Checkpoint Statement

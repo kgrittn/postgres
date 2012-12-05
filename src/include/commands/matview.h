@@ -17,7 +17,7 @@
 #include "nodes/params.h"
 #include "tcop/dest.h"
 
-extern void ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
+extern void ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 				  ParamListInfo params, char *completionTag);
 
 extern DestReceiver *CreateTransientRelDestReceiver(Oid oid);

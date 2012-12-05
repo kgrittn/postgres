@@ -44,14 +44,14 @@ static void transientrel_startup(DestReceiver *self, int operation, TupleDesc ty
 static void transientrel_receive(TupleTableSlot *slot, DestReceiver *self);
 static void transientrel_shutdown(DestReceiver *self);
 static void transientrel_destroy(DestReceiver *self);
-static void load_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
+static void refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
 						  Query *dataQuery, const char *queryString);
 
 /*
- * ExecLoadMatView -- execute a LOAD MATERIALIZED VIEW command
+ * ExecRefreshMatView -- execute a REFRESH MATERIALIZED VIEW command
  */
 void
-ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
+ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 				  ParamListInfo params, char *completionTag)
 {
 	Oid			matviewOid;
@@ -83,17 +83,8 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 	Assert(!IsSystemRelation(matviewRel));
 
 	/*
-	 * Reject clustering a remote temp table ... their local buffer
-	 * manager is not going to cope.
-	 */
-	if (RELATION_IS_OTHER_TEMP(matviewRel))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot load temporary materialized views of other sessions")));
-
-	/*
-	 * Check that everything is correct for a load. Problems at this point are
-	 * internal errors, so elog is sufficient.
+	 * Check that everything is correct for a refresh. Problems at this point
+	 * are internal errors, so elog is sufficient.
 	 */
 	if (matviewRel->rd_rel->relhasrules == false ||
 		matviewRel->rd_rules->numLocks < 1)
@@ -129,26 +120,26 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
 	 * Check for active uses of the relation in the current transaction, such
 	 * as open scans.
 	 *
-	 * NB: We count on this to protect us against problems with loading the
+	 * NB: We count on this to protect us against problems with refreshing the
 	 * data using HEAP_INSERT_FROZEN.
 	 */
-	CheckTableNotInUse(matviewRel, "LOAD MATERIALIZED VIEW");
+	CheckTableNotInUse(matviewRel, "REFRESH MATERIALIZED VIEW");
 
 	tableSpace = matviewRel->rd_rel->reltablespace;
 	isWithOids = matviewRel->rd_rel->relhasoids;
 
 	heap_close(matviewRel, NoLock);
 
-	load_matview(matviewOid, tableSpace, isWithOids, dataQuery, queryString);
+	refresh_matview(matviewOid, tableSpace, isWithOids, dataQuery, queryString);
 }
 
 /*
- * load_matview
+ * refresh_matview
  *
- * This loads the materialized view by creating a new table and swapping the
- * relfilenodes of the new table and the old materialized view, so the OID of
- * the original materialized view is preserved. Thus we do not lose GRANT nor
- * references to this materialized view.
+ * This refreshes the materialized view by creating a new table and swapping
+ * the relfilenodes of the new table and the old materialized view, so the OID
+ * of the original materialized view is preserved. Thus we do not lose GRANT
+ * nor references to this materialized view.
  *
  * Indexes are rebuilt too, via REINDEX. Since we are effectively bulk-loading
  * the new heap, it's better to create the indexes afterwards than to fill them
@@ -158,7 +149,7 @@ ExecLoadMatView(LoadMatViewStmt *stmt, const char *queryString,
  * this command will change it to true.
  */
 static void
-load_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
+refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
 			 Query *dataQuery, const char *queryString)
 {
 	Oid			OIDNewHeap;
@@ -169,7 +160,7 @@ load_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();
 
-	/* Plan the query which will generate data for the load. */
+	/* Plan the query which will generate data for the refresh. */
 	plan = pg_plan_query(dataQuery, 0, NULL);
 
 	/* Create the transient table that will receive the regenerated data. */

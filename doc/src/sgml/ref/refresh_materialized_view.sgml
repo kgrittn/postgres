@@ -1,27 +1,27 @@
 <!--
-doc/src/sgml/ref/load_materialized_view.sgml
+doc/src/sgml/ref/refresh_materialized_view.sgml
 PostgreSQL documentation
 -->
 
-<refentry id="SQL-LOADMATERIALIZEDVIEW">
+<refentry id="SQL-REFRESHMATERIALIZEDVIEW">
  <refmeta>
-  <refentrytitle>LOAD MATERIALIZED VIEW</refentrytitle>
+  <refentrytitle>REFRESH MATERIALIZED VIEW</refentrytitle>
   <manvolnum>7</manvolnum>
   <refmiscinfo>SQL - Language Statements</refmiscinfo>
  </refmeta>
 
  <refnamediv>
-  <refname>LOAD MATERIALIZED VIEW</refname>
+  <refname>REFRESH MATERIALIZED VIEW</refname>
   <refpurpose>refresh a materialized view</refpurpose>
  </refnamediv>
 
  <indexterm zone="sql-dropmaterializedview">
-  <primary>LOAD MATERIALIZED VIEW</primary>
+  <primary>REFRESH MATERIALIZED VIEW</primary>
  </indexterm>
 
  <refsynopsisdiv>
 <synopsis>
-LOAD MATERIALIZED VIEW <replaceable class="PARAMETER">name</replaceable>
+REFRESH MATERIALIZED VIEW <replaceable class="PARAMETER">name</replaceable>
 </synopsis>
  </refsynopsisdiv>
 
@@ -29,7 +29,7 @@ LOAD MATERIALIZED VIEW <replaceable class="PARAMETER">name</replaceable>
   <title>Description</title>
 
   <para>
-   <command>LOAD MATERIALIZED VIEW</command> refreshes the contents of a
+   <command>REFRESH MATERIALIZED VIEW</command> refreshes the contents of a
    materialized view by re-executing the backing query.
   </para>
  </refsect1>
@@ -57,7 +57,7 @@ LOAD MATERIALIZED VIEW <replaceable class="PARAMETER">name</replaceable>
    This command will refresh the materialized view called
    <literal>order_summary</literal>:
 <programlisting>
-LOAD MATERIALIZED VIEW order_summary;
+REFRESH MATERIALIZED VIEW order_summary;
 </programlisting></para>
  </refsect1>
 
@@ -65,7 +65,7 @@ LOAD MATERIALIZED VIEW order_summary;
   <title>Compatibility</title>
 
   <para>
-   <command>LOAD MATERIALIZED VIEW</command> is a
+   <command>REFRESH MATERIALIZED VIEW</command> is a
    <productname>PostgreSQL</productname> extension.
   </para>
  </refsect1>
