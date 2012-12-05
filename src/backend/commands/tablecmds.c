@@ -2060,12 +2060,6 @@ SetRelationHasSubclass(Oid relationId, bool relhassubclass)
  *
  * NOTE: caller must be holding an appropriate lock on the relation.
  * ShareUpdateExclusiveLock is sufficient.
- *
- * NOTE: an important side-effect of this operation is that an SI invalidation
- * message is sent out to all backends --- including me --- causing plans
- * referencing the relation to be rebuilt with the new list of children.
- * This must happen even if we find that no change is needed in the pg_class
- * row.
  */
 void
 SetRelationIsValid(Oid relationId, bool relisvalid)
@@ -2086,15 +2080,7 @@ SetRelationIsValid(Oid relationId, bool relisvalid)
 	if (classtuple->relisvalid != relisvalid)
 	{
 		classtuple->relisvalid = relisvalid;
-		simple_heap_update(relationRelation, &tuple->t_self, tuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relationRelation, tuple);
-	}
-	else
-	{
-		/* no need to change tuple, but force relcache rebuild anyway */
-		CacheInvalidateRelcacheByTuple(tuple);
+		heap_inplace_update(relationRelation, tuple);
 	}
 
 	heap_freetuple(tuple);
