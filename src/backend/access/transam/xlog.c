@@ -2515,7 +2515,7 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 
 	/*
 	 * Prefer link() to rename() here just to be really sure that we don't
-	 * overwrite an existing file.  However, there shouldn't be one, so
+	 * overwrite an existing logfile.  However, there shouldn't be one, so
 	 * rename() is an acceptable substitute except for the truly paranoid.
 	 */
 #if HAVE_WORKING_LINK
@@ -5039,13 +5039,19 @@ recoveryStopsHere(XLogRecord *record, bool *includeThis)
 }
 
 /*
- * Recheck shared recoveryPause by polling.
+ * Wait until shared recoveryPause flag is cleared.
  *
- * XXX Can also be done with shared latch.
+ * XXX Could also be done with shared latch, avoiding the pg_usleep loop.
+ * Probably not worth the trouble though.  This state shouldn't be one that
+ * anyone cares about server power consumption in.
  */
 static void
 recoveryPausesHere(void)
 {
+	/* Don't pause unless users can connect! */
+	if (!LocalHotStandbyActive)
+		return;
+
 	ereport(LOG,
 			(errmsg("recovery has paused"),
 			 errhint("Execute pg_xlog_replay_resume() to continue.")));
@@ -5806,7 +5812,6 @@ StartupXLOG(void)
 		{
 			bool		recoveryContinue = true;
 			bool		recoveryApply = true;
-			bool		recoveryPause = false;
 			ErrorContextCallback errcallback;
 			TimestampTz xtime;
 
@@ -5849,21 +5854,35 @@ StartupXLOG(void)
 				CheckRecoveryConsistency();
 
 				/*
+				 * Pause WAL replay, if requested by a hot-standby session via
+				 * SetRecoveryPause().
+				 *
+				 * Note that we intentionally don't take the info_lck spinlock
+				 * here.  We might therefore read a slightly stale value of
+				 * the recoveryPause flag, but it can't be very stale (no
+				 * worse than the last spinlock we did acquire).  Since a
+				 * pause request is a pretty asynchronous thing anyway,
+				 * possibly responding to it one WAL record later than we
+				 * otherwise would is a minor issue, so it doesn't seem worth
+				 * adding another spinlock cycle to prevent that.
+				 */
+				if (xlogctl->recoveryPause)
+					recoveryPausesHere();
+
+				/*
 				 * Have we reached our recovery target?
 				 */
 				if (recoveryStopsHere(record, &recoveryApply))
 				{
-					/*
-					 * Pause only if users can connect to send a resume
-					 * message
-					 */
-					if (recoveryPauseAtTarget && standbyState == STANDBY_SNAPSHOT_READY)
+					if (recoveryPauseAtTarget)
 					{
 						SetRecoveryPause(true);
 						recoveryPausesHere();
 					}
 					reachedStopPoint = true;	/* see below */
 					recoveryContinue = false;
+
+					/* Exit loop if we reached non-inclusive recovery target */
 					if (!recoveryApply)
 						break;
 				}
@@ -5896,14 +5915,7 @@ StartupXLOG(void)
 				 */
 				SpinLockAcquire(&xlogctl->info_lck);
 				xlogctl->replayEndRecPtr = EndRecPtr;
-				recoveryPause = xlogctl->recoveryPause;
 				SpinLockRelease(&xlogctl->info_lck);
-
-				/*
-				 * Pause only if users can connect to send a resume message
-				 */
-				if (recoveryPause && standbyState == STANDBY_SNAPSHOT_READY)
-					recoveryPausesHere();
 
 				/*
 				 * If we are attempting to enter Hot Standby mode, process
@@ -5948,10 +5960,16 @@ StartupXLOG(void)
 				xlogctl->recoveryLastRecPtr = EndRecPtr;
 				SpinLockRelease(&xlogctl->info_lck);
 
+				/* Remember this record as the last-applied one */
 				LastRec = ReadRecPtr;
 
+				/* Exit loop if we reached inclusive recovery target */
+				if (!recoveryContinue)
+					break;
+
+				/* Else, try to fetch the next WAL record */
 				record = ReadRecord(NULL, LOG, false);
-			} while (record != NULL && recoveryContinue);
+			} while (record != NULL);
 
 			/*
 			 * end of main redo apply loop
@@ -6332,9 +6350,12 @@ CheckRecoveryConsistency(void)
 		return;
 
 	/*
-	 * Have we passed our safe starting point?
+	 * Have we passed our safe starting point? Note that minRecoveryPoint
+	 * is known to be incorrectly set if ControlFile->backupEndRequired,
+	 * until the XLOG_BACKUP_RECORD arrives to advise us of the correct
+	 * minRecoveryPoint. All we prior to that is its not consistent yet.
 	 */
-	if (!reachedConsistency &&
+	if (!reachedConsistency && !ControlFile->backupEndRequired &&
 		XLByteLE(minRecoveryPoint, EndRecPtr) &&
 		XLogRecPtrIsInvalid(ControlFile->backupStartPoint))
 	{
