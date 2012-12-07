@@ -703,6 +703,7 @@ typedef struct RangeTblEntry
 	 */
 	Oid			relid;			/* OID of the relation */
 	char		relkind;		/* relation kind (see pg_class.relkind) */
+	bool		isResultRel;	/* used in target of SELECT INTO or similar */
 
 	/*
 	 * Fields valid for a subquery RTE (else NULL):

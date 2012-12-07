@@ -498,7 +498,6 @@ ExecutorRewind(QueryDesc *queryDesc)
 static void
 ExecCheckRelationsValid(List *rangeTable)
 {
-/*
 	ListCell   *l;
 
 	foreach(l, rangeTable)
@@ -511,11 +510,17 @@ ExecCheckRelationsValid(List *rangeTable)
 		if (!RelationIsFlaggedAsValid(rte->relid))
 		{
 			if (rte->relkind == RELKIND_MATVIEW)
+			{
+				/* It is OK to replace the contents of an invalid matview. */
+				if (rte->isResultRel)
+					continue;
+
 				ereport(ERROR,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 						 errmsg("materialized view \"%s\" has not been populated",
 								get_rel_name(rte->relid)),
 						 errhint("Use the REFRESH MATERIALIZED VIEW command.")));
+			}
 			else
 				ereport(ERROR,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -523,7 +528,6 @@ ExecCheckRelationsValid(List *rangeTable)
 								get_rel_name(rte->relid))));
 		}
 	}
-*/
 }
 
 /*

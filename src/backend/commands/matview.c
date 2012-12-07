@@ -156,9 +156,23 @@ refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
 	PlannedStmt *plan;
 	DestReceiver *dest;
 	QueryDesc  *queryDesc;
+	List	   *rtable;
+	RangeTblEntry *rte;
 
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();
+
+	/*
+	 * Kludge here to allow refresh of a materialized view which is invalid
+	 * (that is, it was created WITH NO DATA or was TRUNCATED). We flag the
+	 * first two RangeTblEntry list elements, which were added to the front
+	 * of the rewritten Query to keep the rules system happy, with the
+	 * isResultRel flag to indicate that it is OK if they are flagged as
+	 * invalid.
+	 */
+	rtable = dataQuery->rtable;
+	((RangeTblEntry *) linitial(rtable))->isResultRel = true;
+	((RangeTblEntry *) lsecond(rtable))->isResultRel = true;
 
 	/* Plan the query which will generate data for the refresh. */
 	plan = pg_plan_query(dataQuery, 0, NULL);
