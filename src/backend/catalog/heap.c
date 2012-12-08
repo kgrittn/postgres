@@ -1337,6 +1337,20 @@ heap_create_init_fork(Relation rel)
 {
 	RelationOpenSmgr(rel);
 	smgrcreate(rel->rd_smgr, INIT_FORKNUM, false);
+
+	/*
+	 * Create a special init fork for a materialized view, so that on its
+	 * initial reference it can be flagged as invalid.
+	 */
+	if (rel->rd_rel->relkind == RELKIND_MATVIEW)
+	{
+		Page		page;
+
+		page = (Page) palloc(BLCKSZ);
+		PageInit(page, BLCKSZ, 1);
+		smgrextend(rel->rd_smgr, INIT_FORKNUM, 0, (char *) page, true);
+	}
+
 	if (XLogIsNeeded())
 		log_smgrcreate(&rel->rd_smgr->smgr_rnode.node, INIT_FORKNUM);
 	smgrimmedsync(rel->rd_smgr, INIT_FORKNUM);
