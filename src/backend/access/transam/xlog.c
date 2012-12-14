@@ -153,6 +153,7 @@ static XLogRecPtr LastRec;
 
 /* Local copy of WalRcv->receivedUpto */
 static XLogRecPtr receivedUpto = 0;
+static TimeLineID receiveTLI = 0;
 
 /*
  * During recovery, lastFullPageWrites keeps track of full_page_writes that
@@ -445,11 +446,15 @@ typedef struct XLogCtlData
 	XLogRecPtr	lastCheckPointRecPtr;
 	CheckPoint	lastCheckPoint;
 
-	/* end+1 of the last record replayed (or being replayed) */
+	/*
+	 * lastReplayedEndRecPtr points to end+1 of the last record successfully
+	 * replayed. When we're currently replaying a record, ie. in a redo
+	 * function, replayEndRecPtr points to the end+1 of the record being
+	 * replayed, otherwise it's equal to lastReplayedEndRecPtr.
+	 */
+	XLogRecPtr	lastReplayedEndRecPtr;
 	XLogRecPtr	replayEndRecPtr;
 	TimeLineID	replayEndTLI;
-	/* end+1 of the last record replayed */
-	XLogRecPtr	recoveryLastRecPtr;
 	/* timestamp of last COMMIT/ABORT record replayed (or being replayed) */
 	TimestampTz recoveryLastXTime;
 	/* current effective recovery target timeline */
@@ -605,6 +610,7 @@ static void SetLatestXTime(TimestampTz xtime);
 static void SetCurrentChunkStartTime(TimestampTz xtime);
 static void CheckRequiredParameterValues(void);
 static void XLogReportParameters(void);
+static void checkTimeLineSwitch(XLogRecPtr lsn, TimeLineID newTLI);
 static void LocalSetXLogInsertAllowed(void);
 static void CheckPointGuts(XLogRecPtr checkPointRedo, int flags);
 static void KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo);
@@ -5744,7 +5750,7 @@ StartupXLOG(void)
 		}
 
 		/*
-		 * Initialize shared replayEndRecPtr, recoveryLastRecPtr, and
+		 * Initialize shared replayEndRecPtr, lastReplayedEndRecPtr, and
 		 * recoveryLastXTime.
 		 *
 		 * This is slightly confusing if we're starting from an online
@@ -5758,7 +5764,7 @@ StartupXLOG(void)
 		SpinLockAcquire(&xlogctl->info_lck);
 		xlogctl->replayEndRecPtr = ReadRecPtr;
 		xlogctl->replayEndTLI = ThisTimeLineID;
-		xlogctl->recoveryLastRecPtr = EndRecPtr;
+		xlogctl->lastReplayedEndRecPtr = EndRecPtr;
 		xlogctl->recoveryLastXTime = 0;
 		xlogctl->currentChunkStartTime = 0;
 		xlogctl->recoveryPause = false;
@@ -5850,9 +5856,6 @@ StartupXLOG(void)
 				/* Handle interrupt signals of startup process */
 				HandleStartupProcInterrupts();
 
-				/* Allow read-only connections if we're consistent now */
-				CheckRecoveryConsistency();
-
 				/*
 				 * Pause WAL replay, if requested by a hot-standby session via
 				 * SetRecoveryPause().
@@ -5910,11 +5913,40 @@ StartupXLOG(void)
 				}
 
 				/*
+				 * Before replaying this record, check if it is a shutdown
+				 * checkpoint record that causes the current timeline to
+				 * change. The checkpoint record is already considered to be
+				 * part of the new timeline, so we update ThisTimeLineID
+				 * before replaying it. That's important so that replayEndTLI,
+				 * which is recorded as the minimum recovery point's TLI if
+				 * recovery stops after this record, is set correctly.
+				 */
+				if (record->xl_rmid == RM_XLOG_ID &&
+					(record->xl_info & ~XLR_INFO_MASK) == XLOG_CHECKPOINT_SHUTDOWN)
+				{
+					CheckPoint	checkPoint;
+					TimeLineID	newTLI;
+
+					memcpy(&checkPoint, XLogRecGetData(record), sizeof(CheckPoint));
+					newTLI = checkPoint.ThisTimeLineID;
+
+					if (newTLI != ThisTimeLineID)
+					{
+						/* Check that it's OK to switch to this TLI */
+						checkTimeLineSwitch(EndRecPtr, newTLI);
+
+						/* Following WAL records should be run with new TLI */
+						ThisTimeLineID = newTLI;
+					}
+				}
+
+				/*
 				 * Update shared replayEndRecPtr before replaying this record,
 				 * so that XLogFlush will update minRecoveryPoint correctly.
 				 */
 				SpinLockAcquire(&xlogctl->info_lck);
 				xlogctl->replayEndRecPtr = EndRecPtr;
+				xlogctl->replayEndTLI = ThisTimeLineID;
 				SpinLockRelease(&xlogctl->info_lck);
 
 				/*
@@ -5953,15 +5985,18 @@ StartupXLOG(void)
 				}
 
 				/*
-				 * Update shared recoveryLastRecPtr after this record has been
-				 * replayed.
+				 * Update lastReplayedEndRecPtr after this record has been
+				 * successfully replayed.
 				 */
 				SpinLockAcquire(&xlogctl->info_lck);
-				xlogctl->recoveryLastRecPtr = EndRecPtr;
+				xlogctl->lastReplayedEndRecPtr = EndRecPtr;
 				SpinLockRelease(&xlogctl->info_lck);
 
 				/* Remember this record as the last-applied one */
 				LastRec = ReadRecPtr;
+
+				/* Allow read-only connections if we're consistent now */
+				CheckRecoveryConsistency();
 
 				/* Exit loop if we reached inclusive recovery target */
 				if (!recoveryContinue)
@@ -6332,6 +6367,12 @@ StartupXLOG(void)
 		xlogctl->SharedRecoveryInProgress = false;
 		SpinLockRelease(&xlogctl->info_lck);
 	}
+
+	/*
+	 * If there were cascading standby servers connected to us, nudge any
+	 * wal sender processes to notice that we've been promoted.
+	 */
+	WalSndWakeup();
 }
 
 /*
@@ -6353,10 +6394,11 @@ CheckRecoveryConsistency(void)
 	 * Have we passed our safe starting point? Note that minRecoveryPoint
 	 * is known to be incorrectly set if ControlFile->backupEndRequired,
 	 * until the XLOG_BACKUP_RECORD arrives to advise us of the correct
-	 * minRecoveryPoint. All we prior to that is its not consistent yet.
+	 * minRecoveryPoint. All we know prior to that is that we're not
+	 * consistent yet.
 	 */
 	if (!reachedConsistency && !ControlFile->backupEndRequired &&
-		XLByteLE(minRecoveryPoint, EndRecPtr) &&
+		XLByteLE(minRecoveryPoint, XLogCtl->lastReplayedEndRecPtr) &&
 		XLogRecPtrIsInvalid(ControlFile->backupStartPoint))
 	{
 		/*
@@ -6368,7 +6410,8 @@ CheckRecoveryConsistency(void)
 		reachedConsistency = true;
 		ereport(LOG,
 				(errmsg("consistent recovery state reached at %X/%X",
-						(uint32) (EndRecPtr >> 32), (uint32) EndRecPtr)));
+						(uint32) (XLogCtl->lastReplayedEndRecPtr >> 32),
+						(uint32) XLogCtl->lastReplayedEndRecPtr)));
 	}
 
 	/*
@@ -7590,7 +7633,7 @@ CreateRestartPoint(int flags)
 		XLogRecPtr	endptr;
 
 		/* Get the current (or recent) end of xlog */
-		endptr = GetStandbyFlushRecPtr(NULL);
+		endptr = GetStandbyFlushRecPtr();
 
 		KeepLogSeg(endptr, &_logSegNo);
 		_logSegNo--;
@@ -7859,6 +7902,48 @@ UpdateFullPageWrites(void)
 }
 
 /*
+ * Check that it's OK to switch to new timeline during recovery.
+ *
+ * 'lsn' is the address of the shutdown checkpoint record we're about to
+ * replay. (Currently, timeline can only change at a shutdown checkpoint).
+ */
+static void
+checkTimeLineSwitch(XLogRecPtr lsn, TimeLineID newTLI)
+{
+	/*
+	 * The new timeline better be in the list of timelines we expect
+	 * to see, according to the timeline history. It should also not
+	 * decrease.
+	 */
+	if (newTLI < ThisTimeLineID || !tliInHistory(newTLI, expectedTLEs))
+		ereport(PANIC,
+				(errmsg("unexpected timeline ID %u (after %u) in checkpoint record",
+						newTLI, ThisTimeLineID)));
+
+	/*
+	 * If we have not yet reached min recovery point, and we're about
+	 * to switch to a timeline greater than the timeline of the min
+	 * recovery point: trouble. After switching to the new timeline,
+	 * we could not possibly visit the min recovery point on the
+	 * correct timeline anymore. This can happen if there is a newer
+	 * timeline in the archive that branched before the timeline the
+	 * min recovery point is on, and you attempt to do PITR to the
+	 * new timeline.
+	 */
+	if (!XLogRecPtrIsInvalid(minRecoveryPoint) &&
+		XLByteLT(lsn, minRecoveryPoint) &&
+		newTLI > minRecoveryPointTLI)
+		ereport(PANIC,
+				(errmsg("unexpected timeline ID %u in checkpoint record, before reaching minimum recovery point %X/%X on timeline %u",
+						newTLI,
+						(uint32) (minRecoveryPoint >> 32),
+						(uint32) minRecoveryPoint,
+						minRecoveryPointTLI)));
+
+	/* Looks good */
+}
+
+/*
  * XLOG resource manager's routines
  *
  * Definitions of info values are in include/catalog/pg_control.h, though
@@ -7971,44 +8056,13 @@ xlog_redo(XLogRecPtr lsn, XLogRecord *record)
 		}
 
 		/*
-		 * TLI may change in a shutdown checkpoint.
+		 * We should've already switched to the new TLI before replaying this
+		 * record.
 		 */
 		if (checkPoint.ThisTimeLineID != ThisTimeLineID)
-		{
-			/*
-			 * The new timeline better be in the list of timelines we expect
-			 * to see, according to the timeline history. It should also not
-			 * decrease.
-			 */
-			if (checkPoint.ThisTimeLineID < ThisTimeLineID ||
-				!tliInHistory(checkPoint.ThisTimeLineID, expectedTLEs))
-				ereport(PANIC,
-						(errmsg("unexpected timeline ID %u (after %u) in checkpoint record",
-								checkPoint.ThisTimeLineID, ThisTimeLineID)));
-
-			/*
-			 * If we have not yet reached min recovery point, and we're about
-			 * to switch to a timeline greater than the timeline of the min
-			 * recovery point: trouble. After switching to the new timeline,
-			 * we could not possibly visit the min recovery point on the
-			 * correct timeline anymore. This can happen if there is a newer
-			 * timeline in the archive that branched before the timeline the
-			 * min recovery point is on, and you attempt to do PITR to the
-			 * new timeline.
-			 */
-			if (!XLogRecPtrIsInvalid(minRecoveryPoint) &&
-				XLByteLT(lsn, minRecoveryPoint) &&
-				checkPoint.ThisTimeLineID > minRecoveryPointTLI)
-				ereport(PANIC,
-						(errmsg("unexpected timeline ID %u in checkpoint record, before reaching minimum recovery point %X/%X on timeline %u",
-								checkPoint.ThisTimeLineID,
-								(uint32) (minRecoveryPoint >> 32),
-								(uint32) minRecoveryPoint,
-								minRecoveryPointTLI)));
-
-			/* Following WAL records should be run with new TLI */
-			ThisTimeLineID = checkPoint.ThisTimeLineID;
-		}
+			ereport(PANIC,
+					(errmsg("unexpected timeline ID %u (should be %u) in checkpoint record",
+							checkPoint.ThisTimeLineID, ThisTimeLineID)));
 
 		RecoveryRestartPoint(&checkPoint);
 	}
@@ -9040,22 +9094,17 @@ do_pg_abort_backup(void)
 /*
  * Get latest redo apply position.
  *
- * Optionally, returns the current recovery target timeline. Callers not
- * interested in that may pass NULL for targetTLI.
- *
  * Exported to allow WALReceiver to read the pointer directly.
  */
 XLogRecPtr
-GetXLogReplayRecPtr(TimeLineID *targetTLI)
+GetXLogReplayRecPtr(void)
 {
 	/* use volatile pointer to prevent code rearrangement */
 	volatile XLogCtlData *xlogctl = XLogCtl;
 	XLogRecPtr	recptr;
 
 	SpinLockAcquire(&xlogctl->info_lck);
-	recptr = xlogctl->recoveryLastRecPtr;
-	if (targetTLI)
-		*targetTLI = xlogctl->RecoveryTargetTLI;
+	recptr = xlogctl->lastReplayedEndRecPtr;
 	SpinLockRelease(&xlogctl->info_lck);
 
 	return recptr;
@@ -9064,18 +9113,15 @@ GetXLogReplayRecPtr(TimeLineID *targetTLI)
 /*
  * Get current standby flush position, ie, the last WAL position
  * known to be fsync'd to disk in standby.
- *
- * If 'targetTLI' is not NULL, it's set to the current recovery target
- * timeline.
  */
 XLogRecPtr
-GetStandbyFlushRecPtr(TimeLineID *targetTLI)
+GetStandbyFlushRecPtr(void)
 {
 	XLogRecPtr	receivePtr;
 	XLogRecPtr	replayPtr;
 
-	receivePtr = GetWalRcvWriteRecPtr(NULL);
-	replayPtr = GetXLogReplayRecPtr(targetTLI);
+	receivePtr = GetWalRcvWriteRecPtr(NULL, NULL);
+	replayPtr = GetXLogReplayRecPtr();
 
 	if (XLByteLT(receivePtr, replayPtr))
 		return replayPtr;
@@ -9564,7 +9610,10 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * archive and pg_xlog before failover.
 					 */
 					if (CheckForStandbyTrigger())
+					{
+						ShutdownWalRcv();
 						return false;
+					}
 
 					/*
 					 * If primary_conninfo is set, launch walreceiver to try to
@@ -9579,8 +9628,14 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					if (PrimaryConnInfo)
 					{
 						XLogRecPtr ptr = fetching_ckpt ? RedoStartLSN : RecPtr;
+						TimeLineID tli = tliOfPointInHistory(ptr, expectedTLEs);
 
-						RequestXLogStreaming(ptr, PrimaryConnInfo);
+						if (curFileTLI > 0 && tli < curFileTLI)
+							elog(ERROR, "according to history file, WAL location %X/%X belongs to timeline %u, but previous recovered WAL file came from timeline %u",
+								 (uint32) (ptr >> 32), (uint32) ptr,
+								 tli, curFileTLI);
+						curFileTLI = tli;
+						RequestXLogStreaming(curFileTLI, ptr, PrimaryConnInfo);
 					}
 					/*
 					 * Move to XLOG_FROM_STREAM state in either case. We'll get
@@ -9606,10 +9661,10 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 */
 					/*
 					 * Before we leave XLOG_FROM_STREAM state, make sure that
-					 * walreceiver is not running, so that it won't overwrite
-					 * any WAL that we restore from archive.
+					 * walreceiver is not active, so that it won't overwrite
+					 * WAL that we restore from archive.
 					 */
-					if (WalRcvInProgress())
+					if (WalRcvStreaming())
 						ShutdownWalRcv();
 
 					/*
@@ -9702,7 +9757,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 				/*
 				 * Check if WAL receiver is still active.
 				 */
-				if (!WalRcvInProgress())
+				if (!WalRcvStreaming())
 				{
 					lastSourceFailed = true;
 					break;
@@ -9725,8 +9780,8 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 				{
 					XLogRecPtr	latestChunkStart;
 
-					receivedUpto = GetWalRcvWriteRecPtr(&latestChunkStart);
-					if (XLByteLT(RecPtr, receivedUpto))
+					receivedUpto = GetWalRcvWriteRecPtr(&latestChunkStart, &receiveTLI);
+					if (XLByteLT(RecPtr, receivedUpto) && receiveTLI == curFileTLI)
 					{
 						havedata = true;
 						if (!XLByteLT(RecPtr, latestChunkStart))
@@ -9841,8 +9896,7 @@ emode_for_corrupt_record(int emode, XLogRecPtr RecPtr)
 
 /*
  * Check to see whether the user-specified trigger file exists and whether a
- * promote request has arrived.  If either condition holds, request postmaster
- * to shut down walreceiver, wait for it to exit, and return true.
+ * promote request has arrived.  If either condition holds, return true.
  */
 static bool
 CheckForStandbyTrigger(void)
@@ -9857,7 +9911,6 @@ CheckForStandbyTrigger(void)
 	{
 		ereport(LOG,
 				(errmsg("received promote request")));
-		ShutdownWalRcv();
 		ResetPromoteTriggered();
 		triggered = true;
 		return true;
@@ -9870,7 +9923,6 @@ CheckForStandbyTrigger(void)
 	{
 		ereport(LOG,
 				(errmsg("trigger file found: %s", TriggerFile)));
-		ShutdownWalRcv();
 		unlink(TriggerFile);
 		triggered = true;
 		return true;
