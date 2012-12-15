@@ -3642,7 +3642,7 @@ complete_from_list(const char *text, int state)
 	const char *item;
 
 	/* need to have a list */
-	psql_assert(completion_charpp);
+	Assert(completion_charpp != NULL);
 
 	/* Initialization */
 	if (state == 0)
@@ -3704,7 +3704,7 @@ complete_from_list(const char *text, int state)
 static char *
 complete_from_const(const char *text, int state)
 {
-	psql_assert(completion_charp);
+	Assert(completion_charp != NULL);
 	if (state == 0)
 	{
 		if (completion_case_sensitive)
@@ -3792,7 +3792,7 @@ complete_from_files(const char *text, int state)
 		/* expect a NULL return for the empty string only */
 		if (!unquoted_text)
 		{
-			psql_assert(!*text);
+			Assert(*text == '\0');
 			unquoted_text = text;
 		}
 	}
