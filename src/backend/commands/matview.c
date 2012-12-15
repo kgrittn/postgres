@@ -157,7 +157,6 @@ refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
 	DestReceiver *dest;
 	QueryDesc  *queryDesc;
 	List	   *rtable;
-	RangeTblEntry *rte;
 
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();

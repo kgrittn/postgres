@@ -36,6 +36,7 @@
 #include "access/htup_details.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "catalog/heap.h"
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
@@ -54,6 +55,7 @@
 #include "catalog/pg_type.h"
 #include "catalog/schemapg.h"
 #include "catalog/storage.h"
+#include "commands/tablecmds.h"
 #include "commands/trigger.h"
 #include "miscadmin.h"
 #include "optimizer/clauses.h"
@@ -929,6 +931,15 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	 */
 	if (insertIt)
 		RelationCacheInsert(relation);
+
+	/* flag unlogged matview invalid if its heap looks like the init fork */
+	if (relation->rd_rel->relkind == RELKIND_MATVIEW &&
+		relation->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED &&
+		relation->rd_rel->relisvalid &&
+		heap_is_matview_init_fork(relation))
+	{
+		SetRelationIsValid(relid, false);
+	}
 
 	/* It's fully valid */
 	relation->rd_isvalid = true;

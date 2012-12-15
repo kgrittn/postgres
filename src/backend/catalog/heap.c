@@ -1357,6 +1357,40 @@ heap_create_init_fork(Relation rel)
 }
 
 /*
+ * Check whether the first page of a materialized view looks like it came from
+ * its init fork, which would mean that the MV should be flagged as invalid
+ * for querying.
+ *
+ * The check here must match what is set up in heap_create_init_fork().
+ */
+bool
+heap_is_matview_init_fork(Relation rel)
+{
+	Page		page;
+	bool		isInitFork;
+
+	Assert(rel->rd_rel->relkind == RELKIND_MATVIEW);
+
+	RelationOpenSmgr(rel);
+	if (!smgrexists(rel->rd_smgr, MAIN_FORKNUM))
+		return false;
+	if (smgrnblocks(rel->rd_smgr, MAIN_FORKNUM) < 1)
+		return false;
+
+	page = (Page) palloc(BLCKSZ);
+	smgrread(rel->rd_smgr, MAIN_FORKNUM, 0, (char *) page);
+	isInitFork = (((PageHeader) page)->pd_special < BLCKSZ);
+	pfree(page);
+
+	if (isInitFork)
+	{
+		smgrtruncate(rel->rd_smgr, MAIN_FORKNUM, 0);
+	}
+
+	return isInitFork;
+}
+
+/*
  *		RelationRemoveInheritance
  *
  * Formerly, this routine checked for child relations and aborted the
