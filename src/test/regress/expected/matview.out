@@ -38,6 +38,8 @@ SELECT * FROM tvm;
 
 CREATE MATERIALIZED VIEW tmm AS SELECT sum(totamt) AS grandtot FROM tm;
 CREATE MATERIALIZED VIEW tvmm AS SELECT sum(totamt) AS grandtot FROM tvm;
+CREATE VIEW tvv AS SELECT sum(totamt) AS grandtot FROM tv;
+CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
 INSERT INTO t VALUES (6, 'z', 13);
 SELECT * FROM tm ORDER BY type;
  type | totamt 
@@ -85,8 +87,15 @@ SELECT * FROM tvmm;
        28
 (1 row)
 
+SELECT * FROM tvvm;
+ grandtot 
+----------
+       28
+(1 row)
+
 REFRESH MATERIALIZED VIEW tmm;
 REFRESH MATERIALIZED VIEW tvmm;
+REFRESH MATERIALIZED VIEW tvvm;
 SELECT * FROM tmm;
  grandtot 
 ----------
@@ -99,18 +108,28 @@ SELECT * FROM tvmm;
        41
 (1 row)
 
+SELECT * FROM tvvm;
+ grandtot 
+----------
+       41
+(1 row)
+
 DROP TABLE t;
 ERROR:  cannot drop table t because other objects depend on it
 DETAIL:  view tv depends on table t
+view tvv depends on view tv
 materialized view tm depends on table t
 materialized view tmm depends on materialized view tm
 materialized view tvm depends on table t
 materialized view tvmm depends on materialized view tvm
+materialized view tvvm depends on table t
 HINT:  Use DROP ... CASCADE to drop the dependent objects too.
 DROP TABLE t CASCADE;
-NOTICE:  drop cascades to 5 other objects
+NOTICE:  drop cascades to 7 other objects
 DETAIL:  drop cascades to view tv
+drop cascades to view tvv
 drop cascades to materialized view tm
 drop cascades to materialized view tmm
 drop cascades to materialized view tvm
 drop cascades to materialized view tvmm
+drop cascades to materialized view tvvm
