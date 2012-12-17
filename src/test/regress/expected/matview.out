@@ -1,0 +1,116 @@
+CREATE TABLE t (id int NOT NULL PRIMARY KEY, type text NOT NULL, amt numeric NOT NULL);
+INSERT INTO t values
+  (1, 'x', 2),
+  (2, 'x', 3),
+  (3, 'y', 5),
+  (4, 'y', 7),
+  (5, 'z', 11);
+CREATE VIEW tv AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type;
+SELECT * FROM tv;
+ type | totamt 
+------+--------
+ y    |     12
+ z    |     11
+ x    |      5
+(3 rows)
+
+CREATE MATERIALIZED VIEW tm AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type WITH NO DATA;
+SELECT * FROM tm;
+ERROR:  materialized view "tm" has not been populated
+HINT:  Use the REFRESH MATERIALIZED VIEW command.
+REFRESH MATERIALIZED VIEW tm;
+SELECT * FROM tm;
+ type | totamt 
+------+--------
+ y    |     12
+ z    |     11
+ x    |      5
+(3 rows)
+
+CREATE MATERIALIZED VIEW tvm AS SELECT * FROM tv;
+SELECT * FROM tvm;
+ type | totamt 
+------+--------
+ y    |     12
+ z    |     11
+ x    |      5
+(3 rows)
+
+CREATE MATERIALIZED VIEW tmm AS SELECT sum(totamt) AS grandtot FROM tm;
+CREATE MATERIALIZED VIEW tvmm AS SELECT sum(totamt) AS grandtot FROM tvm;
+INSERT INTO t VALUES (6, 'z', 13);
+SELECT * FROM tm ORDER BY type;
+ type | totamt 
+------+--------
+ x    |      5
+ y    |     12
+ z    |     11
+(3 rows)
+
+SELECT * FROM tvm ORDER BY type;
+ type | totamt 
+------+--------
+ x    |      5
+ y    |     12
+ z    |     11
+(3 rows)
+
+REFRESH MATERIALIZED VIEW tm;
+REFRESH MATERIALIZED VIEW tvm;
+SELECT * FROM tm ORDER BY type;
+ type | totamt 
+------+--------
+ x    |      5
+ y    |     12
+ z    |     24
+(3 rows)
+
+SELECT * FROM tvm ORDER BY type;
+ type | totamt 
+------+--------
+ x    |      5
+ y    |     12
+ z    |     24
+(3 rows)
+
+SELECT * FROM tmm;
+ grandtot 
+----------
+       28
+(1 row)
+
+SELECT * FROM tvmm;
+ grandtot 
+----------
+       28
+(1 row)
+
+REFRESH MATERIALIZED VIEW tmm;
+REFRESH MATERIALIZED VIEW tvmm;
+SELECT * FROM tmm;
+ grandtot 
+----------
+       41
+(1 row)
+
+SELECT * FROM tvmm;
+ grandtot 
+----------
+       41
+(1 row)
+
+DROP TABLE t;
+ERROR:  cannot drop table t because other objects depend on it
+DETAIL:  view tv depends on table t
+materialized view tm depends on table t
+materialized view tmm depends on materialized view tm
+materialized view tvm depends on table t
+materialized view tvmm depends on materialized view tvm
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+DROP TABLE t CASCADE;
+NOTICE:  drop cascades to 5 other objects
+DETAIL:  drop cascades to view tv
+drop cascades to materialized view tm
+drop cascades to materialized view tmm
+drop cascades to materialized view tvm
+drop cascades to materialized view tvmm

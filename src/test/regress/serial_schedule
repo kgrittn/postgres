@@ -97,6 +97,7 @@ test: security_label
 test: collate
 test: misc
 test: alter_generic
+test: matview
 test: rules
 test: event_trigger
 test: select_views
