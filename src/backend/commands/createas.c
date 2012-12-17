@@ -68,7 +68,13 @@ Query *
 SetupForCreateTableAs(Query *query, IntoClause *into, const char *queryString,
 					   ParamListInfo params, DestReceiver *dest)
 {
+	List       *rewritten;
+
 	Assert(query->commandType == CMD_SELECT);
+
+	if (into->relkind == RELKIND_MATVIEW)
+		query = (Query *) parse_analyze((Node *) copyObject(query),
+										 queryString, NULL, 0)->utilityStmt;
 
 	/*
 	 * Parse analysis was done already, but we still have to run the rule
@@ -81,20 +87,12 @@ SetupForCreateTableAs(Query *query, IntoClause *into, const char *queryString,
 	 * the case that CTAS is in a portal or plpgsql function and is executed
 	 * repeatedly.	(See also the same hack in EXPLAIN and PREPARE.)
 	 */
-	if (into->relkind == RELKIND_MATVIEW)
-		query = (Query *) parse_analyze((Node *) copyObject(query),
-										 queryString, NULL, 0)->utilityStmt;
-	else
-	{
-		List       *rewritten;
+	rewritten = QueryRewrite((Query *) copyObject(query));
 
-		rewritten = QueryRewrite((Query *) copyObject(query));
-
-		/* SELECT should never rewrite to more or less than one SELECT query */
-		if (list_length(rewritten) != 1)
-			elog(ERROR, "unexpected rewrite result for CREATE TABLE AS SELECT");
-		query = (Query *) linitial(rewritten);
-	}
+	/* SELECT should never rewrite to more or less than one SELECT query */
+	if (list_length(rewritten) != 1)
+		elog(ERROR, "unexpected rewrite result for CREATE TABLE AS SELECT");
+	query = (Query *) linitial(rewritten);
 
 	Assert(query->commandType == CMD_SELECT);
 
@@ -113,12 +111,6 @@ SetupForCreateTableAs(Query *query, IntoClause *into, const char *queryString,
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("materialized views may not be defined using bound parameters")));
-
-		/*
-		 * For a materialized view, we don't want the planner scribbling on
-		 * the query, because it will need to be planned again.
-		 */
-		query = (Query *) copyObject(query);
 	}
 
 	return query;
