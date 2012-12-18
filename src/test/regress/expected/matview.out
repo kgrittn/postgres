@@ -1,5 +1,5 @@
 CREATE TABLE t (id int NOT NULL PRIMARY KEY, type text NOT NULL, amt numeric NOT NULL);
-INSERT INTO t values
+INSERT INTO t VALUES
   (1, 'x', 2),
   (2, 'x', 3),
   (3, 'y', 5),
