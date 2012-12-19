@@ -1,3 +1,4 @@
+-- create a table to use as a basis for views and materialized views in various combinations
 CREATE TABLE t (id int NOT NULL PRIMARY KEY, type text NOT NULL, amt numeric NOT NULL);
 INSERT INTO t VALUES
   (1, 'x', 2),
@@ -5,6 +6,7 @@ INSERT INTO t VALUES
   (3, 'y', 5),
   (4, 'y', 7),
   (5, 'z', 11);
+-- we want a view based on the table, too, since views present additional challenges
 CREATE VIEW tv AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type;
 SELECT * FROM tv;
  type | totamt 
@@ -14,6 +16,7 @@ SELECT * FROM tv;
  x    |      5
 (3 rows)
 
+-- create a materialized view with no data, and confirm correct behavior
 CREATE MATERIALIZED VIEW tm AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type WITH NO DATA;
 SELECT * FROM tm;
 ERROR:  materialized view "tm" has not been populated
@@ -27,6 +30,7 @@ SELECT * FROM tm;
  x    |      5
 (3 rows)
 
+-- create various views
 CREATE MATERIALIZED VIEW tvm AS SELECT * FROM tv;
 SELECT * FROM tvm;
  type | totamt 
@@ -40,7 +44,9 @@ CREATE MATERIALIZED VIEW tmm AS SELECT sum(totamt) AS grandtot FROM tm;
 CREATE MATERIALIZED VIEW tvmm AS SELECT sum(totamt) AS grandtot FROM tvm;
 CREATE VIEW tvv AS SELECT sum(totamt) AS grandtot FROM tv;
 CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
+-- modify the underlying table data
 INSERT INTO t VALUES (6, 'z', 13);
+-- confirm pre- and post-refresh contents of fairly simple materialized views
 SELECT * FROM tm ORDER BY type;
  type | totamt 
 ------+--------
@@ -75,6 +81,7 @@ SELECT * FROM tvm ORDER BY type;
  z    |     24
 (3 rows)
 
+-- confirm pre- and post-refresh contents of nested materialized views
 SELECT * FROM tmm;
  grandtot 
 ----------
@@ -114,6 +121,7 @@ SELECT * FROM tvvm;
        41
 (1 row)
 
+-- make sure that dependencies are reported properly when they block the drop
 DROP TABLE t;
 ERROR:  cannot drop table t because other objects depend on it
 DETAIL:  view tv depends on table t
@@ -124,6 +132,7 @@ materialized view tvm depends on table t
 materialized view tvmm depends on materialized view tvm
 materialized view tvvm depends on table t
 HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+-- make sure dependencies are dropped and reported
 DROP TABLE t CASCADE;
 NOTICE:  drop cascades to 7 other objects
 DETAIL:  drop cascades to view tv
