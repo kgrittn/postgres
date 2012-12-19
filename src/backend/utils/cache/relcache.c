@@ -947,11 +947,18 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 
 	/* flag unlogged matview invalid if its heap looks like the init fork */
 	if (relation->rd_rel->relkind == RELKIND_MATVIEW &&
-		relation->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED &&
-		relation->rd_rel->relisvalid &&
-		heap_is_matview_init_fork(relation))
+		relation->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED)
 	{
-		SetRelationIsValid(relid, false);
+		/* prevent race conditions on this part of the test */
+		LWLockAcquire(UnloggedMatViewInitLock, LW_EXCLUSIVE);
+		if (relation->rd_rel->relisvalid &&
+			heap_is_matview_init_fork(relation))
+		{
+			SetRelationIsValid(relid, false);
+			RelationOpenSmgr(relation);
+			smgrtruncate(relation->rd_smgr, MAIN_FORKNUM, 0);
+		}
+		LWLockRelease(UnloggedMatViewInitLock);
 	}
 
 	/* It's fully valid */
