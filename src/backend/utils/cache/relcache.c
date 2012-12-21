@@ -946,7 +946,8 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 		RelationCacheInsert(relation);
 
 	/* flag unlogged matview invalid if its heap looks like the init fork */
-	if (relation->rd_rel->relkind == RELKIND_MATVIEW &&
+	if (insertIt &&
+		relation->rd_rel->relkind == RELKIND_MATVIEW &&
 		relation->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED)
 	{
 		/* prevent race conditions on this part of the test */

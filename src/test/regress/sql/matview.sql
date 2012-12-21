@@ -47,6 +47,22 @@ SELECT * FROM tmm;
 SELECT * FROM tvmm;
 SELECT * FROM tvvm;
 
+-- test diemv when the mv does not exist
+DROP MATERIALIZED VIEW IF EXISTS tum;
+
+-- make sure that an unlogged materialized view works (in the absence of a crash)
+CREATE UNLOGGED MATERIALIZED VIEW tum AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type WITH NO DATA;
+SELECT * FROM tum;
+REFRESH MATERIALIZED VIEW tum;
+SELECT * FROM tum;
+TRUNCATE tum;
+SELECT * FROM tum;
+REFRESH MATERIALIZED VIEW tum;
+SELECT * FROM tum;
+
+-- test diemv when the mv does exist
+DROP MATERIALIZED VIEW IF EXISTS tum;
+
 -- make sure that dependencies are reported properly when they block the drop
 DROP TABLE t;
 

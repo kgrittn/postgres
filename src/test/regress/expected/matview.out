@@ -121,6 +121,38 @@ SELECT * FROM tvvm;
        41
 (1 row)
 
+-- test diemv when the mv does not exist
+DROP MATERIALIZED VIEW IF EXISTS tum;
+NOTICE:  materialized view "tum" does not exist, skipping
+-- make sure that an unlogged materialized view works (in the absence of a crash)
+CREATE UNLOGGED MATERIALIZED VIEW tum AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type WITH NO DATA;
+SELECT * FROM tum;
+ERROR:  materialized view "tum" has not been populated
+HINT:  Use the REFRESH MATERIALIZED VIEW command.
+REFRESH MATERIALIZED VIEW tum;
+SELECT * FROM tum;
+ type | totamt 
+------+--------
+ y    |     12
+ z    |     24
+ x    |      5
+(3 rows)
+
+TRUNCATE tum;
+SELECT * FROM tum;
+ERROR:  materialized view "tum" has not been populated
+HINT:  Use the REFRESH MATERIALIZED VIEW command.
+REFRESH MATERIALIZED VIEW tum;
+SELECT * FROM tum;
+ type | totamt 
+------+--------
+ y    |     12
+ z    |     24
+ x    |      5
+(3 rows)
+
+-- test diemv when the mv does exist
+DROP MATERIALIZED VIEW IF EXISTS tum;
 -- make sure that dependencies are reported properly when they block the drop
 DROP TABLE t;
 ERROR:  cannot drop table t because other objects depend on it

@@ -1376,10 +1376,10 @@ heap_is_matview_init_fork(Relation rel)
 		return false;
 	if (smgrnblocks(rel->rd_smgr, MAIN_FORKNUM) < 1)
 		return false;
-
 	page = (Page) palloc(BLCKSZ);
 	smgrread(rel->rd_smgr, MAIN_FORKNUM, 0, (char *) page);
-	isInitFork = (((PageHeader) page)->pd_special < BLCKSZ);
+	isInitFork = (((PageHeader) page)->pd_special > 0 &&
+				  ((PageHeader) page)->pd_special < BLCKSZ);
 	pfree(page);
 
 	if (isInitFork)
