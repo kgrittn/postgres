@@ -480,6 +480,8 @@ DefineView(ViewStmt *stmt, const char *queryString)
 	CommandCounterIncrement();
 
 	StoreViewQuery(viewOid, viewParse, stmt->replace);
+
+	return viewOid;
 }
 
 /*
