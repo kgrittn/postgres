@@ -2153,7 +2153,7 @@ renameatt_internal(Oid myrelid,
 	Relation	targetrelation;
 	Relation	attrelation;
 	HeapTuple	atttup;
-	Form_pg_attribute attform;
+	Form_pg_attribute	attform;
 	int			attnum;
 
 	/*
@@ -2303,7 +2303,7 @@ RangeVarCallbackForRenameAttribute(const RangeVar *rv, Oid relid, Oid oldrelid,
 /*
  *		renameatt		- changes the name of a attribute in a relation
  */
-void
+Oid
 renameatt(RenameStmt *stmt)
 {
 	Oid			relid;
@@ -2319,7 +2319,7 @@ renameatt(RenameStmt *stmt)
 		ereport(NOTICE,
 				(errmsg("relation \"%s\" does not exist, skipping",
 						stmt->relation->relname)));
-		return;
+		return InvalidOid;
 	}
 
 	renameatt_internal(relid,
@@ -2329,13 +2329,16 @@ renameatt(RenameStmt *stmt)
 					   false,	/* recursing? */
 					   0,		/* expected inhcount */
 					   stmt->behavior);
+
+	/* This is an ALTER TABLE command so it's about the relid */
+	return relid;
 }
 
 
 /*
  * same logic as renameatt_internal
  */
-static void
+static Oid
 rename_constraint_internal(Oid myrelid,
 						   Oid mytypid,
 						   const char *oldconname,
@@ -2427,9 +2430,11 @@ rename_constraint_internal(Oid myrelid,
 
 	if (targetrelation)
 		relation_close(targetrelation, NoLock); /* close rel but keep lock */
+
+	return constraintOid;
 }
 
-void
+Oid
 RenameConstraint(RenameStmt *stmt)
 {
 	Oid			relid = InvalidOid;
@@ -2458,18 +2463,20 @@ RenameConstraint(RenameStmt *stmt)
 										 NULL);
 	}
 
-	rename_constraint_internal(relid, typid,
-							   stmt->subname,
-							   stmt->newname,
-		 stmt->relation ? interpretInhOption(stmt->relation->inhOpt) : false,	/* recursive? */
-							   false,	/* recursing? */
-							   0 /* expected inhcount */ );
+	return
+		rename_constraint_internal(relid, typid,
+								   stmt->subname,
+								   stmt->newname,
+								   stmt->relation ? interpretInhOption(stmt->relation->inhOpt) : false,	/* recursive? */
+								   false,	/* recursing? */
+								   0 /* expected inhcount */ );
+
 }
 
 /*
  * Execute ALTER TABLE/INDEX/SEQUENCE/VIEW/FOREIGN TABLE RENAME
  */
-void
+Oid
 RenameRelation(RenameStmt *stmt)
 {
 	Oid			relid;
@@ -2491,11 +2498,13 @@ RenameRelation(RenameStmt *stmt)
 		ereport(NOTICE,
 				(errmsg("relation \"%s\" does not exist, skipping",
 						stmt->relation->relname)));
-		return;
+		return InvalidOid;
 	}
 
 	/* Do the work */
 	RenameRelationInternal(relid, stmt->newname);
+
+	return relid;
 }
 
 /*
@@ -9820,7 +9829,7 @@ ATExecGenericOptions(Relation rel, List *options)
 /*
  * Execute ALTER TABLE SET SCHEMA
  */
-void
+Oid
 AlterTableNamespace(AlterObjectSchemaStmt *stmt)
 {
 	Relation	rel;
@@ -9840,7 +9849,7 @@ AlterTableNamespace(AlterObjectSchemaStmt *stmt)
 		ereport(NOTICE,
 				(errmsg("relation \"%s\" does not exist, skipping",
 						stmt->relation->relname)));
-		return;
+		return InvalidOid;
 	}
 
 	rel = relation_open(relid, NoLock);
@@ -9875,6 +9884,8 @@ AlterTableNamespace(AlterObjectSchemaStmt *stmt)
 
 	/* close rel, but keep lock until commit */
 	relation_close(rel, NoLock);
+
+	return relid;
 }
 
 /*
