@@ -6,7 +6,7 @@
  * with the walreceiver process. Functions implementing walreceiver itself
  * are in walreceiver.c.
  *
- * Portions Copyright (c) 2010-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2013, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -326,7 +326,7 @@ GetReplicationApplyDelay(void)
 
 	replayPtr = GetXLogReplayRecPtr(NULL);
 
-	if (XLByteEQ(receivePtr, replayPtr))
+	if (receivePtr == replayPtr)
 		return 0;
 
 	TimestampDifference(GetCurrentChunkReplayStartTime(),

@@ -3,7 +3,7 @@
  * twophase.c
  *		Two-phase commit support functions.
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -1559,7 +1559,7 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 		PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 
 		if (gxact->valid &&
-			XLByteLE(gxact->prepare_lsn, redo_horizon))
+			gxact->prepare_lsn <= redo_horizon)
 			xids[nxids++] = pgxact->xid;
 	}
 

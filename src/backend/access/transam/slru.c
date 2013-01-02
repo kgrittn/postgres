@@ -38,7 +38,7 @@
  * by re-setting the page's page_dirty flag.
  *
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/backend/access/transam/slru.c
@@ -685,7 +685,7 @@ SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno, SlruFlush fdata)
 		{
 			XLogRecPtr	this_lsn = shared->group_lsn[lsnindex++];
 
-			if (XLByteLT(max_lsn, this_lsn))
+			if (max_lsn < this_lsn)
 				max_lsn = this_lsn;
 		}
 

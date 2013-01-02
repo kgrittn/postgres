@@ -5,7 +5,7 @@
  *
  * Author: Magnus Hagander <magnus@hagander.net>
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  src/bin/pg_basebackup/receivelog.c
@@ -636,7 +636,7 @@ ReceiveXlogStream(PGconn *conn, XLogRecPtr startpos, uint32 timeline,
 			/* Write was successful, advance our position */
 			bytes_written += bytes_to_write;
 			bytes_left -= bytes_to_write;
-			XLByteAdvance(blockpos, bytes_to_write);
+			blockpos += bytes_to_write;
 			xlogoff += bytes_to_write;
 
 			/* Did we reach the end of a WAL segment? */

@@ -4,7 +4,7 @@
  *	  WAL replay logic for GiST.
  *
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -64,7 +64,7 @@ gistRedoClearFollowRight(XLogRecPtr lsn, XLogRecord *record, int block_index,
 	 * of this record, because the updated NSN is not included in the full
 	 * page image.
 	 */
-	if (!XLByteLT(lsn, PageGetLSN(page)))
+	if (lsn >= PageGetLSN(page))
 	{
 		GistPageGetOpaque(page)->nsn = lsn;
 		GistClearFollowRight(page);
@@ -119,7 +119,7 @@ gistRedoPageUpdateRecord(XLogRecPtr lsn, XLogRecord *record)
 	page = (Page) BufferGetPage(buffer);
 
 	/* nothing more to do if change already applied */
-	if (XLByteLE(lsn, PageGetLSN(page)))
+	if (lsn <= PageGetLSN(page))
 	{
 		UnlockReleaseBuffer(buffer);
 		return;
