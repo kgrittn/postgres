@@ -50,7 +50,7 @@ static void setRuleCheckAsUser_Query(Query *qry, Oid userid);
  *	  takes the arguments and inserts them as a row into the system
  *	  relation "pg_rewrite"
  */
-static void
+static Oid
 InsertRule(char *rulname,
 		   int evtype,
 		   Oid eventrel_oid,
