@@ -183,6 +183,8 @@ InsertRule(char *rulname,
 						   RewriteRelationId, rewriteObjectId, 0, NULL);
 
 	heap_close(pg_rewrite_desc, RowExclusiveLock);
+
+	return rewriteObjectId;
 }
 
 /*
