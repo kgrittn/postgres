@@ -1618,9 +1618,6 @@ refreshMatViewData(Archive *fout, TableDataInfo *tdinfo)
 	TableInfo  *tbinfo = tdinfo->tdtable;
 	PQExpBuffer q;
 
-	if (!(tbinfo->relisvalid))
-		return;
-
 	q = createPQExpBuffer();
 	appendPQExpBuffer(q, "REFRESH MATERIALIZED VIEW %s;\n",
 					  fmtId(tbinfo->dobj.name));
@@ -1695,6 +1692,10 @@ makeTableDataInfo(TableInfo *tbinfo, bool oids)
 	/* Check that the data is not explicitly excluded */
 	if (simple_oid_list_member(&tabledata_exclude_oids,
 							   tbinfo->dobj.catId.oid))
+		return;
+
+	/* An invalid materialized view does not generate data. */
+	if (!(tbinfo->relisvalid))
 		return;
 
 	/* OK, let's dump it */
