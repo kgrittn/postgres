@@ -1623,9 +1623,8 @@ static void
 refreshMatViewData(Archive *fout, TableDataInfo *tdinfo)
 {
 	TableInfo  *tbinfo = tdinfo->tdtable;
-	PQExpBuffer q;
+	PQExpBuffer q = createPQExpBuffer();
 
-	q = createPQExpBuffer();
 	appendPQExpBuffer(q, "REFRESH MATERIALIZED VIEW %s;\n",
 					  fmtId(tbinfo->dobj.name));
 
