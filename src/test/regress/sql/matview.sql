@@ -24,6 +24,13 @@ CREATE MATERIALIZED VIEW tmm AS SELECT sum(totamt) AS grandtot FROM tm;
 CREATE MATERIALIZED VIEW tvmm AS SELECT sum(totamt) AS grandtot FROM tvm;
 CREATE VIEW tvv AS SELECT sum(totamt) AS grandtot FROM tv;
 CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
+CREATE VIEW tvvmv AS SELECT * FROM tvvm;
+CREATE MATERIALIZED VIEW aa AS SELECT * FROM tvvmv;
+
+-- check that plans seem reasonable
+\d+ tvm
+\d+ tvvm
+\d+ aa
 
 -- modify the underlying table data
 INSERT INTO t VALUES (6, 'z', 13);

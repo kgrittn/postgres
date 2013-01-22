@@ -47,7 +47,7 @@ typedef struct
 {
 	DestReceiver pub;			/* publicly-known function pointers */
 	IntoClause *into;			/* target relation specification */
-	Query		*query;			/* the query which defines/populates data */
+	Query		*viewParse;		/* the query which defines/populates data */
 	/* These fields are filled by intorel_startup: */
 	Relation	rel;			/* relation to write to */
 	CommandId	output_cid;		/* cmin to insert in output tuples */
@@ -69,12 +69,13 @@ SetupForCreateTableAs(Query *query, IntoClause *into, const char *queryString,
 					   ParamListInfo params, DestReceiver *dest)
 {
 	List       *rewritten;
+	Query	   *viewParse = NULL;
 
 	Assert(query->commandType == CMD_SELECT);
 
 	if (into->relkind == RELKIND_MATVIEW)
-		query = (Query *) parse_analyze((Node *) copyObject(query),
-										 queryString, NULL, 0)->utilityStmt;
+		viewParse = (Query *) parse_analyze((Node *) copyObject(query),
+											queryString, NULL, 0)->utilityStmt;
 
 	/*
 	 * Parse analysis was done already, but we still have to run the rule
@@ -97,7 +98,7 @@ SetupForCreateTableAs(Query *query, IntoClause *into, const char *queryString,
 	Assert(query->commandType == CMD_SELECT);
 
 	/* Save the query after rewrite but before planning. */
-	((DR_intorel *) dest)->query = query;
+	((DR_intorel *) dest)->viewParse = viewParse;
 	((DR_intorel *) dest)->into = into;
 
 	if (into->relkind == RELKIND_MATVIEW)
@@ -352,7 +353,7 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 		* materialized view. It's not sufficiently clear what the user would
 		* want to happen if the MV is refreshed or incrementally maintained.
 		*/
-		if (myState->query->hasModifyingCTE)
+		if (myState->viewParse->hasModifyingCTE)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("materialized views must not use data-modifying statements in WITH")));
@@ -362,7 +363,7 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 		 * creation query. It would be hard to refresh data or incrementally
 		 * maintain it if a source disappeared.
 		 */
-		if (isQueryUsingTempRelation(myState->query))
+		if (isQueryUsingTempRelation(myState->viewParse))
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("materialized views must not use temporary tables or views")));
@@ -401,7 +402,7 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	 */
 	if (into->relkind == RELKIND_MATVIEW)
 	{
-		StoreViewQuery(intoRelationId, myState->query, false);
+		StoreViewQuery(intoRelationId, myState->viewParse, false);
 		if (into->skipData)
 		{
 			CommandCounterIncrement();

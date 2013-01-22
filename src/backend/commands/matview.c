@@ -23,6 +23,7 @@
 #include "commands/tablecmds.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "rewrite/rewriteHandler.h"
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"
@@ -150,13 +151,21 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
  */
 static void
 refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
-			 Query *dataQuery, const char *queryString)
+			 Query *query, const char *queryString)
 {
 	Oid			OIDNewHeap;
+	List       *rewritten;
 	PlannedStmt *plan;
 	DestReceiver *dest;
 	QueryDesc  *queryDesc;
 	List	   *rtable;
+
+	rewritten = QueryRewrite((Query *) copyObject(query));
+
+	/* SELECT should never rewrite to more or less than one SELECT query */
+	if (list_length(rewritten) != 1)
+		elog(ERROR, "unexpected rewrite result for REFRESH MATERIALIZED VIEW");
+	query = (Query *) linitial(rewritten);
 
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();
@@ -169,12 +178,12 @@ refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
 	 * isResultRel flag to indicate that it is OK if they are flagged as
 	 * invalid.
 	 */
-	rtable = dataQuery->rtable;
+	rtable = query->rtable;
 	((RangeTblEntry *) linitial(rtable))->isResultRel = true;
 	((RangeTblEntry *) lsecond(rtable))->isResultRel = true;
 
 	/* Plan the query which will generate data for the refresh. */
-	plan = pg_plan_query(dataQuery, 0, NULL);
+	plan = pg_plan_query(query, 0, NULL);
 
 	/* Create the transient table that will receive the regenerated data. */
 	OIDNewHeap = make_new_heap(matviewOid, tableSpace);
