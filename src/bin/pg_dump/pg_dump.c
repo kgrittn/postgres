@@ -225,6 +225,7 @@ static void addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 static void getDomainConstraints(Archive *fout, TypeInfo *tyinfo);
 static void getTableData(TableInfo *tblinfo, int numTables, bool oids);
 static void makeTableDataInfo(TableInfo *tbinfo, bool oids);
+static void buildMatViewRefreshDependencies(TableInfo *tbinfo);
 static void getTableDataFKConstraints(void);
 static char *format_function_arguments(FuncInfo *finfo, char *funcargs);
 static char *format_function_arguments_old(Archive *fout,
@@ -1641,8 +1642,8 @@ refreshMatViewData(Archive *fout, TableDataInfo *tdinfo)
 				 q->data,								/* Create */
 				 "",									/* Del */
 				 NULL,									/* Copy */
-				 &(tbinfo->dobj.dumpId),				/* Deps */
-				 1,										/* # Deps */
+				 tdinfo->dobj.dependencies,				/* Deps */
+				 tdinfo->dobj.nDeps,					/* # Deps */
 				 NULL,									/* Dumper */
 				 NULL);									/* Dumper Arg */
 
@@ -1662,6 +1663,11 @@ getTableData(TableInfo *tblinfo, int numTables, bool oids)
 	{
 		if (tblinfo[i].dobj.dump)
 			makeTableDataInfo(&(tblinfo[i]), oids);
+	}
+
+	for (i = 0; i < numTables; i++)
+	{
+		buildMatViewRefreshDependencies(&(tblinfo[i]));
 	}
 }
 
@@ -1727,6 +1733,50 @@ makeTableDataInfo(TableInfo *tbinfo, bool oids)
 	addObjectDependency(&tdinfo->dobj, tbinfo->dobj.dumpId);
 
 	tbinfo->dataObj = tdinfo;
+}
+
+/*
+ * The refresh for a materialized view must be dependent on the refresh and
+ * index builds for any materialized view that this one is dependent on.
+ *
+ * This must be called after all the objects are created, but before they are
+ * sorted.
+ */
+static void
+buildMatViewRefreshDependencies(TableInfo *tbinfo)
+{
+	TableDataInfo	*tdinfo;
+	int		i;
+
+	if (tbinfo->relkind != RELKIND_MATVIEW)
+		return;
+
+	/* We might not be populating data. If not, get out. */
+	tdinfo = tbinfo->dataObj;
+	if (tdinfo == NULL)
+		return;
+
+	Assert(tdinfo->dobj.objType == DO_REFRESH_MATVIEW);
+	Assert(tdinfo->tdtable == tbinfo);
+
+	/* Scan the TableInfo dependencies for other materialized views. */
+	for (i = 0; i < tbinfo->dobj.nDeps; i++)
+	{
+		DumpableObject	*dobj;
+
+		dobj = findObjectByDumpId(tbinfo->dobj.dependencies[i]);
+		if (dobj != NULL && dobj->objType == DO_TABLE)
+		{
+			TableInfo	*tbinfo2 = (TableInfo *) dobj;
+
+			if (tbinfo2->relkind == RELKIND_MATVIEW &&
+				tbinfo2->dataObj != NULL)
+			{
+				addObjectDependency(&tdinfo->dobj,
+									tbinfo2->dataObj->dobj.dumpId);
+			}
+		}
+	}
 }
 
 /*
