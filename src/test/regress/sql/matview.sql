@@ -75,3 +75,11 @@ DROP TABLE t;
 
 -- make sure dependencies are dropped and reported
 DROP TABLE t CASCADE;
+
+-- some additional tests not using base tables
+CREATE VIEW v_test1 AS SELECT 1 moo;
+CREATE VIEW v_test2 AS SELECT moo, 2*moo FROM v_test1 UNION ALL SELECT moo, 3*moo FROM v_test1;
+\d+ v_test2
+CREATE MATERIALIZED VIEW mv_test2 AS SELECT moo, 2*moo FROM v_test2 UNION ALL SELECT moo, 3*moo FROM v_test2;
+\d+ mv_test2
+DROP VIEW v_test1 CASCADE;
