@@ -145,7 +145,8 @@ old_8_3_check_for_tsquery_usage(ClusterInfo *cluster)
 								"FROM	pg_catalog.pg_class c, "
 								"		pg_catalog.pg_namespace n, "
 								"		pg_catalog.pg_attribute a "
-								"WHERE	c.relkind in ('r', 'm') AND "
+		/* materialized views didn't exist in 8.3, so no need to check 'm' */
+								"WHERE	c.relkind = 'r' AND "
 								"		c.oid = a.attrelid AND "
 								"		NOT a.attisdropped AND "
 								"		a.atttypid = 'pg_catalog.tsquery'::pg_catalog.regtype AND "
@@ -323,7 +324,8 @@ old_8_3_rebuild_tsvector_tables(ClusterInfo *cluster, bool check_mode)
 								"FROM	pg_catalog.pg_class c, "
 								"		pg_catalog.pg_namespace n, "
 								"		pg_catalog.pg_attribute a "
-								"WHERE	c.relkind in ('r', 'm') AND "
+		/* materialized views didn't exist in 8.3, so no need to check 'm' */
+								"WHERE	c.relkind = 'r' AND "
 								"		c.oid = a.attrelid AND "
 								"		NOT a.attisdropped AND "
 								"		a.atttypid = 'pg_catalog.tsvector'::pg_catalog.regtype AND "
@@ -343,7 +345,8 @@ old_8_3_rebuild_tsvector_tables(ClusterInfo *cluster, bool check_mode)
 								"FROM	pg_catalog.pg_class c, "		\
 								"		pg_catalog.pg_namespace n, "	\
 								"		pg_catalog.pg_attribute a "		\
-								"WHERE	c.relkind in ('r', 'm') AND "	\
+		/* materialized views didn't exist in 8.3, so no need to check 'm' */ \
+								"WHERE	c.relkind = 'r' AND "			\
 								"		c.oid = a.attrelid AND "		\
 								"		NOT a.attisdropped AND "		\
 								"		a.atttypid = 'pg_catalog.tsvector'::pg_catalog.regtype AND " \
