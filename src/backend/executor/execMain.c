@@ -766,7 +766,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	ExecCheckRTPerms(rangeTable, true);
 
 	/*
-	 * Ensure that all referrenced relations are flagged as valid.
+	 * Ensure that all referenced relations are flagged as valid.
 	 */
 	ExecCheckRelationsValid(rangeTable);
 
