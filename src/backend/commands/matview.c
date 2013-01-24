@@ -14,6 +14,7 @@
  */
 #include "postgres.h"
 
+#include "access/multixact.h"
 #include "access/relscan.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
@@ -222,7 +223,8 @@ refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
 	 * Swap the physical files of the target and transient tables, then
 	 * rebuild the target's indexes and throw away the transient table.
 	 */
-	finish_heap_swap(matviewOid, OIDNewHeap, false, false, false, RecentXmin);
+	finish_heap_swap(matviewOid, OIDNewHeap, false, false, false, RecentXmin,
+					 ReadNextMultiXactId());
 
 	SetRelationIsValid(matviewOid, true);
 }
