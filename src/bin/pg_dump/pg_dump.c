@@ -194,7 +194,6 @@ static void dumpAttrDef(Archive *fout, AttrDefInfo *adinfo);
 static void dumpSequence(Archive *fout, TableInfo *tbinfo);
 static void dumpSequenceData(Archive *fout, TableDataInfo *tdinfo);
 static void dumpIndex(Archive *fout, IndxInfo *indxinfo);
-static void dumpMatViewIndex(Archive *fout, IndxInfo *indxinfo);
 static void dumpConstraint(Archive *fout, ConstraintInfo *coninfo);
 static void dumpTableConstraintComment(Archive *fout, ConstraintInfo *coninfo);
 static void dumpTSParser(Archive *fout, TSParserInfo *prsinfo);
@@ -7429,7 +7428,7 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 			refreshMatViewData(fout, (TableDataInfo *) dobj);
 			break;
 		case DO_MATVIEW_INDEX:
-			dumpMatViewIndex(fout, (IndxInfo *) dobj);
+			dumpIndex(fout, (IndxInfo *) dobj);
 			break;
 		case DO_RULE:
 			dumpRule(fout, (RuleInfo *) dobj);
@@ -13206,82 +13205,6 @@ getAttrName(int attrnum, TableInfo *tblInfo)
  */
 static void
 dumpIndex(Archive *fout, IndxInfo *indxinfo)
-{
-	TableInfo  *tbinfo = indxinfo->indextable;
-	PQExpBuffer q;
-	PQExpBuffer delq;
-	PQExpBuffer labelq;
-
-	if (dataOnly)
-		return;
-
-	q = createPQExpBuffer();
-	delq = createPQExpBuffer();
-	labelq = createPQExpBuffer();
-
-	appendPQExpBuffer(labelq, "INDEX %s",
-					  fmtId(indxinfo->dobj.name));
-
-	/*
-	 * If there's an associated constraint, don't dump the index per se, but
-	 * do dump any comment for it.	(This is safe because dependency ordering
-	 * will have ensured the constraint is emitted first.)
-	 */
-	if (indxinfo->indexconstraint == 0)
-	{
-		if (binary_upgrade)
-			binary_upgrade_set_pg_class_oids(fout, q,
-											 indxinfo->dobj.catId.oid, true);
-
-		/* Plain secondary index */
-		appendPQExpBuffer(q, "%s;\n", indxinfo->indexdef);
-
-		/* If the index is clustered, we need to record that. */
-		if (indxinfo->indisclustered)
-		{
-			appendPQExpBuffer(q, "\nALTER TABLE %s CLUSTER",
-							  fmtId(tbinfo->dobj.name));
-			appendPQExpBuffer(q, " ON %s;\n",
-							  fmtId(indxinfo->dobj.name));
-		}
-
-		/*
-		 * DROP must be fully qualified in case same name appears in
-		 * pg_catalog
-		 */
-		appendPQExpBuffer(delq, "DROP INDEX %s.",
-						  fmtId(tbinfo->dobj.namespace->dobj.name));
-		appendPQExpBuffer(delq, "%s;\n",
-						  fmtId(indxinfo->dobj.name));
-
-		ArchiveEntry(fout, indxinfo->dobj.catId, indxinfo->dobj.dumpId,
-					 indxinfo->dobj.name,
-					 tbinfo->dobj.namespace->dobj.name,
-					 indxinfo->tablespace,
-					 tbinfo->rolname, false,
-					 "INDEX", SECTION_POST_DATA,
-					 q->data, delq->data, NULL,
-					 NULL, 0,
-					 NULL, NULL);
-	}
-
-	/* Dump Index Comments */
-	dumpComment(fout, labelq->data,
-				tbinfo->dobj.namespace->dobj.name,
-				tbinfo->rolname,
-				indxinfo->dobj.catId, 0, indxinfo->dobj.dumpId);
-
-	destroyPQExpBuffer(q);
-	destroyPQExpBuffer(delq);
-	destroyPQExpBuffer(labelq);
-}
-
-/*
- * dumpMatViewIndex
- *	  write out to fout a user-defined index
- */
-static void
-dumpMatViewIndex(Archive *fout, IndxInfo *indxinfo)
 {
 	TableInfo  *tbinfo = indxinfo->indextable;
 	PQExpBuffer q;
