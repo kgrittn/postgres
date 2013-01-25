@@ -2000,6 +2000,11 @@ transformRuleStmt(RuleStmt *stmt, const char *queryString,
 	 */
 	rel = heap_openrv(stmt->relation, AccessExclusiveLock);
 
+	if (rel->rd_rel->relkind == RELKIND_MATVIEW)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("rules on materialized views are not supported")));
+
 	/* Set up pstate */
 	pstate = make_parsestate(NULL);
 	pstate->p_sourcetext = queryString;
