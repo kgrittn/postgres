@@ -39,7 +39,7 @@ ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="parameter">name</repla
 
   <para>
    You must own the materialized view to use <command>ALTER MATERIALIZED
-   VIEW</>.  To change a materailized view's schema, you must also have
+   VIEW</>.  To change a materialized view's schema, you must also have
    <literal>CREATE</> privilege on the new schema.
    To alter the owner, you must also be a direct or indirect member of the new
    owning role, and that role must have <literal>CREATE</literal> privilege on
