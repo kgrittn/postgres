@@ -23,7 +23,7 @@ PostgreSQL documentation
 <synopsis>
 CREATE [ UNLOGGED ] MATERIALIZED VIEW <replaceable>table_name</replaceable>
     [ (<replaceable>column_name</replaceable> [, ...] ) ]
-    [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
+    [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) ]
     [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
     AS <replaceable>query</replaceable>
     [ WITH [ NO ] DATA ]
@@ -88,25 +88,8 @@ CREATE [ UNLOGGED ] MATERIALIZED VIEW <replaceable>table_name</replaceable>
       This clause specifies optional storage parameters for the new
       materialized view; see <xref linkend="sql-createtable-storage-parameters"
       endterm="sql-createtable-storage-parameters-title"> for more
-      information.  The <literal>WITH</> clause
-      can also include <literal>OIDS=TRUE</> (or just <literal>OIDS</>)
-      to specify that rows of the new table
-      should have OIDs (object identifiers) assigned to them, or
-      <literal>OIDS=FALSE</> to specify that the rows should not have OIDs.
+      information.
       See <xref linkend="sql-createtable"> for more information.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>WITH OIDS</></term>
-    <term><literal>WITHOUT OIDS</></term>
-    <listitem>
-     <para>
-      These are obsolescent syntaxes equivalent to <literal>WITH (OIDS)</>
-      and <literal>WITH (OIDS=FALSE)</>, respectively.  If you wish to give
-      both an <literal>OIDS</> setting and storage parameters, you must use
-      the <literal>WITH ( ... )</> syntax; see above.
      </para>
     </listitem>
    </varlistentry>

@@ -3236,7 +3236,7 @@ CreateMatViewStmt:
 		;
 
 create_mv_target:
-			qualified_name opt_column_list OptWith OptTableSpace
+			qualified_name opt_column_list opt_reloptions OptTableSpace
 				{
 					$$ = makeNode(IntoClause);
 					$$->rel = $1;

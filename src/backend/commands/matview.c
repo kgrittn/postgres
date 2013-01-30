@@ -46,8 +46,8 @@ static void transientrel_startup(DestReceiver *self, int operation, TupleDesc ty
 static void transientrel_receive(TupleTableSlot *slot, DestReceiver *self);
 static void transientrel_shutdown(DestReceiver *self);
 static void transientrel_destroy(DestReceiver *self);
-static void refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
-						  Query *dataQuery, const char *queryString);
+static void refresh_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery,
+							const char *queryString);
 
 /*
  * ExecRefreshMatView -- execute a REFRESH MATERIALIZED VIEW command
@@ -62,7 +62,6 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	List	   *actions;
 	Query	   *dataQuery;
 	Oid			tableSpace;
-	bool		isWithOids;
 
 	/*
 	 * Get a lock until end of transaction.
@@ -83,6 +82,8 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	 * We're not using materialized views in the system catalogs.
 	 */
 	Assert(!IsSystemRelation(matviewRel));
+
+	Assert(!matviewRel->rd_rel->relhasoids);
 
 	/*
 	 * Check that everything is correct for a refresh. Problems at this point
@@ -128,11 +129,10 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	CheckTableNotInUse(matviewRel, "REFRESH MATERIALIZED VIEW");
 
 	tableSpace = matviewRel->rd_rel->reltablespace;
-	isWithOids = matviewRel->rd_rel->relhasoids;
 
 	heap_close(matviewRel, NoLock);
 
-	refresh_matview(matviewOid, tableSpace, isWithOids, dataQuery, queryString);
+	refresh_matview(matviewOid, tableSpace, dataQuery, queryString);
 }
 
 /*
@@ -151,8 +151,8 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
  * this command will change it to true.
  */
 static void
-refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
-			 Query *query, const char *queryString)
+refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
+				const char *queryString)
 {
 	Oid			OIDNewHeap;
 	List       *rewritten;
@@ -205,8 +205,7 @@ refresh_matview(Oid matviewOid, Oid tableSpace, bool isWithOids,
 								dest, NULL, 0);
 
 	/* call ExecutorStart to prepare the plan for execution */
-	ExecutorStart(queryDesc,
-				  isWithOids ? EXEC_FLAG_WITH_OIDS : EXEC_FLAG_WITHOUT_OIDS);
+	ExecutorStart(queryDesc, EXEC_FLAG_WITHOUT_OIDS);
 
 	/* run the plan */
 	ExecutorRun(queryDesc, ForwardScanDirection, 0L);
@@ -288,12 +287,6 @@ transientrel_receive(TupleTableSlot *slot, DestReceiver *self)
 	 * writable copy
 	 */
 	tuple = ExecMaterializeSlot(slot);
-
-	/*
-	 * force assignment of new OID (see comments in ExecInsert)
-	 */
-	if (myState->transientrel->rd_rel->relhasoids)
-		HeapTupleSetOid(tuple, InvalidOid);
 
 	heap_insert(myState->transientrel,
 				tuple,
