@@ -160,6 +160,8 @@ refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
 	DestReceiver *dest;
 	QueryDesc  *queryDesc;
 	List	   *rtable;
+	RangeTblEntry	*initial_rte;
+	RangeTblEntry	*second_rte;
 
 	rewritten = QueryRewrite((Query *) copyObject(query));
 
@@ -177,11 +179,19 @@ refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
 	 * first two RangeTblEntry list elements, which were added to the front
 	 * of the rewritten Query to keep the rules system happy, with the
 	 * isResultRel flag to indicate that it is OK if they are flagged as
-	 * invalid.
+	 * invalid. See UpdateRangeTableOfViewParse() for details.
+	 *
+	 * NOTE: The rewrite has switched the frist two RTEs, but they are still
+	 * in the first two positions. If that behavior changes, the asserts here
+	 * will fail.
 	 */
 	rtable = query->rtable;
-	((RangeTblEntry *) linitial(rtable))->isResultRel = true;
-	((RangeTblEntry *) lsecond(rtable))->isResultRel = true;
+	initial_rte = ((RangeTblEntry *) linitial(rtable));
+	Assert(strcmp(initial_rte->alias->aliasname, "new"));
+	initial_rte->isResultRel = true;
+	second_rte = ((RangeTblEntry *) lsecond(rtable));
+	Assert(strcmp(second_rte->alias->aliasname, "old"));
+	second_rte->isResultRel = true;
 
 	/* Plan the query which will generate data for the refresh. */
 	plan = pg_plan_query(query, 0, NULL);
