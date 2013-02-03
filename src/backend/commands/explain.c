@@ -305,8 +305,7 @@ ExplainOneQuery(Query *query, IntoClause *into, ExplainState *es,
 	/* planner will not cope with utility statements */
 	if (query->commandType == CMD_UTILITY)
 	{
-		ExplainOneUtility(query->utilityStmt, into, es,
-						  queryString, dest, params);
+		ExplainOneUtility(query->utilityStmt, into, es, queryString, params);
 		return;
 	}
 
@@ -338,14 +337,15 @@ ExplainOneQuery(Query *query, IntoClause *into, ExplainState *es,
  */
 void
 ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
-				  const char *queryString, DestReceiver *dest,
-				  ParamListInfo params)
+				  const char *queryString, ParamListInfo params)
 {
 	if (utilityStmt == NULL)
 		return;
 
 	if (IsA(utilityStmt, CreateTableAsStmt))
 	{
+		DestReceiver	*dest;
+
 		/*
 		 * We have to rewrite the contained SELECT and then pass it back to
 		 * ExplainOneQuery.  It's probably not really necessary to copy the
