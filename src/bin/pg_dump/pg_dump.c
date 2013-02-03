@@ -12489,7 +12489,7 @@ dumpTable(Archive *fout, TableInfo *tbinfo)
 /*
  * Create the AS clause for a view or materialized view. The semicolon is
  * stripped because a materialized view must add a WITH NO DATA clause.
- * 
+ *
  * This returns a new buffer which must be freed by the caller.
  */
 static PQExpBuffer
@@ -12535,6 +12535,7 @@ createViewAsClause(Archive *fout, TableInfo *tbinfo)
 					  tbinfo->dobj.name);
 
 	/* Strip off the trailing semicolon so that other things may follow. */
+	Assert(PQgetvalue(res, 0, 0)[len-1] == ';');
 	appendBinaryPQExpBuffer(result, PQgetvalue(res, 0, 0), len - 1);
 
 	PQclear(res);
