@@ -4057,7 +4057,7 @@ getTables(Archive *fout, int *numTables)
 	 * defined to inherit from a system catalog (pretty weird, but...)
 	 *
 	 * We ignore relations that are not ordinary tables, sequences, views,
-	 * composite types, or foreign tables.
+	 * materialized views, composite types, or foreign tables.
 	 *
 	 * Composite-type table entries won't be dumped as such, but we have to
 	 * make a DumpableObject for them so that we can track dependencies of the
