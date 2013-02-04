@@ -81,7 +81,8 @@ CREATE INDEX aa ON bb (grandtot);
  type   | text    |           | extended |              | 
  totamt | numeric |           | main     |              | 
 View definition:
- SELECT tv.type, tv.totamt
+ SELECT tv.type, 
+    tv.totamt
    FROM tv;
 Has OIDs: no
 
@@ -92,7 +93,8 @@ Has OIDs: no
  type   | text    |           | extended |              | 
  totamt | numeric |           | main     |              | 
 View definition:
- SELECT tv.type, tv.totamt
+ SELECT tv.type, 
+    tv.totamt
    FROM tv;
 Has OIDs: no
 
@@ -140,7 +142,8 @@ SET search_path = mvschema, public;
  type   | text    |           | extended |              | 
  totamt | numeric |           | main     |              | 
 View definition:
- SELECT tv.type, tv.totamt
+ SELECT tv.type, 
+    tv.totamt
    FROM tv;
 Has OIDs: no
 
@@ -335,10 +338,12 @@ CREATE VIEW v_test2 AS SELECT moo, 2*moo FROM v_test1 UNION ALL SELECT moo, 3*mo
  moo      | integer |           | plain   | 
  ?column? | integer |           | plain   | 
 View definition:
-         SELECT v_test1.moo, 2 * v_test1.moo
+         SELECT v_test1.moo, 
+            2 * v_test1.moo
            FROM v_test1
 UNION ALL 
-         SELECT v_test1.moo, 3 * v_test1.moo
+         SELECT v_test1.moo, 
+            3 * v_test1.moo
            FROM v_test1;
 
 CREATE MATERIALIZED VIEW mv_test2 AS SELECT moo, 2*moo FROM v_test2 UNION ALL SELECT moo, 3*moo FROM v_test2;
@@ -349,10 +354,12 @@ CREATE MATERIALIZED VIEW mv_test2 AS SELECT moo, 2*moo FROM v_test2 UNION ALL SE
  moo      | integer |           | plain   |              | 
  ?column? | integer |           | plain   |              | 
 View definition:
-         SELECT v_test2.moo, 2 * v_test2.moo
+         SELECT v_test2.moo, 
+            2 * v_test2.moo
            FROM v_test2
 UNION ALL 
-         SELECT v_test2.moo, 3 * v_test2.moo
+         SELECT v_test2.moo, 
+            3 * v_test2.moo
            FROM v_test2;
 Has OIDs: no
 
