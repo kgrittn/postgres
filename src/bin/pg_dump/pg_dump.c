@@ -224,7 +224,7 @@ static void addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 static void getDomainConstraints(Archive *fout, TypeInfo *tyinfo);
 static void getTableData(TableInfo *tblinfo, int numTables, bool oids);
 static void makeTableDataInfo(TableInfo *tbinfo, bool oids);
-static void buildMatViewRefreshDependencies(TableInfo *tbinfo);
+static void buildMatViewRefreshDependencies(Archive *fout);
 static void getTableDataFKConstraints(void);
 static char *format_function_arguments(FuncInfo *finfo, char *funcargs);
 static char *format_function_arguments_old(Archive *fout,
@@ -717,6 +717,7 @@ main(int argc, char **argv)
 	if (!schemaOnly)
 	{
 		getTableData(tblinfo, numTables, oids);
+		buildMatViewRefreshDependencies(fout);
 		if (dataOnly)
 			getTableDataFKConstraints();
 	}
@@ -1681,11 +1682,6 @@ getTableData(TableInfo *tblinfo, int numTables, bool oids)
 		if (tblinfo[i].dobj.dump)
 			makeTableDataInfo(&(tblinfo[i]), oids);
 	}
-
-	for (i = 0; i < numTables; i++)
-	{
-		buildMatViewRefreshDependencies(&(tblinfo[i]));
-	}
 }
 
 /*
@@ -1760,40 +1756,131 @@ makeTableDataInfo(TableInfo *tbinfo, bool oids)
  * sorted.
  */
 static void
-buildMatViewRefreshDependencies(TableInfo *tbinfo)
+buildMatViewRefreshDependencies(Archive *fout)
 {
-	TableDataInfo	*tdinfo;
-	int		i;
+	PQExpBuffer query = createPQExpBuffer();
+	PGresult   *res;
+	int			ntups,
+				i;
+	int			i_classid,
+				i_objid,
+				i_refobjid;
 
-	if (tbinfo->relkind != RELKIND_MATVIEW)
-		return;
+	/* Make sure we are in proper schema */
+	selectSourceSchema(fout, "pg_catalog");
 
-	/* We might not be populating data. If not, get out. */
-	tdinfo = tbinfo->dataObj;
-	if (tdinfo == NULL)
-		return;
-
-	Assert(tdinfo->dobj.objType == DO_REFRESH_MATVIEW);
-	Assert(tdinfo->tdtable == tbinfo);
-
-	/* Scan the TableInfo dependencies for other materialized views. */
-	for (i = 0; i < tbinfo->dobj.nDeps; i++)
+	if (fout->remoteVersion >= 90300)
 	{
-		DumpableObject	*dobj;
-
-		dobj = findObjectByDumpId(tbinfo->dobj.dependencies[i]);
-		if (dobj != NULL && dobj->objType == DO_TABLE)
-		{
-			TableInfo	*tbinfo2 = (TableInfo *) dobj;
-
-			if (tbinfo2->relkind == RELKIND_MATVIEW &&
-				tbinfo2->dataObj != NULL)
-			{
-				addObjectDependency(&tdinfo->dobj,
-									tbinfo2->dataObj->dobj.dumpId);
-			}
-		}
+		appendPQExpBuffer(query, "with recursive w as "
+						  "( "
+						  "select d1.objid, d1.objid as wrkid, d2.refobjid, c2.relkind as refrelkind "
+						  "from pg_depend d1 "
+						  "join pg_class c1 on c1.oid = d1.objid "
+						  "and c1.relkind = 'm' "
+						  "and c1.relisvalid "
+						  "join pg_rewrite r1 on r1.ev_class = d1.objid "
+						  "join pg_depend d2 on d2.classid = 'pg_rewrite'::regclass "
+						  "and d2.objid = r1.oid "
+						  "and d2.refobjid <> d1.objid "
+						  "join pg_class c2 on c2.oid = d2.refobjid "
+						  "and c2.relkind in ('m','v') "
+						  "and c2.relisvalid "
+						  "where d1.classid = 'pg_class'::regclass "
+						  "union "
+						  "select w.objid, w.refobjid, d3.refobjid, c3.relkind "
+						  "from w "
+						  "join pg_rewrite r3 on r3.ev_class = w.refobjid "
+						  "join pg_depend d3 on d3.classid = 'pg_rewrite'::regclass "
+						  "and d3.objid = r3.oid "
+						  "and d3.refobjid <> w.refobjid "
+						  "join pg_class c3 on c3.oid = d3.refobjid "
+						  "and c3.relkind in ('m','v') "
+						  "and c3.relisvalid "
+						  "where w.refrelkind <> 'm' "
+						  "), "
+						  "x as "
+						  "( "
+						  "select objid, refobjid from w "
+						  "where refrelkind = 'm' "
+						  ") "
+						  "select 'pg_class'::regclass::oid as classid, x.objid, x.refobjid from x "
+						  "union all "
+						  "select 'pg_class'::regclass::oid, x.objid, i.indexrelid from x "
+						  "join pg_index i on i.indrelid = x.refobjid and i.indisvalid "
+						  "union all "
+						  "select 'pg_class'::regclass::oid, i.indexrelid, x.objid from x "
+						  "join pg_index i on i.indrelid = x.objid "
+						  "and i.indisvalid "
+						  "union "
+						  "select 'pg_class'::regclass::oid, i.indexrelid, x.refobjid from x "
+						  "join pg_index i on i.indrelid = x.refobjid "
+						  "and i.indisvalid");
 	}
+
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+	ntups = PQntuples(res);
+
+	i_classid = PQfnumber(res, "classid");
+	i_objid = PQfnumber(res, "objid");
+	i_refobjid = PQfnumber(res, "refobjid");
+
+	for (i = 0; i < ntups; i++)
+	{
+		CatalogId	objId;
+		CatalogId	refobjId;
+		DumpableObject	*dobj;
+		DumpableObject	*refdobj;
+
+		objId.tableoid = atooid(PQgetvalue(res, i, i_classid));
+		objId.oid = atooid(PQgetvalue(res, i, i_objid));
+		refobjId.tableoid = objId.tableoid;
+		refobjId.oid = atooid(PQgetvalue(res, i, i_refobjid));
+
+		dobj = findObjectByCatalogId(objId);
+		if (dobj == NULL)
+			continue;
+
+		if (dobj->objType == DO_TABLE)
+		{
+			TableInfo	   *tbinfo = (TableInfo *) dobj;
+
+			Assert(tbinfo->relkind == RELKIND_MATVIEW);
+			dobj = (DumpableObject *) tbinfo->dataObj;
+			if (dobj == NULL)
+				continue;
+			Assert(dobj->objType == DO_REFRESH_MATVIEW);
+		}
+		else
+			Assert(dobj->objType == DO_MATVIEW_INDEX);
+
+		refdobj = findObjectByCatalogId(refobjId);
+		if (refdobj == NULL)
+			continue;
+
+		if (refdobj->objType == DO_TABLE)
+		{
+			TableInfo	   *reftbinfo = (TableInfo *) refdobj;
+
+			Assert(reftbinfo->relkind == RELKIND_MATVIEW);
+			refdobj = (DumpableObject *) reftbinfo->dataObj;
+			if (refdobj == NULL)
+				continue;
+			Assert(refdobj->objType == DO_REFRESH_MATVIEW);
+		}
+		else
+			Assert(refdobj->objType == DO_MATVIEW_INDEX);
+
+		/* At least one of these should now be a materialized view. */
+		Assert(dobj->objType == DO_REFRESH_MATVIEW ||
+			   refdobj->objType == DO_REFRESH_MATVIEW);
+
+		addObjectDependency(dobj, refdobj->dumpId);
+	}
+
+	PQclear(res);
+
+	destroyPQExpBuffer(query);
 }
 
 /*
