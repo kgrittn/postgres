@@ -12,20 +12,28 @@ CREATE VIEW tv AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type;
 SELECT * FROM tv;
 
 -- create a materialized view with no data, and confirm correct behavior
+EXPLAIN (costs off)
+  CREATE MATERIALIZED VIEW tm AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type WITH NO DATA;
 CREATE MATERIALIZED VIEW tm AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type WITH NO DATA;
 SELECT * FROM tm;
 REFRESH MATERIALIZED VIEW tm;
+CREATE UNIQUE INDEX tm_type ON tm (type);
 SELECT * FROM tm;
 
 -- create various views
+EXPLAIN (costs off)
+  CREATE MATERIALIZED VIEW tvm AS SELECT * FROM tv;
 CREATE MATERIALIZED VIEW tvm AS SELECT * FROM tv;
 SELECT * FROM tvm;
 CREATE MATERIALIZED VIEW tmm AS SELECT sum(totamt) AS grandtot FROM tm;
 CREATE MATERIALIZED VIEW tvmm AS SELECT sum(totamt) AS grandtot FROM tvm;
 CREATE VIEW tvv AS SELECT sum(totamt) AS grandtot FROM tv;
+EXPLAIN (costs off)
+  CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
 CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
 CREATE VIEW tvvmv AS SELECT * FROM tvvm;
 CREATE MATERIALIZED VIEW aa AS SELECT * FROM tvvmv;
+CREATE INDEX aa_grandtot ON aa (grandtot);
 
 -- check that plans seem reasonable
 \d+ tvm
@@ -44,12 +52,24 @@ SELECT * FROM tm ORDER BY type;
 SELECT * FROM tvm ORDER BY type;
 
 -- confirm pre- and post-refresh contents of nested materialized views
+EXPLAIN (costs off)
+  SELECT * FROM tmm;
+EXPLAIN (costs off)
+  SELECT * FROM tvmm;
+EXPLAIN (costs off)
+  SELECT * FROM tvvm;
 SELECT * FROM tmm;
 SELECT * FROM tvmm;
 SELECT * FROM tvvm;
 REFRESH MATERIALIZED VIEW tmm;
 REFRESH MATERIALIZED VIEW tvmm;
 REFRESH MATERIALIZED VIEW tvvm;
+EXPLAIN (costs off)
+  SELECT * FROM tmm;
+EXPLAIN (costs off)
+  SELECT * FROM tvmm;
+EXPLAIN (costs off)
+  SELECT * FROM tvvm;
 SELECT * FROM tmm;
 SELECT * FROM tvmm;
 SELECT * FROM tvvm;
@@ -74,7 +94,11 @@ DROP MATERIALIZED VIEW IF EXISTS tum;
 DROP TABLE t;
 
 -- make sure dependencies are dropped and reported
+-- and make sure that transactional behavior is correct on rollback
+-- incidentally leaving some interesting materialized views for pg_dump testing
+BEGIN;
 DROP TABLE t CASCADE;
+ROLLBACK;
 
 -- some additional tests not using base tables
 CREATE VIEW v_test1 AS SELECT 1 moo;

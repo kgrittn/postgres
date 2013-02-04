@@ -17,11 +17,20 @@ SELECT * FROM tv;
 (3 rows)
 
 -- create a materialized view with no data, and confirm correct behavior
+EXPLAIN (costs off)
+  CREATE MATERIALIZED VIEW tm AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type WITH NO DATA;
+     QUERY PLAN      
+---------------------
+ HashAggregate
+   ->  Seq Scan on t
+(2 rows)
+
 CREATE MATERIALIZED VIEW tm AS SELECT type, sum(amt) AS totamt FROM t GROUP BY type WITH NO DATA;
 SELECT * FROM tm;
 ERROR:  materialized view "tm" has not been populated
 HINT:  Use the REFRESH MATERIALIZED VIEW command.
 REFRESH MATERIALIZED VIEW tm;
+CREATE UNIQUE INDEX tm_type ON tm (type);
 SELECT * FROM tm;
  type | totamt 
 ------+--------
@@ -31,6 +40,14 @@ SELECT * FROM tm;
 (3 rows)
 
 -- create various views
+EXPLAIN (costs off)
+  CREATE MATERIALIZED VIEW tvm AS SELECT * FROM tv;
+     QUERY PLAN      
+---------------------
+ HashAggregate
+   ->  Seq Scan on t
+(2 rows)
+
 CREATE MATERIALIZED VIEW tvm AS SELECT * FROM tv;
 SELECT * FROM tvm;
  type | totamt 
@@ -43,9 +60,19 @@ SELECT * FROM tvm;
 CREATE MATERIALIZED VIEW tmm AS SELECT sum(totamt) AS grandtot FROM tm;
 CREATE MATERIALIZED VIEW tvmm AS SELECT sum(totamt) AS grandtot FROM tvm;
 CREATE VIEW tvv AS SELECT sum(totamt) AS grandtot FROM tv;
+EXPLAIN (costs off)
+  CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
+        QUERY PLAN         
+---------------------------
+ Aggregate
+   ->  HashAggregate
+         ->  Seq Scan on t
+(3 rows)
+
 CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
 CREATE VIEW tvvmv AS SELECT * FROM tvvm;
 CREATE MATERIALIZED VIEW aa AS SELECT * FROM tvvmv;
+CREATE INDEX aa_grandtot ON aa (grandtot);
 -- check that plans seem reasonable
 \d+ tvm
                     Materialized view "public.tvm"
@@ -73,6 +100,8 @@ Has OIDs: no
   Column  |  Type   | Modifiers | Storage | Stats target | Description 
 ----------+---------+-----------+---------+--------------+-------------
  grandtot | numeric |           | main    |              | 
+Indexes:
+    "aa_grandtot" btree (grandtot)
 View definition:
  SELECT tvvmv.grandtot
    FROM tvvmv;
@@ -116,6 +145,27 @@ SELECT * FROM tvm ORDER BY type;
 (3 rows)
 
 -- confirm pre- and post-refresh contents of nested materialized views
+EXPLAIN (costs off)
+  SELECT * FROM tmm;
+   QUERY PLAN    
+-----------------
+ Seq Scan on tmm
+(1 row)
+
+EXPLAIN (costs off)
+  SELECT * FROM tvmm;
+    QUERY PLAN    
+------------------
+ Seq Scan on tvmm
+(1 row)
+
+EXPLAIN (costs off)
+  SELECT * FROM tvvm;
+    QUERY PLAN    
+------------------
+ Seq Scan on tvvm
+(1 row)
+
 SELECT * FROM tmm;
  grandtot 
 ----------
@@ -137,6 +187,27 @@ SELECT * FROM tvvm;
 REFRESH MATERIALIZED VIEW tmm;
 REFRESH MATERIALIZED VIEW tvmm;
 REFRESH MATERIALIZED VIEW tvvm;
+EXPLAIN (costs off)
+  SELECT * FROM tmm;
+   QUERY PLAN    
+-----------------
+ Seq Scan on tmm
+(1 row)
+
+EXPLAIN (costs off)
+  SELECT * FROM tvmm;
+    QUERY PLAN    
+------------------
+ Seq Scan on tvmm
+(1 row)
+
+EXPLAIN (costs off)
+  SELECT * FROM tvvm;
+    QUERY PLAN    
+------------------
+ Seq Scan on tvvm
+(1 row)
+
 SELECT * FROM tmm;
  grandtot 
 ----------
@@ -201,6 +272,9 @@ materialized view tm depends on table t
 materialized view tmm depends on materialized view tm
 HINT:  Use DROP ... CASCADE to drop the dependent objects too.
 -- make sure dependencies are dropped and reported
+-- and make sure that transactional behavior is correct on rollback
+-- incidentally leaving some interesting materialized views for pg_dump testing
+BEGIN;
 DROP TABLE t CASCADE;
 NOTICE:  drop cascades to 9 other objects
 DETAIL:  drop cascades to view tv
@@ -212,6 +286,7 @@ drop cascades to materialized view tvm
 drop cascades to materialized view tvmm
 drop cascades to materialized view tm
 drop cascades to materialized view tmm
+ROLLBACK;
 -- some additional tests not using base tables
 CREATE VIEW v_test1 AS SELECT 1 moo;
 CREATE VIEW v_test2 AS SELECT moo, 2*moo FROM v_test1 UNION ALL SELECT moo, 3*moo FROM v_test1;
