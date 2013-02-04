@@ -32,14 +32,14 @@ EXPLAIN (costs off)
   CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
 CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
 CREATE VIEW tvvmv AS SELECT * FROM tvvm;
-CREATE MATERIALIZED VIEW aa AS SELECT * FROM tvvmv;
-CREATE INDEX aa_grandtot ON aa (grandtot);
+CREATE MATERIALIZED VIEW bb AS SELECT * FROM tvvmv;
+CREATE INDEX aa ON bb (grandtot);
 
 -- check that plans seem reasonable
 \d+ tvm
 \d+ tvm
 \d+ tvvm
-\d+ aa
+\d+ bb
 
 -- test schema behavior
 CREATE SCHEMA mvschema;

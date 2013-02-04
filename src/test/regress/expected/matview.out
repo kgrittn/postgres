@@ -71,8 +71,8 @@ EXPLAIN (costs off)
 
 CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
 CREATE VIEW tvvmv AS SELECT * FROM tvvm;
-CREATE MATERIALIZED VIEW aa AS SELECT * FROM tvvmv;
-CREATE INDEX aa_grandtot ON aa (grandtot);
+CREATE MATERIALIZED VIEW bb AS SELECT * FROM tvvmv;
+CREATE INDEX aa ON bb (grandtot);
 -- check that plans seem reasonable
 \d+ tvm
                     Materialized view "public.tvm"
@@ -106,13 +106,13 @@ View definition:
    FROM tvv;
 Has OIDs: no
 
-\d+ aa
-                     Materialized view "public.aa"
+\d+ bb
+                     Materialized view "public.bb"
   Column  |  Type   | Modifiers | Storage | Stats target | Description 
 ----------+---------+-----------+---------+--------------+-------------
  grandtot | numeric |           | main    |              | 
 Indexes:
-    "aa_grandtot" btree (grandtot)
+    "aa" btree (grandtot)
 View definition:
  SELECT tvvmv.grandtot
    FROM tvvmv;
@@ -303,7 +303,7 @@ DETAIL:  view tv depends on table t
 view tvv depends on view tv
 materialized view tvvm depends on view tvv
 view tvvmv depends on materialized view tvvm
-materialized view aa depends on view tvvmv
+materialized view bb depends on view tvvmv
 materialized view mvschema.tvm depends on view tv
 materialized view tvmm depends on materialized view mvschema.tvm
 materialized view tm depends on table t
@@ -319,7 +319,7 @@ DETAIL:  drop cascades to view tv
 drop cascades to view tvv
 drop cascades to materialized view tvvm
 drop cascades to view tvvmv
-drop cascades to materialized view aa
+drop cascades to materialized view bb
 drop cascades to materialized view mvschema.tvm
 drop cascades to materialized view tvmm
 drop cascades to materialized view tm
