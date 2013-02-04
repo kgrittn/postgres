@@ -85,6 +85,17 @@ View definition:
    FROM tv;
 Has OIDs: no
 
+\d+ tvm
+                    Materialized view "public.tvm"
+ Column |  Type   | Modifiers | Storage  | Stats target | Description 
+--------+---------+-----------+----------+--------------+-------------
+ type   | text    |           | extended |              | 
+ totamt | numeric |           | main     |              | 
+View definition:
+ SELECT tv.type, tv.totamt
+   FROM tv;
+Has OIDs: no
+
 \d+ tvvm
                     Materialized view "public.tvvm"
   Column  |  Type   | Modifiers | Storage | Stats target | Description 
@@ -105,6 +116,32 @@ Indexes:
 View definition:
  SELECT tvvmv.grandtot
    FROM tvvmv;
+Has OIDs: no
+
+-- test schema behavior
+CREATE SCHEMA mvschema;
+ALTER MATERIALIZED VIEW tvm SET SCHEMA mvschema;
+\d+ tvm
+\d+ tvmm
+                    Materialized view "public.tvmm"
+  Column  |  Type   | Modifiers | Storage | Stats target | Description 
+----------+---------+-----------+---------+--------------+-------------
+ grandtot | numeric |           | main    |              | 
+View definition:
+ SELECT sum(tvm.totamt) AS grandtot
+   FROM mvschema.tvm;
+Has OIDs: no
+
+SET search_path = mvschema, public;
+\d+ tvm
+                   Materialized view "mvschema.tvm"
+ Column |  Type   | Modifiers | Storage  | Stats target | Description 
+--------+---------+-----------+----------+--------------+-------------
+ type   | text    |           | extended |              | 
+ totamt | numeric |           | main     |              | 
+View definition:
+ SELECT tv.type, tv.totamt
+   FROM tv;
 Has OIDs: no
 
 -- modify the underlying table data
@@ -144,6 +181,7 @@ SELECT * FROM tvm ORDER BY type;
  z    |     24
 (3 rows)
 
+RESET search_path;
 -- confirm pre- and post-refresh contents of nested materialized views
 EXPLAIN (costs off)
   SELECT * FROM tmm;
@@ -266,8 +304,8 @@ view tvv depends on view tv
 materialized view tvvm depends on view tvv
 view tvvmv depends on materialized view tvvm
 materialized view aa depends on view tvvmv
-materialized view tvm depends on view tv
-materialized view tvmm depends on materialized view tvm
+materialized view mvschema.tvm depends on view tv
+materialized view tvmm depends on materialized view mvschema.tvm
 materialized view tm depends on table t
 materialized view tmm depends on materialized view tm
 HINT:  Use DROP ... CASCADE to drop the dependent objects too.
@@ -282,7 +320,7 @@ drop cascades to view tvv
 drop cascades to materialized view tvvm
 drop cascades to view tvvmv
 drop cascades to materialized view aa
-drop cascades to materialized view tvm
+drop cascades to materialized view mvschema.tvm
 drop cascades to materialized view tvmm
 drop cascades to materialized view tm
 drop cascades to materialized view tmm

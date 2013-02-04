@@ -37,8 +37,17 @@ CREATE INDEX aa_grandtot ON aa (grandtot);
 
 -- check that plans seem reasonable
 \d+ tvm
+\d+ tvm
 \d+ tvvm
 \d+ aa
+
+-- test schema behavior
+CREATE SCHEMA mvschema;
+ALTER MATERIALIZED VIEW tvm SET SCHEMA mvschema;
+\d+ tvm
+\d+ tvmm
+SET search_path = mvschema, public;
+\d+ tvm
 
 -- modify the underlying table data
 INSERT INTO t VALUES (6, 'z', 13);
@@ -50,6 +59,7 @@ REFRESH MATERIALIZED VIEW tm;
 REFRESH MATERIALIZED VIEW tvm;
 SELECT * FROM tm ORDER BY type;
 SELECT * FROM tvm ORDER BY type;
+RESET search_path;
 
 -- confirm pre- and post-refresh contents of nested materialized views
 EXPLAIN (costs off)
