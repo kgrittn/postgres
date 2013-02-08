@@ -54,8 +54,8 @@ sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum)
 	Form_pg_attribute attForm;
 
 	/*
-	 * Only attributes within regular relation can have ALTER to add columns
-	 * with individual security labels.
+	 * Only attributes within regular relation have individual security
+	 * labels.
 	 */
 	if (get_rel_relkind(relOid) != RELKIND_RELATION)
 		return;
@@ -159,8 +159,7 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum,
 	ObjectAddress object;
 	char	   *audit_name;
 
-	if (get_rel_relkind(relOid) != RELKIND_RELATION &&
-		get_rel_relkind(relOid) != RELKIND_MATVIEW)
+	if (get_rel_relkind(relOid) != RELKIND_RELATION)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("cannot set security label on non-regular columns")));
@@ -253,7 +252,6 @@ sepgsql_relation_post_create(Oid relOid)
 	switch (classForm->relkind)
 	{
 		case RELKIND_RELATION:
-		case RELKIND_MATVIEW:
 			tclass = SEPG_CLASS_DB_TABLE;
 			tclass_text = "table";
 			break;
@@ -303,11 +301,10 @@ sepgsql_relation_post_create(Oid relOid)
 	SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, rcontext);
 
 	/*
-	 * We also assign a default security label on columns of new regular
-	 * tables and materialized views.
+	 * We also assigns a default security label on columns of the new regular
+	 * tables.
 	 */
-	if (classForm->relkind == RELKIND_RELATION ||
-		classForm->relkind == RELKIND_MATVIEW)
+	if (classForm->relkind == RELKIND_RELATION)
 	{
 		Relation	arel;
 		ScanKeyData akey;
@@ -381,7 +378,6 @@ sepgsql_relation_drop(Oid relOid)
 	switch (relkind)
 	{
 		case RELKIND_RELATION:
-		case RELKIND_MATVIEW:
 			tclass = SEPG_CLASS_DB_TABLE;
 			break;
 		case RELKIND_SEQUENCE:
@@ -493,13 +489,11 @@ sepgsql_relation_relabel(Oid relOid, const char *seclabel)
 		tclass = SEPG_CLASS_DB_SEQUENCE;
 	else if (relkind == RELKIND_VIEW)
 		tclass = SEPG_CLASS_DB_VIEW;
-	else if (relkind == RELKIND_MATVIEW)
-		tclass = SEPG_CLASS_DB_TABLE;
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("cannot set security labels on relations except "
-						"for tables, sequences, views, or materialized views")));
+						"for tables, sequences or views")));
 
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
@@ -542,7 +536,6 @@ sepgsql_relation_setattr(Oid relOid)
 	switch (get_rel_relkind(relOid))
 	{
 		case RELKIND_RELATION:
-		case RELKIND_MATVIEW:
 			tclass = SEPG_CLASS_DB_TABLE;
 			break;
 		case RELKIND_SEQUENCE:

@@ -764,8 +764,6 @@ exec_object_restorecon(struct selabel_handle * sehnd, Oid catalogId)
 					objtype = SELABEL_DB_SEQUENCE;
 				else if (relForm->relkind == RELKIND_VIEW)
 					objtype = SELABEL_DB_VIEW;
-				else if (relForm->relkind == RELKIND_MATVIEW)
-					objtype = SELABEL_DB_TABLE;
 				else
 					continue;	/* no need to assign security label */
 
@@ -784,8 +782,7 @@ exec_object_restorecon(struct selabel_handle * sehnd, Oid catalogId)
 			case AttributeRelationId:
 				attForm = (Form_pg_attribute) GETSTRUCT(tuple);
 
-				if (get_rel_relkind(attForm->attrelid) != RELKIND_RELATION &&
-					get_rel_relkind(attForm->attrelid) != RELKIND_MATVIEW)
+				if (get_rel_relkind(attForm->attrelid) != RELKIND_RELATION)
 					continue;	/* no need to assign security label */
 
 				objtype = SELABEL_DB_COLUMN;

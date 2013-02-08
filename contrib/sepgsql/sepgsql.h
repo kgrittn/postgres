@@ -32,8 +32,6 @@
 
 /*
  * Internally used code of object classes
- *
- * NOTE: Materialized views are treated as tables for now.
  */
 #define SEPG_CLASS_PROCESS			0
 #define SEPG_CLASS_FILE				1
