@@ -655,6 +655,15 @@ static const SchemaQuery Query_for_list_of_matviews = {
 "         WHERE pg_catalog.quote_ident(conname)='%s')"
 
 /* the silly-looking length condition is just to eat up the current word */
+#define Query_for_list_of_tables_for_rule \
+"SELECT pg_catalog.quote_ident(relname) "\
+"  FROM pg_catalog.pg_class"\
+" WHERE (%d = pg_catalog.length('%s'))"\
+"   AND oid IN "\
+"       (SELECT ev_class FROM pg_catalog.pg_rewrite "\
+"         WHERE pg_catalog.quote_ident(rulename)='%s')"
+
+/* the silly-looking length condition is just to eat up the current word */
 #define Query_for_list_of_tables_for_trigger \
 "SELECT pg_catalog.quote_ident(relname) "\
 "  FROM pg_catalog.pg_class"\
@@ -956,7 +965,7 @@ psql_completion(char *text, int start, int end)
 		{"AGGREGATE", "COLLATION", "CONVERSION", "DATABASE", "DEFAULT PRIVILEGES", "DOMAIN",
 			"EXTENSION", "FOREIGN DATA WRAPPER", "FOREIGN TABLE", "FUNCTION",
 			"GROUP", "INDEX", "LANGUAGE", "LARGE OBJECT", "MATERIALIZED VIEW", "OPERATOR",
-			"ROLE", "SCHEMA", "SERVER", "SEQUENCE", "TABLE",
+			"ROLE", "RULE", "SCHEMA", "SERVER", "SEQUENCE", "TABLE",
 			"TABLESPACE", "TEXT SEARCH", "TRIGGER", "TYPE",
 		"USER", "USER MAPPING FOR", "VIEW", NULL};
 
@@ -1308,6 +1317,26 @@ psql_completion(char *text, int start, int end)
 
 		COMPLETE_WITH_LIST(list_ALTERMATVIEW);
 	}
+
+	/* ALTER RULE <name>, add ON */
+	else if (pg_strcasecmp(prev3_wd, "ALTER") == 0 &&
+			 pg_strcasecmp(prev2_wd, "RULE") == 0)
+		COMPLETE_WITH_CONST("ON");
+
+	/* If we have ALTER RULE <name> ON, then add the correct tablename */
+	else if (pg_strcasecmp(prev4_wd, "ALTER") == 0 &&
+			 pg_strcasecmp(prev3_wd, "RULE") == 0 &&
+			 pg_strcasecmp(prev_wd, "ON") == 0)
+	{
+		completion_info_charp = prev2_wd;
+		COMPLETE_WITH_QUERY(Query_for_list_of_tables_for_rule);
+	}
+
+	/* ALTER RULE <name> ON <name> */
+	else if (pg_strcasecmp(prev5_wd, "ALTER") == 0 &&
+			 pg_strcasecmp(prev4_wd, "RULE") == 0)
+		COMPLETE_WITH_CONST("RENAME TO");
+
 	/* ALTER TRIGGER <name>, add ON */
 	else if (pg_strcasecmp(prev3_wd, "ALTER") == 0 &&
 			 pg_strcasecmp(prev2_wd, "TRIGGER") == 0)
