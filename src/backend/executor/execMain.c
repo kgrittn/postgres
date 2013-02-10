@@ -84,6 +84,7 @@ static char *ExecBuildSlotValueDescription(TupleTableSlot *slot,
 							  int maxfieldlen);
 static void EvalPlanQualStart(EPQState *epqstate, EState *parentestate,
 				  Plan *planTree);
+static bool RelationIdIsScannable(Oid relid);
 
 /* end of local decls */
 
@@ -510,7 +511,7 @@ ExecCheckRelationsValid(List *rangeTable)
 		if (rte->rtekind != RTE_RELATION)
 			continue;
 
-		if (!RelationIsFlaggedAsValid(rte->relid))
+		if (!RelationIdIsScannable(rte->relid))
 		{
 			if (rte->relkind == RELKIND_MATVIEW)
 			{
@@ -531,6 +532,24 @@ ExecCheckRelationsValid(List *rangeTable)
 								get_rel_name(rte->relid))));
 		}
 	}
+}
+
+/*
+ * Tells whether a relation is scannable.
+ *
+ * Currently only non-populated materialzed views are not.
+ */
+static bool
+RelationIdIsScannable(Oid relid)
+{
+	Relation	relation;
+	bool		result;
+
+	relation = RelationIdGetRelation(relid);
+	result = relation->rd_isscannable;
+	RelationClose(relation);
+
+	return result;
 }
 
 /*

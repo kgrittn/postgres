@@ -1171,13 +1171,6 @@ ExecuteTruncate(TruncateStmt *stmt)
 			heap_relid = RelationGetRelid(rel);
 			toast_relid = rel->rd_rel->reltoastrelid;
 
-			/* This makes a materialized view invalid for use. */
-			if (rel->rd_rel->relkind == RELKIND_MATVIEW &&
-				rel->rd_rel->relisvalid)
-			{
-				SetRelationIsValid(heap_relid, false);
-			}
-
 			/*
 			 * The same for the toast table, if any.
 			 */
@@ -2067,36 +2060,39 @@ SetRelationHasSubclass(Oid relationId, bool relhassubclass)
 }
 
 /*
- * SetRelationIsValid
- *		Set the value of the relation's relisvalid field in pg_class.
+ * SetRelationIdIsScannable
+ *		Force the heap to match the given "isscannable" state.
  *
  * NOTE: caller must be holding an appropriate lock on the relation.
- * ShareUpdateExclusiveLock is sufficient.
  */
 void
-SetRelationIsValid(Oid relationId, bool relisvalid)
+SetRelationIdIsScannable(Oid relid, bool isscannable)
 {
-	Relation	relationRelation;
-	HeapTuple	tuple;
-	Form_pg_class classtuple;
+	Relation	relation;
+	bool		wasscannable;
 
-	/*
-	 * Fetch a modifiable copy of the tuple, modify it, update pg_class.
-	 */
-	relationRelation = heap_open(RelationRelationId, RowExclusiveLock);
-	tuple = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(relationId));
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for relation %u", relationId);
-	classtuple = (Form_pg_class) GETSTRUCT(tuple);
+	relation = RelationIdGetRelation(relid);
+	RelationOpenSmgr(relation);
+	wasscannable = relation->rd_isscannable;
 
-	if (classtuple->relisvalid != relisvalid)
+	if (isscannable != wasscannable)
 	{
-		classtuple->relisvalid = relisvalid;
-		heap_inplace_update(relationRelation, tuple);
+		if (isscannable)
+		{
+			Page        page;
+
+			page = (Page) palloc(BLCKSZ);
+			PageInit(page, BLCKSZ, 0);
+			smgrextend(relation->rd_smgr, MAIN_FORKNUM, 0, (char *) page, true);
+			pfree(page);
+ 
+ 			smgrimmedsync(relation->rd_smgr, MAIN_FORKNUM);
+		}
+		else
+			heap_truncate_one_rel(relation);
 	}
 
-	heap_freetuple(tuple);
-	heap_close(relationRelation, RowExclusiveLock);
+	RelationClose(relation);
 }
 
 /*

@@ -147,8 +147,8 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
  * the new heap, it's better to create the indexes afterwards than to fill them
  * incrementally while we load.
  *
- * If the materialized view was flagged with relisvalid == false, success of
- * this command will change it to true.
+ * If the materialized view was considered not scannable, success of this
+ * command will change it to scannable.
  */
 static void
 refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
@@ -235,7 +235,9 @@ refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
 	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, RecentXmin,
 					 ReadNextMultiXactId());
 
-	SetRelationIsValid(matviewOid, true);
+	SetRelationIdIsScannable(matviewOid, true);
+
+	RelationCacheInvalidateEntry(matviewOid);
 }
 
 DestReceiver *

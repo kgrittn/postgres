@@ -779,7 +779,6 @@ InsertPgClassTuple(Relation pg_class_desc,
 	values[Anum_pg_class_relhasrules - 1] = BoolGetDatum(rd_rel->relhasrules);
 	values[Anum_pg_class_relhastriggers - 1] = BoolGetDatum(rd_rel->relhastriggers);
 	values[Anum_pg_class_relhassubclass - 1] = BoolGetDatum(rd_rel->relhassubclass);
-	values[Anum_pg_class_relisvalid - 1] = BoolGetDatum(rd_rel->relisvalid);
 	values[Anum_pg_class_relfrozenxid - 1] = TransactionIdGetDatum(rd_rel->relfrozenxid);
 	values[Anum_pg_class_relminmxid - 1] = MultiXactIdGetDatum(rd_rel->relminmxid);
 	if (relacl != (Datum) 0)
@@ -894,7 +893,6 @@ AddNewRelationTuple(Relation pg_class_desc,
 	new_rel_reltup->relowner = relowner;
 	new_rel_reltup->reltype = new_type_oid;
 	new_rel_reltup->reloftype = reloftype;
-	new_rel_reltup->relisvalid = true;
 
 	new_rel_desc->rd_att->tdtypeid = new_type_oid;
 
@@ -1350,56 +1348,29 @@ heap_create_init_fork(Relation rel)
 	RelationOpenSmgr(rel);
 	smgrcreate(rel->rd_smgr, INIT_FORKNUM, false);
 
-	/*
-	 * Create a special init fork for a materialized view, so that on its
-	 * initial reference it can be flagged as invalid.
-	 */
-	if (rel->rd_rel->relkind == RELKIND_MATVIEW)
-	{
-		Page		page;
-
-		page = (Page) palloc(BLCKSZ);
-		PageInit(page, BLCKSZ, 1);
-		smgrextend(rel->rd_smgr, INIT_FORKNUM, 0, (char *) page, true);
-	}
-
 	if (XLogIsNeeded())
 		log_smgrcreate(&rel->rd_smgr->smgr_rnode.node, INIT_FORKNUM);
 	smgrimmedsync(rel->rd_smgr, INIT_FORKNUM);
 }
 
 /*
- * Check whether the first page of a materialized view looks like it came from
- * its init fork, which would mean that the MV should be flagged as invalid
- * for querying.
+ * Check whether a materialized view is in an initial, unloaded state.
  *
  * The check here must match what is set up in heap_create_init_fork().
+ * Currently the init fork is an empty file.  A missing heap is also
+ * considered to be unloaded.
  */
 bool
-heap_is_matview_init_fork(Relation rel)
+heap_is_matview_init_state(Relation rel)
 {
-	Page		page;
-	bool		isInitFork;
-
 	Assert(rel->rd_rel->relkind == RELKIND_MATVIEW);
 
 	RelationOpenSmgr(rel);
+
 	if (!smgrexists(rel->rd_smgr, MAIN_FORKNUM))
-		return false;
-	if (smgrnblocks(rel->rd_smgr, MAIN_FORKNUM) < 1)
-		return false;
-	page = (Page) palloc(BLCKSZ);
-	smgrread(rel->rd_smgr, MAIN_FORKNUM, 0, (char *) page);
-	isInitFork = (((PageHeader) page)->pd_special > 0 &&
-				  ((PageHeader) page)->pd_special < BLCKSZ);
-	pfree(page);
+		return true;
 
-	if (isInitFork)
-	{
-		smgrtruncate(rel->rd_smgr, MAIN_FORKNUM, 0);
-	}
-
-	return isInitFork;
+	return (smgrnblocks(rel->rd_smgr, MAIN_FORKNUM) < 1);
 }
 
 /*

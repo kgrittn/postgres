@@ -56,7 +56,6 @@
 #include "catalog/pg_type.h"
 #include "catalog/schemapg.h"
 #include "catalog/storage.h"
-#include "commands/tablecmds.h"
 #include "commands/trigger.h"
 #include "miscadmin.h"
 #include "optimizer/clauses.h"
@@ -873,6 +872,8 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	relation->rd_isnailed = false;
 	relation->rd_createSubid = InvalidSubTransactionId;
 	relation->rd_newRelfilenodeSubid = InvalidSubTransactionId;
+	relation->rd_isscannable = (relation->rd_rel->relkind != RELKIND_MATVIEW)
+							 || !heap_is_matview_init_state(relation);
 	switch (relation->rd_rel->relpersistence)
 	{
 		case RELPERSISTENCE_UNLOGGED:
@@ -966,23 +967,6 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	 */
 	if (insertIt)
 		RelationCacheInsert(relation);
-
-	/* flag unlogged matview invalid if its heap looks like the init fork */
-	if (insertIt &&
-		relation->rd_rel->relkind == RELKIND_MATVIEW &&
-		relation->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED)
-	{
-		/* prevent race conditions on this part of the test */
-		LWLockAcquire(UnloggedMatViewInitLock, LW_EXCLUSIVE);
-		if (relation->rd_rel->relisvalid &&
-			heap_is_matview_init_fork(relation))
-		{
-			SetRelationIsValid(relid, false);
-			RelationOpenSmgr(relation);
-			smgrtruncate(relation->rd_smgr, MAIN_FORKNUM, 0);
-		}
-		LWLockRelease(UnloggedMatViewInitLock);
-	}
 
 	/* It's fully valid */
 	relation->rd_isvalid = true;
@@ -1443,6 +1427,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	relation->rd_newRelfilenodeSubid = InvalidSubTransactionId;
 	relation->rd_backend = InvalidBackendId;
 	relation->rd_islocaltemp = false;
+	relation->rd_isscannable = true;
 
 	/*
 	 * initialize relation tuple form
@@ -1474,7 +1459,6 @@ formrdesc(const char *relationName, Oid relationReltype,
 	relation->rd_rel->reltuples = 0;
 	relation->rd_rel->relallvisible = 0;
 	relation->rd_rel->relkind = RELKIND_RELATION;
-	relation->rd_rel->relisvalid = true;
 	relation->rd_rel->relhasoids = hasoids;
 	relation->rd_rel->relnatts = (int16) natts;
 
@@ -2612,6 +2596,9 @@ RelationBuildLocalRelation(const char *relname,
 
 	rel->rd_refcnt = nailit ? 1 : 0;
 
+	/* materialized view not initially scannable */
+	rel->rd_isscannable = (relkind != RELKIND_MATVIEW);
+
 	/* it's being created in this transaction */
 	rel->rd_createSubid = GetCurrentSubTransactionId();
 	rel->rd_newRelfilenodeSubid = InvalidSubTransactionId;
@@ -2652,7 +2639,6 @@ RelationBuildLocalRelation(const char *relname,
 	rel->rd_rel->relhasoids = rel->rd_att->tdhasoid;
 	rel->rd_rel->relnatts = natts;
 	rel->rd_rel->reltype = InvalidOid;
-	rel->rd_rel->relisvalid = true;
 	/* needed when bootstrapping: */
 	rel->rd_rel->relowner = BOOTSTRAP_SUPERUSERID;
 

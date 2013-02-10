@@ -403,11 +403,8 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	if (into->relkind == RELKIND_MATVIEW)
 	{
 		StoreViewQuery(intoRelationId, myState->viewParse, false);
-		if (into->skipData)
-		{
-			CommandCounterIncrement();
-			SetRelationIsValid(intoRelationId, false);
-		}
+		SetRelationIdIsScannable(intoRelationId, !into->skipData);
+		RelationCacheInvalidateEntry(intoRelationId);
 	}
 
 	/*

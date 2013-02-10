@@ -66,14 +66,6 @@ CATALOG(pg_class,1259) BKI_BOOTSTRAP BKI_ROWTYPE_OID(83) BKI_SCHEMA_MACRO
 	bool		relhasrules;	/* has (or has had) any rules */
 	bool		relhastriggers; /* has (or has had) any TRIGGERs */
 	bool		relhassubclass; /* has (or has had) derived classes */
-
-	/*
-	 * When relisvalid is set to false, a query which references the relation
-	 * will throw an error saying the relation is not available. The initial
-	 * intended use is to flag whether a materialized view has been populated.
-	 * It may prove useful for other purposes.
-	 */
-	bool		relisvalid;		/* is valid for use in queries */
 	TransactionId relfrozenxid; /* all Xids < this are frozen in this rel */
 	TransactionId relminmxid;	/* all multixacts in this rel are >= this.
 								 * this is really a MultiXactId */
@@ -101,7 +93,7 @@ typedef FormData_pg_class *Form_pg_class;
  * ----------------
  */
 
-#define Natts_pg_class					29
+#define Natts_pg_class					28
 #define Anum_pg_class_relname			1
 #define Anum_pg_class_relnamespace		2
 #define Anum_pg_class_reltype			3
@@ -126,11 +118,10 @@ typedef FormData_pg_class *Form_pg_class;
 #define Anum_pg_class_relhasrules		22
 #define Anum_pg_class_relhastriggers	23
 #define Anum_pg_class_relhassubclass	24
-#define Anum_pg_class_relisvalid		25
-#define Anum_pg_class_relfrozenxid		26
-#define Anum_pg_class_relminmxid		27
-#define Anum_pg_class_relacl			28
-#define Anum_pg_class_reloptions		29
+#define Anum_pg_class_relfrozenxid		25
+#define Anum_pg_class_relminmxid		26
+#define Anum_pg_class_relacl			27
+#define Anum_pg_class_reloptions		28
 
 /* ----------------
  *		initial contents of pg_class
@@ -145,13 +136,13 @@ typedef FormData_pg_class *Form_pg_class;
  * Note: "3" in the relfrozenxid column stands for FirstNormalTransactionId;
  * similarly, "1" in relminmxid stands for FirstMultiXactId
  */
-DATA(insert OID = 1247 (  pg_type		PGNSP 71 0 PGUID 0 0 0 0 0 0 0 0 f f p r 30 0 t f f f f t 3 1 _null_ _null_ ));
+DATA(insert OID = 1247 (  pg_type		PGNSP 71 0 PGUID 0 0 0 0 0 0 0 0 f f p r 30 0 t f f f f 3 1 _null_ _null_ ));
 DESCR("");
-DATA(insert OID = 1249 (  pg_attribute	PGNSP 75 0 PGUID 0 0 0 0 0 0 0 0 f f p r 21 0 f f f f f t 3 1 _null_ _null_ ));
+DATA(insert OID = 1249 (  pg_attribute	PGNSP 75 0 PGUID 0 0 0 0 0 0 0 0 f f p r 21 0 f f f f f 3 1 _null_ _null_ ));
 DESCR("");
-DATA(insert OID = 1255 (  pg_proc		PGNSP 81 0 PGUID 0 0 0 0 0 0 0 0 f f p r 27 0 t f f f f t 3 1 _null_ _null_ ));
+DATA(insert OID = 1255 (  pg_proc		PGNSP 81 0 PGUID 0 0 0 0 0 0 0 0 f f p r 27 0 t f f f f 3 1 _null_ _null_ ));
 DESCR("");
-DATA(insert OID = 1259 (  pg_class		PGNSP 83 0 PGUID 0 0 0 0 0 0 0 0 f f p r 29 0 t f f f f t 3 1 _null_ _null_ ));
+DATA(insert OID = 1259 (  pg_class		PGNSP 83 0 PGUID 0 0 0 0 0 0 0 0 f f p r 28 0 t f f f f 3 1 _null_ _null_ ));
 DESCR("");
 
 

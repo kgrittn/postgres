@@ -1594,8 +1594,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs, bool forUpdatePushedDown)
 		/*
 		 * Skip materialized view expansion when resultRelation is set.
 		 */
-		if (rel->rd_rel->relkind == RELKIND_MATVIEW &&
-			rel->rd_rel->relisvalid)
+		if (rel->rd_rel->relkind == RELKIND_MATVIEW && rel->rd_isscannable)
 		{
 			heap_close(rel, NoLock);
 			break;
