@@ -872,8 +872,6 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	relation->rd_isnailed = false;
 	relation->rd_createSubid = InvalidSubTransactionId;
 	relation->rd_newRelfilenodeSubid = InvalidSubTransactionId;
-	relation->rd_isscannable = (relation->rd_rel->relkind != RELKIND_MATVIEW)
-							 || !heap_is_matview_init_state(relation);
 	switch (relation->rd_rel->relpersistence)
 	{
 		case RELPERSISTENCE_UNLOGGED:
@@ -953,6 +951,12 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	 * initialize physical addressing information for the relation
 	 */
 	RelationInitPhysicalAddr(relation);
+
+	if (relation->rd_rel->relkind == RELKIND_MATVIEW &&
+		heap_is_matview_init_state(relation))
+		relation->rd_isscannable = false;
+	else
+		relation->rd_isscannable = true;
 
 	/* make sure relation is marked as having no open file yet */
 	relation->rd_smgr = NULL;
@@ -1427,7 +1431,6 @@ formrdesc(const char *relationName, Oid relationReltype,
 	relation->rd_newRelfilenodeSubid = InvalidSubTransactionId;
 	relation->rd_backend = InvalidBackendId;
 	relation->rd_islocaltemp = false;
-	relation->rd_isscannable = true;
 
 	/*
 	 * initialize relation tuple form
@@ -1527,6 +1530,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 * initialize physical addressing information for the relation
 	 */
 	RelationInitPhysicalAddr(relation);
+	relation->rd_isscannable = true;
 
 	/*
 	 * initialize the rel-has-index flag, using hardwired knowledge
@@ -1751,6 +1755,7 @@ RelationReloadIndexInfo(Relation relation)
 	heap_freetuple(pg_class_tuple);
 	/* We must recalculate physical address in case it changed */
 	RelationInitPhysicalAddr(relation);
+	relation->rd_isscannable = true;
 
 	/*
 	 * For a non-system index, there are fields of the pg_index row that are
@@ -1897,6 +1902,11 @@ RelationClearRelation(Relation relation, bool rebuild)
 	if (relation->rd_isnailed)
 	{
 		RelationInitPhysicalAddr(relation);
+		if (relation->rd_rel->relkind == RELKIND_MATVIEW &&
+			heap_is_matview_init_state(relation))
+			relation->rd_isscannable = false;
+		else
+			relation->rd_isscannable = true;
 
 		if (relation->rd_rel->relkind == RELKIND_INDEX)
 		{
@@ -2596,9 +2606,6 @@ RelationBuildLocalRelation(const char *relname,
 
 	rel->rd_refcnt = nailit ? 1 : 0;
 
-	/* materialized view not initially scannable */
-	rel->rd_isscannable = (relkind != RELKIND_MATVIEW);
-
 	/* it's being created in this transaction */
 	rel->rd_createSubid = GetCurrentSubTransactionId();
 	rel->rd_newRelfilenodeSubid = InvalidSubTransactionId;
@@ -2687,6 +2694,12 @@ RelationBuildLocalRelation(const char *relname,
 	RelationInitLockInfo(rel);	/* see lmgr.c */
 
 	RelationInitPhysicalAddr(rel);
+
+	/* materialized view not initially scannable */
+	if (relkind == RELKIND_MATVIEW)
+		rel->rd_isscannable = false;
+	else
+		rel->rd_isscannable = true;
 
 	/*
 	 * Okay to insert into the relcache hash tables.
@@ -4431,6 +4444,11 @@ load_relcache_init_file(bool shared)
 		 */
 		RelationInitLockInfo(rel);
 		RelationInitPhysicalAddr(rel);
+		if (rel->rd_rel->relkind == RELKIND_MATVIEW &&
+			heap_is_matview_init_state(rel))
+			rel->rd_isscannable = false;
+		else
+			rel->rd_isscannable = true;
 	}
 
 	/*

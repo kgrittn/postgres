@@ -2060,42 +2060,6 @@ SetRelationHasSubclass(Oid relationId, bool relhassubclass)
 }
 
 /*
- * SetRelationIdIsScannable
- *		Force the heap to match the given "isscannable" state.
- *
- * NOTE: caller must be holding an appropriate lock on the relation.
- */
-void
-SetRelationIdIsScannable(Oid relid, bool isscannable)
-{
-	Relation	relation;
-	bool		wasscannable;
-
-	relation = RelationIdGetRelation(relid);
-	RelationOpenSmgr(relation);
-	wasscannable = relation->rd_isscannable;
-
-	if (isscannable != wasscannable)
-	{
-		if (isscannable)
-		{
-			Page        page;
-
-			page = (Page) palloc(BLCKSZ);
-			PageInit(page, BLCKSZ, 0);
-			smgrextend(relation->rd_smgr, MAIN_FORKNUM, 0, (char *) page, true);
-			pfree(page);
- 
- 			smgrimmedsync(relation->rd_smgr, MAIN_FORKNUM);
-		}
-		else
-			heap_truncate_one_rel(relation);
-	}
-
-	RelationClose(relation);
-}
-
-/*
  *		renameatt_check			- basic sanity checks before attribute rename
  */
 static void

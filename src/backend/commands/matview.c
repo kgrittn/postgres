@@ -18,6 +18,7 @@
 #include "access/relscan.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "catalog/heap.h"
 #include "catalog/namespace.h"
 #include "commands/cluster.h"
 #include "commands/matview.h"
@@ -48,6 +49,34 @@ static void transientrel_shutdown(DestReceiver *self);
 static void transientrel_destroy(DestReceiver *self);
 static void refresh_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery,
 							const char *queryString);
+
+/*
+ * SetRelationIsScannable
+ *		Force the heap to match the given "isscannable" state.
+ *
+ * NOTE: caller must be holding an appropriate lock on the relation.
+ */
+void
+SetRelationIsScannable(Relation relation, bool isscannable)
+{
+	if (isscannable != relation->rd_isscannable)
+	{
+		if (isscannable)
+		{
+			Page        page;
+
+			RelationOpenSmgr(relation);
+			page = (Page) palloc(BLCKSZ);
+			PageInit(page, BLCKSZ, 0);
+			smgrextend(relation->rd_smgr, MAIN_FORKNUM, 0, (char *) page, true);
+			pfree(page);
+
+			smgrimmedsync(relation->rd_smgr, MAIN_FORKNUM);
+		}
+		else
+			heap_truncate_one_rel(relation);
+	}
+}
 
 /*
  * ExecRefreshMatView -- execute a REFRESH MATERIALIZED VIEW command
@@ -235,8 +264,6 @@ refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
 	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, RecentXmin,
 					 ReadNextMultiXactId());
 
-	SetRelationIdIsScannable(matviewOid, true);
-
 	RelationCacheInvalidateEntry(matviewOid);
 }
 
@@ -280,6 +307,8 @@ transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	if (!XLogIsNeeded())
 		myState->hi_options |= HEAP_INSERT_SKIP_WAL;
 	myState->bistate = GetBulkInsertState();
+
+	SetRelationIsScannable(transientrel, true);
 
 	/* Not using WAL requires smgr_targblock be initially invalid */
 	Assert(RelationGetTargetBlock(transientrel) == InvalidBlockNumber);

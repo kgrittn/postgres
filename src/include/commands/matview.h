@@ -17,6 +17,8 @@
 #include "nodes/params.h"
 #include "tcop/dest.h"
 
+extern void SetRelationIsScannable(Relation relation, bool isscannable);
+
 extern void ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 				  ParamListInfo params, char *completionTag);
 
