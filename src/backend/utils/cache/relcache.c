@@ -952,14 +952,14 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	 */
 	RelationInitPhysicalAddr(relation);
 
+	/* make sure relation is marked as having no open file yet */
+	relation->rd_smgr = NULL;
+
 	if (relation->rd_rel->relkind == RELKIND_MATVIEW &&
 		heap_is_matview_init_state(relation))
 		relation->rd_isscannable = false;
 	else
 		relation->rd_isscannable = true;
-
-	/* make sure relation is marked as having no open file yet */
-	relation->rd_smgr = NULL;
 
 	/*
 	 * now we can free the memory allocated for pg_class_tuple
