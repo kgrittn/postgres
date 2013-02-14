@@ -16,6 +16,7 @@
 
 #include "nodes/params.h"
 #include "tcop/dest.h"
+#include "utils/relcache.h"
 
 extern void SetRelationIsScannable(Relation relation, bool isscannable);
 

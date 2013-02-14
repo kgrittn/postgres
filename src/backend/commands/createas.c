@@ -29,6 +29,7 @@
 #include "access/xact.h"
 #include "catalog/toasting.h"
 #include "commands/createas.h"
+#include "commands/matview.h"
 #include "commands/prepare.h"
 #include "commands/tablecmds.h"
 #include "commands/view.h"
@@ -392,20 +393,21 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 
 	AlterTableCreateToastTable(intoRelationId, toast_options);
 
+	/* Create the "view" part of a materialized view. */
+	if (into->relkind == RELKIND_MATVIEW)
+	{
+		StoreViewQuery(intoRelationId, myState->viewParse, false);
+		CommandCounterIncrement();
+	}
+
 	/*
 	 * Finally we can open the target table
 	 */
 	intoRelationDesc = heap_open(intoRelationId, AccessExclusiveLock);
 
-	/*
-	 * Create the "view" part of a materialized view.
-	 */
-	if (into->relkind == RELKIND_MATVIEW)
-	{
-		StoreViewQuery(intoRelationId, myState->viewParse, false);
-		SetRelationIsScannable(intoRelationDesc, !into->skipData);
-		RelationCacheInvalidateEntry(intoRelationId);
-	}
+	if (into->relkind == RELKIND_MATVIEW && !into->skipData)
+		/* Make sure the heap looks good even if no rows are written. */
+		SetRelationIsScannable(intoRelationDesc, true);
 
 	/*
 	 * Check INSERT permission on the constructed table.

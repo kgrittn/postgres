@@ -61,6 +61,8 @@ SetRelationIsScannable(Relation relation, bool isscannable)
 {
 	if (isscannable != relation->rd_isscannable)
 	{
+		/* FIXME: eliminate boolean or support false properly. */
+		Assert(isscannable == true);
 		if (isscannable)
 		{
 			Page        page;
@@ -74,7 +76,9 @@ SetRelationIsScannable(Relation relation, bool isscannable)
 			smgrimmedsync(relation->rd_smgr, MAIN_FORKNUM);
 		}
 		else
-			heap_truncate_one_rel(relation);
+		{
+			/* Don't have working code; not sure whether it is needed. */
+		}
 	}
 }
 
