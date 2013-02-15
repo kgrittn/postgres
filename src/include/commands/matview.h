@@ -18,7 +18,7 @@
 #include "tcop/dest.h"
 #include "utils/relcache.h"
 
-extern void SetRelationIsScannable(Relation relation, bool isscannable);
+extern void SetRelationIsScannable(Relation relation);
 
 extern void ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 				  ParamListInfo params, char *completionTag);

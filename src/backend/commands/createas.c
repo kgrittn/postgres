@@ -407,7 +407,7 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 
 	if (into->relkind == RELKIND_MATVIEW && !into->skipData)
 		/* Make sure the heap looks good even if no rows are written. */
-		SetRelationIsScannable(intoRelationDesc, true);
+		SetRelationIsScannable(intoRelationDesc);
 
 	/*
 	 * Check INSERT permission on the constructed table.

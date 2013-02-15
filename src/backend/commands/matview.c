@@ -52,34 +52,31 @@ static void refresh_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery,
 
 /*
  * SetRelationIsScannable
- *		Force the heap to match the given "isscannable" state.
+ *		Make the relation appear scannable.
+ *
+ * NOTE: This is only implemented for materialized views. The heap starts out
+ * in a state that doesn't look scannable, and can only transition from there
+ * to scannable, unless a new heap is created.
  *
  * NOTE: caller must be holding an appropriate lock on the relation.
  */
 void
-SetRelationIsScannable(Relation relation, bool isscannable)
+SetRelationIsScannable(Relation relation)
 {
-	if (isscannable != relation->rd_isscannable)
-	{
-		/* FIXME: eliminate boolean or support false properly. */
-		Assert(isscannable == true);
-		if (isscannable)
-		{
-			Page        page;
+	Page        page;
 
-			RelationOpenSmgr(relation);
-			page = (Page) palloc(BLCKSZ);
-			PageInit(page, BLCKSZ, 0);
-			smgrextend(relation->rd_smgr, MAIN_FORKNUM, 0, (char *) page, true);
-			pfree(page);
+	Assert(relation->rd_rel->relkind == RELKIND_MATVIEW);
+	Assert(relation->rd_isscannable == false);
 
-			smgrimmedsync(relation->rd_smgr, MAIN_FORKNUM);
-		}
-		else
-		{
-			/* Don't have working code; not sure whether it is needed. */
-		}
-	}
+	RelationOpenSmgr(relation);
+	page = (Page) palloc(BLCKSZ);
+	PageInit(page, BLCKSZ, 0);
+	smgrextend(relation->rd_smgr, MAIN_FORKNUM, 0, (char *) page, true);
+	pfree(page);
+
+	smgrimmedsync(relation->rd_smgr, MAIN_FORKNUM);
+
+	RelationCacheInvalidateEntry(relation->rd_id);
 }
 
 /*
@@ -312,7 +309,7 @@ transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 		myState->hi_options |= HEAP_INSERT_SKIP_WAL;
 	myState->bistate = GetBulkInsertState();
 
-	SetRelationIsScannable(transientrel, true);
+	SetRelationIsScannable(transientrel);
 
 	/* Not using WAL requires smgr_targblock be initially invalid */
 	Assert(RelationGetTargetBlock(transientrel) == InvalidBlockNumber);
