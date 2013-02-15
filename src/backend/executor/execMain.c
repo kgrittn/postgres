@@ -893,11 +893,6 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	}
 
 	/*
-	 * Ensure that all referenced relations are flagged as valid.
-	 */
-	ExecCheckRelationsScannable(rangeTable);
-
-	/*
 	 * Initialize the executor's tuple table to empty.
 	 */
 	estate->es_tupleTable = NIL;
@@ -946,6 +941,11 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	 * processing tuples.
 	 */
 	planstate = ExecInitNode(plan, estate, eflags);
+
+	/*
+	 * Ensure that all referenced relations are scannable.
+	 */
+	ExecCheckRelationsScannable(rangeTable);
 
 	/*
 	 * Get the tuple descriptor describing the type of tuples to return.
