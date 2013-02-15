@@ -1719,7 +1719,7 @@ makeTableDataInfo(TableInfo *tbinfo, bool oids)
 		return;
 
 	/* An invalid materialized view does not generate data. */
-	if (!(tbinfo->relisvalid))
+	if (!(tbinfo->isscannable))
 		return;
 
 	/* OK, let's dump it */
@@ -1776,14 +1776,14 @@ buildMatViewRefreshDependencies(Archive *fout)
 						  "from pg_depend d1 "
 						  "join pg_class c1 on c1.oid = d1.objid "
 						  "and c1.relkind = 'm' "
-						  "and c1.relisvalid "
+						  "and pg_relation_is_scannable(c1.oid) "
 						  "join pg_rewrite r1 on r1.ev_class = d1.objid "
 						  "join pg_depend d2 on d2.classid = 'pg_rewrite'::regclass "
 						  "and d2.objid = r1.oid "
 						  "and d2.refobjid <> d1.objid "
 						  "join pg_class c2 on c2.oid = d2.refobjid "
 						  "and c2.relkind in ('m','v') "
-						  "and c2.relisvalid "
+						  "and pg_relation_is_scannable(c2.oid) "
 						  "where d1.classid = 'pg_class'::regclass "
 						  "union "
 						  "select w.objid, w.refobjid, d3.refobjid, c3.relkind "
@@ -1794,7 +1794,7 @@ buildMatViewRefreshDependencies(Archive *fout)
 						  "and d3.refobjid <> w.refobjid "
 						  "join pg_class c3 on c3.oid = d3.refobjid "
 						  "and c3.relkind in ('m','v') "
-						  "and c3.relisvalid "
+						  "and pg_relation_is_scannable(c3.oid) "
 						  "where w.refrelkind <> 'm' "
 						  "), "
 						  "x as "
@@ -4125,7 +4125,7 @@ getTables(Archive *fout, int *numTables)
 	int			i_toastoid;
 	int			i_toastfrozenxid;
 	int			i_relpersistence;
-	int			i_relisvalid;
+	int			i_isscannable;
 	int			i_owning_tab;
 	int			i_owning_col;
 	int			i_reltablespace;
@@ -4170,7 +4170,7 @@ getTables(Archive *fout, int *numTables)
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "c.relfrozenxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
-						  "c.relpersistence, c.relisvalid, "
+						  "c.relpersistence, pg_relation_is_scannable(c.oid) as isscannable, "
 						  "CASE WHEN c.reloftype <> 0 THEN c.reloftype::pg_catalog.regtype ELSE NULL END AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
@@ -4206,7 +4206,7 @@ getTables(Archive *fout, int *numTables)
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "c.relfrozenxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
-						  "'p' AS relpersistence, 't'::bool as relisvalid, "
+						  "'p' AS relpersistence, 't'::bool as isscannable, "
 						  "CASE WHEN c.reloftype <> 0 THEN c.reloftype::pg_catalog.regtype ELSE NULL END AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
@@ -4241,7 +4241,7 @@ getTables(Archive *fout, int *numTables)
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "c.relfrozenxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
-						  "'p' AS relpersistence, 't'::bool as relisvalid, "
+						  "'p' AS relpersistence, 't'::bool as isscannable, "
 						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
@@ -4276,7 +4276,7 @@ getTables(Archive *fout, int *numTables)
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "c.relfrozenxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
-						  "'p' AS relpersistence, 't'::bool as relisvalid, "
+						  "'p' AS relpersistence, 't'::bool as isscannable, "
 						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
@@ -4312,7 +4312,7 @@ getTables(Archive *fout, int *numTables)
 						  "0 AS relfrozenxid, "
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, "
-						  "'p' AS relpersistence, 't'::bool as relisvalid, "
+						  "'p' AS relpersistence, 't'::bool as isscannable, "
 						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
@@ -4347,7 +4347,7 @@ getTables(Archive *fout, int *numTables)
 						  "0 AS relfrozenxid, "
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, "
-						  "'p' AS relpersistence, 't'::bool as relisvalid, "
+						  "'p' AS relpersistence, 't'::bool as isscannable, "
 						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
@@ -4378,7 +4378,7 @@ getTables(Archive *fout, int *numTables)
 						  "0 AS relfrozenxid, "
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, "
-						  "'p' AS relpersistence, 't'::bool as relisvalid, "
+						  "'p' AS relpersistence, 't'::bool as isscannable, "
 						  "NULL AS reloftype, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
@@ -4404,7 +4404,7 @@ getTables(Archive *fout, int *numTables)
 						  "0 AS relfrozenxid, "
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, "
-						  "'p' AS relpersistence, 't'::bool as relisvalid, "
+						  "'p' AS relpersistence, 't'::bool as isscannable, "
 						  "NULL AS reloftype, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
@@ -4440,7 +4440,7 @@ getTables(Archive *fout, int *numTables)
 						  "0 as relfrozenxid, "
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, "
-						  "'p' AS relpersistence, 't'::bool as relisvalid, "
+						  "'p' AS relpersistence, 't'::bool as isscannable, "
 						  "NULL AS reloftype, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
@@ -4488,7 +4488,7 @@ getTables(Archive *fout, int *numTables)
 	i_toastoid = PQfnumber(res, "toid");
 	i_toastfrozenxid = PQfnumber(res, "tfrozenxid");
 	i_relpersistence = PQfnumber(res, "relpersistence");
-	i_relisvalid = PQfnumber(res, "relisvalid");
+	i_isscannable = PQfnumber(res, "isscannable");
 	i_owning_tab = PQfnumber(res, "owning_tab");
 	i_owning_col = PQfnumber(res, "owning_col");
 	i_reltablespace = PQfnumber(res, "reltablespace");
@@ -4530,7 +4530,7 @@ getTables(Archive *fout, int *numTables)
 		tblinfo[i].hasrules = (strcmp(PQgetvalue(res, i, i_relhasrules), "t") == 0);
 		tblinfo[i].hastriggers = (strcmp(PQgetvalue(res, i, i_relhastriggers), "t") == 0);
 		tblinfo[i].hasoids = (strcmp(PQgetvalue(res, i, i_relhasoids), "t") == 0);
-		tblinfo[i].relisvalid = (strcmp(PQgetvalue(res, i, i_relisvalid), "t") == 0);
+		tblinfo[i].isscannable = (strcmp(PQgetvalue(res, i, i_isscannable), "t") == 0);
 		tblinfo[i].frozenxid = atooid(PQgetvalue(res, i, i_relfrozenxid));
 		tblinfo[i].toast_oid = atooid(PQgetvalue(res, i, i_toastoid));
 		tblinfo[i].toast_frozenxid = atooid(PQgetvalue(res, i, i_toastfrozenxid));

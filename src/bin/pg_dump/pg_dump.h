@@ -244,7 +244,7 @@ typedef struct _tableInfo
 	bool		hasrules;		/* does it have any rules? */
 	bool		hastriggers;	/* does it have any triggers? */
 	bool		hasoids;		/* does it have OIDs? */
-	bool		relisvalid;		/* is valid for use in queries */
+	bool		isscannable;	/* is valid for use in queries */
 	uint32		frozenxid;		/* for restore frozen xid */
 	Oid			toast_oid;		/* for restore toast frozen xid */
 	uint32		toast_frozenxid;	/* for restore toast frozen xid */
