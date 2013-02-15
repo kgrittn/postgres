@@ -212,15 +212,21 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 int
 GetIntoRelEFlags(IntoClause *intoClause)
 {
+	int		flags;
 	/*
 	 * We need to tell the executor whether it has to produce OIDs or not,
 	 * because it doesn't have enough information to do so itself (since we
 	 * can't build the target relation until after ExecutorStart).
 	 */
 	if (interpretOidsOption(intoClause->options))
-		return EXEC_FLAG_WITH_OIDS;
+		flags = EXEC_FLAG_WITH_OIDS;
 	else
-		return EXEC_FLAG_WITHOUT_OIDS;
+		flags = EXEC_FLAG_WITHOUT_OIDS;
+
+	if (intoClause->skipData)
+		flags |= EXEC_FLAG_WITH_NO_DATA;
+
+	return flags;
 }
 
 /*

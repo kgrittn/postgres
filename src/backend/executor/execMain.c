@@ -943,9 +943,11 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	planstate = ExecInitNode(plan, estate, eflags);
 
 	/*
-	 * Ensure that all referenced relations are scannable.
+	 * Unless we are creating a view or are creating a materialized view WITH
+	 * NO DATA, ensure that all referenced relations are scannable.
 	 */
-	ExecCheckRelationsScannable(rangeTable);
+	if ((eflags & EXEC_FLAG_WITH_NO_DATA) == 0)
+		ExecCheckRelationsScannable(rangeTable);
 
 	/*
 	 * Get the tuple descriptor describing the type of tuples to return.
