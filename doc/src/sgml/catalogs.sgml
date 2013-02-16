@@ -1864,16 +1864,6 @@
      </row>
 
      <row>
-      <entry><structfield>relisvalid</structfield></entry>
-      <entry><type>boolean</type></entry>
-      <entry></entry>
-      <entry>
-       Relation is valid and can be scanned.  Currently, this is used only for
-       materialized views; for other relation types, it will always be true.
-      </entry>
-     </row>
-
-     <row>
       <entry><structfield>relfrozenxid</structfield></entry>
       <entry><type>xid</type></entry>
       <entry></entry>
