@@ -12681,7 +12681,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		if (tbinfo->reloptions && strlen(tbinfo->reloptions) > 0)
 			appendPQExpBuffer(q, " WITH (%s)", tbinfo->reloptions);
 		result = createViewAsClause(fout, tbinfo);
-		appendPQExpBuffer(q, " AS\n    %s;\n", result->data);
+		appendPQExpBuffer(q, " AS\n%s;\n", result->data);
 		destroyPQExpBuffer(result);
 
 		appendPQExpBuffer(labelq, "VIEW %s",
