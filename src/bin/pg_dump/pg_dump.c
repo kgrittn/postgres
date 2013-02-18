@@ -12766,6 +12766,8 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		if (tbinfo->reloftype && !binary_upgrade)
 			appendPQExpBuffer(q, " OF %s", tbinfo->reloftype);
 
+		if (tbinfo->relkind != RELKIND_MATVIEW)
+		{
 		/* Dump the attributes */
 		actual_atts = 0;
 		for (j = 0; j < tbinfo->numatts; j++)
@@ -12807,10 +12809,6 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				/* Attribute name */
 				appendPQExpBuffer(q, "%s",
 								  fmtId(tbinfo->attnames[j]));
-
-				/* Materialized views just have column names, not types. */
-				if (tbinfo->relkind == RELKIND_MATVIEW)
-					continue;
 
 				if (tbinfo->attisdropped[j])
 				{
@@ -12920,6 +12918,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 
 		if (tbinfo->relkind == RELKIND_FOREIGN_TABLE)
 			appendPQExpBuffer(q, "\nSERVER %s", fmtId(srvname));
+		}
 
 		if ((tbinfo->reloptions && strlen(tbinfo->reloptions) > 0) ||
 		  (tbinfo->toast_reloptions && strlen(tbinfo->toast_reloptions) > 0))
@@ -12952,7 +12951,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			PQExpBuffer result;
 
 			result = createViewAsClause(fout, tbinfo);
-			appendPQExpBuffer(q, " AS\n    %s\n  WITH NO DATA;\n",
+			appendPQExpBuffer(q, " AS\n%s\n  WITH NO DATA;\n",
 							  result->data);
 			destroyPQExpBuffer(result);
 		}
