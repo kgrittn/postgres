@@ -7120,6 +7120,28 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
+			| ALTER MATERIALIZED VIEW qualified_name RENAME opt_column name TO name
+				{
+					RenameStmt *n = makeNode(RenameStmt);
+					n->renameType = OBJECT_COLUMN;
+					n->relationType = OBJECT_MATVIEW;
+					n->relation = $4;
+					n->subname = $7;
+					n->newname = $9;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
+			| ALTER MATERIALIZED VIEW IF_P EXISTS qualified_name RENAME opt_column name TO name
+				{
+					RenameStmt *n = makeNode(RenameStmt);
+					n->renameType = OBJECT_COLUMN;
+					n->relationType = OBJECT_MATVIEW;
+					n->relation = $6;
+					n->subname = $9;
+					n->newname = $11;
+					n->missing_ok = true;
+					$$ = (Node *)n;
+				}
 			| ALTER TABLE relation_expr RENAME CONSTRAINT name TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
