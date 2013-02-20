@@ -21,8 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
-    <replaceable class="PARAMETER">action</replaceable> [, ... ]
+ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable> <replaceable class="PARAMETER">action</replaceable> [, ... ]
 ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="parameter">name</replaceable> OWNER TO <replaceable class="PARAMETER">new_owner</replaceable>
 ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="parameter">name</replaceable> RENAME TO <replaceable class="parameter">new_name</replaceable>
 ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="parameter">name</replaceable> SET SCHEMA <replaceable class="parameter">new_schema</replaceable>
