@@ -2261,8 +2261,8 @@ describeOneTableDetails(const char *schemaname,
 			printTableAddFooter(&cont, buf.data);
 		}
 
-		/* OIDs, if verbose */
-		if (verbose)
+		/* OIDs, if verbose and not a materialized view */
+		if (verbose && tableinfo.relkind != 'm')
 		{
 			const char *s = _("Has OIDs");
 
