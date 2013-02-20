@@ -24,9 +24,9 @@ static const char *modulename = gettext_noop("sorter");
  * Objects are sorted by priority levels, and within an equal priority level
  * by OID.	(This is a relatively crude hack to provide semi-reasonable
  * behavior for old databases without full dependency info.)  Note: collations,
- * extensions, text search, foreign-data, event trigger, and default ACL
- * objects can't really happen here, so the rather bogus priorities for them
- * don't matter.
+ * extensions, text search, foreign-data, materialized view, event trigger,
+ * and default ACL objects can't really happen here, so the rather bogus
+ * priorities for them don't matter.
  *
  * NOTE: object-type priorities must match the section assignments made in
  * pg_dump.c; that is, PRE_DATA objects must sort before DO_PRE_DATA_BOUNDARY,
@@ -69,8 +69,7 @@ static const int oldObjectTypePriority[] =
 	10,							/* DO_PRE_DATA_BOUNDARY */
 	13,							/* DO_POST_DATA_BOUNDARY */
 	20,							/* DO_EVENT_TRIGGER */
-	15,							/* DO_REFRESH_MATVIEW */
-	15							/* DO_MATVIEW_INDEX */
+	15							/* DO_REFRESH_MATVIEW */
 };
 
 /*
@@ -98,10 +97,10 @@ static const int newObjectTypePriority[] =
 	18,							/* DO_TABLE */
 	20,							/* DO_ATTRDEF */
 	27,							/* DO_INDEX */
-	29,							/* DO_RULE */
-	30,							/* DO_TRIGGER */
+	28,							/* DO_RULE */
+	29,							/* DO_TRIGGER */
 	26,							/* DO_CONSTRAINT */
-	31,							/* DO_FK_CONSTRAINT */
+	30,							/* DO_FK_CONSTRAINT */
 	2,							/* DO_PROCLANG */
 	10,							/* DO_CAST */
 	23,							/* DO_TABLE_DATA */
@@ -112,14 +111,13 @@ static const int newObjectTypePriority[] =
 	15,							/* DO_TSCONFIG */
 	16,							/* DO_FDW */
 	17,							/* DO_FOREIGN_SERVER */
-	32,							/* DO_DEFAULT_ACL */
+	31,							/* DO_DEFAULT_ACL */
 	21,							/* DO_BLOB */
 	24,							/* DO_BLOB_DATA */
 	22,							/* DO_PRE_DATA_BOUNDARY */
 	25,							/* DO_POST_DATA_BOUNDARY */
-	33,							/* DO_EVENT_TRIGGER */
-	28,							/* DO_REFRESH_MATVIEW */
-	28							/* DO_MATVIEW_INDEX */
+	32,							/* DO_EVENT_TRIGGER */
+	33							/* DO_REFRESH_MATVIEW */
 };
 
 static DumpId preDataBoundId;
@@ -1159,11 +1157,6 @@ describeDumpableObject(DumpableObject *obj, char *buf, int bufsize)
 		case DO_REFRESH_MATVIEW:
 			snprintf(buf, bufsize,
 					 "REFRESH MATERIALIZED VIEW %s  (ID %d OID %u)",
-					 obj->name, obj->dumpId, obj->catId.oid);
-			return;
-		case DO_MATVIEW_INDEX:
-			snprintf(buf, bufsize,
-					 "MATERIALIZED VIEW INDEX %s  (ID %d OID %u)",
 					 obj->name, obj->dumpId, obj->catId.oid);
 			return;
 		case DO_RULE:

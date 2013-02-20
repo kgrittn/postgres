@@ -1641,7 +1641,13 @@ static void
 refreshMatViewData(Archive *fout, TableDataInfo *tdinfo)
 {
 	TableInfo  *tbinfo = tdinfo->tdtable;
-	PQExpBuffer q = createPQExpBuffer();
+	PQExpBuffer q;
+
+	/* If the materialized view is not flagged as scannable, skip this. */
+	if (!tbinfo->isscannable)
+		return;
+
+	q = createPQExpBuffer();
 
 	appendPQExpBuffer(q, "REFRESH MATERIALIZED VIEW %s;\n",
 					  fmtId(tbinfo->dobj.name));
@@ -1718,10 +1724,6 @@ makeTableDataInfo(TableInfo *tbinfo, bool oids)
 							   tbinfo->dobj.catId.oid))
 		return;
 
-	/* An invalid materialized view does not generate data. */
-	if (!(tbinfo->isscannable))
-		return;
-
 	/* OK, let's dump it */
 	tdinfo = (TableDataInfo *) pg_malloc(sizeof(TableDataInfo));
 
@@ -1748,8 +1750,8 @@ makeTableDataInfo(TableInfo *tbinfo, bool oids)
 }
 
 /*
- * The refresh for a materialized view must be dependent on the refresh and
- * index builds for any materialized view that this one is dependent on.
+ * The refresh for a materialized view must be dependent on the refresh for
+ * any materialized view that this one is dependent on.
  *
  * This must be called after all the objects are created, but before they are
  * sorted.
@@ -1776,14 +1778,12 @@ buildMatViewRefreshDependencies(Archive *fout)
 						  "from pg_depend d1 "
 						  "join pg_class c1 on c1.oid = d1.objid "
 						  "and c1.relkind = 'm' "
-						  "and pg_relation_is_scannable(c1.oid) "
 						  "join pg_rewrite r1 on r1.ev_class = d1.objid "
 						  "join pg_depend d2 on d2.classid = 'pg_rewrite'::regclass "
 						  "and d2.objid = r1.oid "
 						  "and d2.refobjid <> d1.objid "
 						  "join pg_class c2 on c2.oid = d2.refobjid "
 						  "and c2.relkind in ('m','v') "
-						  "and pg_relation_is_scannable(c2.oid) "
 						  "where d1.classid = 'pg_class'::regclass "
 						  "union "
 						  "select w.objid, w.refobjid, d3.refobjid, c3.relkind "
@@ -1794,26 +1794,11 @@ buildMatViewRefreshDependencies(Archive *fout)
 						  "and d3.refobjid <> w.refobjid "
 						  "join pg_class c3 on c3.oid = d3.refobjid "
 						  "and c3.relkind in ('m','v') "
-						  "and pg_relation_is_scannable(c3.oid) "
 						  "where w.refrelkind <> 'm' "
-						  "), "
-						  "x as "
-						  "( "
-						  "select objid, refobjid from w "
-						  "where refrelkind = 'm' "
 						  ") "
-						  "select 'pg_class'::regclass::oid as classid, x.objid, x.refobjid from x "
-						  "union all "
-						  "select 'pg_class'::regclass::oid, x.objid, i.indexrelid from x "
-						  "join pg_index i on i.indrelid = x.refobjid and i.indisvalid "
-						  "union all "
-						  "select 'pg_class'::regclass::oid, i.indexrelid, x.objid from x "
-						  "join pg_index i on i.indrelid = x.objid "
-						  "and i.indisvalid "
-						  "union "
-						  "select 'pg_class'::regclass::oid, i.indexrelid, x.refobjid from x "
-						  "join pg_index i on i.indrelid = x.refobjid "
-						  "and i.indisvalid");
+						  "select 'pg_class'::regclass::oid as classid, objid, refobjid "
+						  "from w "
+						  "where refrelkind = 'm'");
 	}
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
@@ -1830,6 +1815,7 @@ buildMatViewRefreshDependencies(Archive *fout)
 		CatalogId	refobjId;
 		DumpableObject	*dobj;
 		DumpableObject	*refdobj;
+		TableInfo	   *tbinfo;
 
 		objId.tableoid = atooid(PQgetvalue(res, i, i_classid));
 		objId.oid = atooid(PQgetvalue(res, i, i_objid));
@@ -1840,18 +1826,13 @@ buildMatViewRefreshDependencies(Archive *fout)
 		if (dobj == NULL)
 			continue;
 
-		if (dobj->objType == DO_TABLE)
-		{
-			TableInfo	   *tbinfo = (TableInfo *) dobj;
-
-			Assert(tbinfo->relkind == RELKIND_MATVIEW);
-			dobj = (DumpableObject *) tbinfo->dataObj;
-			if (dobj == NULL)
-				continue;
-			Assert(dobj->objType == DO_REFRESH_MATVIEW);
-		}
-		else
-			Assert(dobj->objType == DO_MATVIEW_INDEX);
+		Assert(dobj->objType == DO_TABLE);
+		tbinfo = (TableInfo *) dobj;
+		Assert(tbinfo->relkind == RELKIND_MATVIEW);
+		dobj = (DumpableObject *) tbinfo->dataObj;
+		if (dobj == NULL)
+			continue;
+		Assert(dobj->objType == DO_REFRESH_MATVIEW);
 
 		refdobj = findObjectByCatalogId(refobjId);
 		if (refdobj == NULL)
@@ -1867,12 +1848,6 @@ buildMatViewRefreshDependencies(Archive *fout)
 				continue;
 			Assert(refdobj->objType == DO_REFRESH_MATVIEW);
 		}
-		else
-			Assert(refdobj->objType == DO_MATVIEW_INDEX);
-
-		/* At least one of these should now be a materialized view. */
-		Assert(dobj->objType == DO_REFRESH_MATVIEW ||
-			   refdobj->objType == DO_REFRESH_MATVIEW);
 
 		addObjectDependency(dobj, refdobj->dumpId);
 	}
@@ -4944,10 +4919,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 		{
 			char		contype;
 
-			if (tbinfo->relkind == RELKIND_MATVIEW)
-				indxinfo[j].dobj.objType = DO_MATVIEW_INDEX;
-			else
-				indxinfo[j].dobj.objType = DO_INDEX;
+			indxinfo[j].dobj.objType = DO_INDEX;
 			indxinfo[j].dobj.catId.tableoid = atooid(PQgetvalue(res, j, i_tableoid));
 			indxinfo[j].dobj.catId.oid = atooid(PQgetvalue(res, j, i_oid));
 			AssignDumpId(&indxinfo[j].dobj);
@@ -7530,9 +7502,6 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 			break;
 		case DO_REFRESH_MATVIEW:
 			refreshMatViewData(fout, (TableDataInfo *) dobj);
-			break;
-		case DO_MATVIEW_INDEX:
-			dumpIndex(fout, (IndxInfo *) dobj);
 			break;
 		case DO_RULE:
 			dumpRule(fout, (RuleInfo *) dobj);
@@ -14706,7 +14675,6 @@ addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 				break;
 			case DO_INDEX:
 			case DO_REFRESH_MATVIEW:
-			case DO_MATVIEW_INDEX:
 			case DO_TRIGGER:
 			case DO_EVENT_TRIGGER:
 			case DO_DEFAULT_ACL:
