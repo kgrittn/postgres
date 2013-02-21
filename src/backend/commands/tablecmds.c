@@ -985,7 +985,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 							 RelationGetRelationName(rel))));
 				break;
 			case OBJECT_MATVIEW:
-				if (rel->rd_rel->relkind != RELKIND_MATVIEW)
+				if (rel->rd_rel->relkind != RELKIND_RELATION)
 					ereport(ERROR,
 							(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 							 errmsg("\"%s\" is not a materialized view",
