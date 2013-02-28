@@ -1234,11 +1234,12 @@ truncate_check_rel(Relation rel)
 {
 	AclResult	aclresult;
 
-	/* Only allow truncate on regular tables */
-	if (rel->rd_rel->relkind != RELKIND_RELATION)
+	/* Only allow truncate on regular tables and materialized views. */
+	if (rel->rd_rel->relkind != RELKIND_RELATION &&
+		rel->rd_rel->relkind != RELKIND_MATVIEW)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table",
+				 errmsg("\"%s\" is not a table or materialized view",
 						RelationGetRelationName(rel))));
 
 	/* Permissions checks */
