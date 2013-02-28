@@ -394,6 +394,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <ival>	opt_column event cursor_options opt_hold opt_set_data
 %type <objtype>	reindex_type drop_type comment_type security_label_type
+				trunc_type
 
 %type <node>	fetch_args limit_clause select_limit_value
 				offset_clause select_offset_value
@@ -5195,14 +5196,21 @@ attrs:		'.' attr_name
  *****************************************************************************/
 
 TruncateStmt:
-			TRUNCATE opt_table relation_expr_list opt_restart_seqs opt_drop_behavior
+			TRUNCATE trunc_type relation_expr_list opt_restart_seqs opt_drop_behavior
 				{
 					TruncateStmt *n = makeNode(TruncateStmt);
+					n->objtype = $2;
 					n->relations = $3;
 					n->restart_seqs = $4;
 					n->behavior = $5;
 					$$ = (Node *)n;
 				}
+		;
+
+trunc_type:
+			TABLE						{ $$ = OBJECT_TABLE; }
+			| MATERIALIZED VIEW			{ $$ = OBJECT_MATVIEW; }
+			| /*EMPTY*/					{ $$ = OBJECT_UNSPECIFIED; }
 		;
 
 opt_restart_seqs:
@@ -12818,7 +12826,6 @@ unreserved_keyword:
 			| LOCK_P
 			| MAPPING
 			| MATCH
-			| MATERIALIZED
 			| MAXVALUE
 			| MINUTE_P
 			| MINVALUE
@@ -13035,6 +13042,7 @@ type_func_name_keyword:
 			| JOIN
 			| LEFT
 			| LIKE
+			| MATERIALIZED
 			| NATURAL
 			| NOTNULL
 			| OUTER_P
