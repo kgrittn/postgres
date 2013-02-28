@@ -3090,6 +3090,13 @@ psql_completion(char *text, int start, int end)
 /* TRUNCATE */
 	else if (pg_strcasecmp(prev_wd, "TRUNCATE") == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tm, NULL);
+	else if (pg_strcasecmp(prev2_wd, "TRUNCATE") == 0 &&
+			 pg_strcasecmp(prev_wd, "TABLE") == 0)
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tables, NULL);
+	else if (pg_strcasecmp(prev3_wd, "TRUNCATE") == 0 &&
+			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev_wd, "VIEW") == 0)
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
 
 /* UNLISTEN */
 	else if (pg_strcasecmp(prev_wd, "UNLISTEN") == 0)
