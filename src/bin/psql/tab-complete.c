@@ -3089,7 +3089,13 @@ psql_completion(char *text, int start, int end)
 
 /* TRUNCATE */
 	else if (pg_strcasecmp(prev_wd, "TRUNCATE") == 0)
-		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tm, NULL);
+	{
+		/* Assume that they want to specify an object type. */
+		static const char *const my_list[] =
+		{"TABLE", "MATERIALIZED VIEW", NULL};
+
+		COMPLETE_WITH_LIST(my_list);
+	}
 	else if (pg_strcasecmp(prev2_wd, "TRUNCATE") == 0 &&
 			 pg_strcasecmp(prev_wd, "TABLE") == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tables, NULL);
