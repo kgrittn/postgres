@@ -151,6 +151,7 @@ static void expand_table_name_patterns(Archive *fout,
 						   SimpleOidList *oids);
 static NamespaceInfo *findNamespace(Archive *fout, Oid nsoid, Oid objoid);
 static void dumpTableData(Archive *fout, TableDataInfo *tdinfo);
+static void refreshMatViewData(Archive *fout, TableDataInfo *tdinfo);
 static void guessConstraintInheritance(TableInfo *tblinfo, int numTables);
 static void dumpComment(Archive *fout, const char *target,
 			const char *namespace, const char *owner,
@@ -1783,7 +1784,7 @@ buildMatViewRefreshDependencies(Archive *fout)
 	{
 		appendPQExpBuffer(query, "with recursive w as "
 						  "( "
-						  "select d1.objid, d1.objid as wrkid, d2.refobjid, c2.relkind as refrelkind "
+						  "select d1.objid, d2.refobjid, c2.relkind as refrelkind "
 						  "from pg_depend d1 "
 						  "join pg_class c1 on c1.oid = d1.objid "
 						  "and c1.relkind = 'm' "
@@ -1795,7 +1796,7 @@ buildMatViewRefreshDependencies(Archive *fout)
 						  "and c2.relkind in ('m','v') "
 						  "where d1.classid = 'pg_class'::regclass "
 						  "union "
-						  "select w.objid, w.refobjid, d3.refobjid, c3.relkind "
+						  "select w.objid, d3.refobjid, c3.relkind "
 						  "from w "
 						  "join pg_rewrite r3 on r3.ev_class = w.refobjid "
 						  "join pg_depend d3 on d3.classid = 'pg_rewrite'::regclass "
@@ -1803,7 +1804,6 @@ buildMatViewRefreshDependencies(Archive *fout)
 						  "and d3.refobjid <> w.refobjid "
 						  "join pg_class c3 on c3.oid = d3.refobjid "
 						  "and c3.relkind in ('m','v') "
-						  "where w.refrelkind <> 'm' "
 						  ") "
 						  "select 'pg_class'::regclass::oid as classid, objid, refobjid "
 						  "from w "
@@ -1825,6 +1825,7 @@ buildMatViewRefreshDependencies(Archive *fout)
 		DumpableObject	*dobj;
 		DumpableObject	*refdobj;
 		TableInfo	   *tbinfo;
+		TableInfo	   *reftbinfo;
 
 		objId.tableoid = atooid(PQgetvalue(res, i, i_classid));
 		objId.oid = atooid(PQgetvalue(res, i, i_objid));
@@ -1847,16 +1848,13 @@ buildMatViewRefreshDependencies(Archive *fout)
 		if (refdobj == NULL)
 			continue;
 
-		if (refdobj->objType == DO_TABLE)
-		{
-			TableInfo	   *reftbinfo = (TableInfo *) refdobj;
-
-			Assert(reftbinfo->relkind == RELKIND_MATVIEW);
-			refdobj = (DumpableObject *) reftbinfo->dataObj;
-			if (refdobj == NULL)
-				continue;
-			Assert(refdobj->objType == DO_REFRESH_MATVIEW);
-		}
+		Assert(refdobj->objType == DO_TABLE);
+		reftbinfo = (TableInfo *) refdobj;
+		Assert(reftbinfo->relkind == RELKIND_MATVIEW);
+		refdobj = (DumpableObject *) reftbinfo->dataObj;
+		if (refdobj == NULL)
+			continue;
+		Assert(refdobj->objType == DO_REFRESH_MATVIEW);
 
 		addObjectDependency(dobj, refdobj->dumpId);
 	}
