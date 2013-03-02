@@ -1857,6 +1857,9 @@ buildMatViewRefreshDependencies(Archive *fout)
 		Assert(refdobj->objType == DO_REFRESH_MATVIEW);
 
 		addObjectDependency(dobj, refdobj->dumpId);
+
+		if (!reftbinfo->isscannable)
+			tbinfo->isscannable = false;
 	}
 
 	PQclear(res);
