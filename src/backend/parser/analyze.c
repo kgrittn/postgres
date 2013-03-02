@@ -2124,7 +2124,7 @@ transformExplainStmt(ParseState *pstate, ExplainStmt *stmt)
 /*
  * transformCreateTableAsStmt -
  *	transform a CREATE TABLE AS, SELECT ... INTO, or CREATE MATERIALIZED VIEW
- *  Statement
+ *	Statement
  *
  * As with EXPLAIN, transform the contained statement now.
  */
