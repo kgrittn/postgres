@@ -2787,7 +2787,6 @@ _copyTruncateStmt(const TruncateStmt *from)
 {
 	TruncateStmt *newnode = makeNode(TruncateStmt);
 
-	COPY_SCALAR_FIELD(objtype);
 	COPY_NODE_FIELD(relations);
 	COPY_SCALAR_FIELD(restart_seqs);
 	COPY_SCALAR_FIELD(behavior);
@@ -3242,6 +3241,7 @@ _copyRefreshMatViewStmt(const RefreshMatViewStmt *from)
 {
 	RefreshMatViewStmt *newnode = makeNode(RefreshMatViewStmt);
 
+	COPY_SCALAR_FIELD(skipData);
 	COPY_NODE_FIELD(relation);
 
 	return newnode;

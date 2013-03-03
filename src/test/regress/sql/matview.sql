@@ -96,10 +96,10 @@ SELECT * FROM tum;
 REFRESH MATERIALIZED VIEW tum;
 SELECT pg_relation_is_scannable('tum'::regclass);
 SELECT * FROM tum;
-TRUNCATE tum;
+REFRESH MATERIALIZED VIEW tum WITH NO DATA;
 SELECT pg_relation_is_scannable('tum'::regclass);
 SELECT * FROM tum;
-REFRESH MATERIALIZED VIEW tum;
+REFRESH MATERIALIZED VIEW tum WITH DATA;
 SELECT pg_relation_is_scannable('tum'::regclass);
 SELECT * FROM tum;
 

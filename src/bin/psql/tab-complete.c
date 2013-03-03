@@ -2309,6 +2309,9 @@ psql_completion(char *text, int start, int end)
 		COMPLETE_WITH_CONST("SELECT");
 
 /* CREATE MATERIALIZED VIEW */
+	else if (pg_strcasecmp(prev2_wd, "CREATE") == 0 &&
+			 pg_strcasecmp(prev_wd, "MATERIALIZED") == 0)
+		COMPLETE_WITH_CONST("VIEW");
 	/* Complete CREATE MATERIALIZED VIEW <name> with AS */
 	else if (pg_strcasecmp(prev4_wd, "CREATE") == 0 &&
 			 pg_strcasecmp(prev3_wd, "MATERIALIZED") == 0 &&
@@ -2449,6 +2452,11 @@ psql_completion(char *text, int start, int end)
 	}
 
 	/* DROP MATERIALIZED VIEW */
+	else if (pg_strcasecmp(prev2_wd, "DROP") == 0 &&
+			 pg_strcasecmp(prev_wd, "MATERIALIZED") == 0)
+	{
+		COMPLETE_WITH_CONST("VIEW");
+	}
 	else if (pg_strcasecmp(prev3_wd, "DROP") == 0 &&
 			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
 			 pg_strcasecmp(prev_wd, "VIEW") == 0)
@@ -2853,10 +2861,33 @@ psql_completion(char *text, int start, int end)
 /* REFRESH MATERIALIZED VIEW */
 	else if (pg_strcasecmp(prev_wd, "REFRESH") == 0)
 		COMPLETE_WITH_CONST("MATERIALIZED VIEW");
+	else if (pg_strcasecmp(prev2_wd, "REFRESH") == 0 &&
+			 pg_strcasecmp(prev_wd, "MATERIALIZED") == 0)
+		COMPLETE_WITH_CONST("VIEW");
 	else if (pg_strcasecmp(prev3_wd, "REFRESH") == 0 &&
 			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
 			 pg_strcasecmp(prev_wd, "VIEW") == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
+	else if (pg_strcasecmp(prev4_wd, "REFRESH") == 0 &&
+			 pg_strcasecmp(prev3_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev2_wd, "VIEW") == 0)
+		COMPLETE_WITH_CONST("WITH");
+	else if (pg_strcasecmp(prev5_wd, "REFRESH") == 0 &&
+			 pg_strcasecmp(prev4_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev3_wd, "VIEW") == 0 &&
+			 pg_strcasecmp(prev_wd, "WITH") == 0)
+	{
+		static const char *const list_WITH_DATA[] =
+		{"NO DATA", "DATA", NULL};
+
+		COMPLETE_WITH_LIST(list_WITH_DATA);
+	}
+	else if (pg_strcasecmp(prev6_wd, "REFRESH") == 0 &&
+			 pg_strcasecmp(prev5_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev4_wd, "VIEW") == 0 &&
+			 pg_strcasecmp(prev2_wd, "WITH") == 0 &&
+			 pg_strcasecmp(prev_wd, "NO") == 0)
+		COMPLETE_WITH_CONST("DATA");
 
 /* REINDEX */
 	else if (pg_strcasecmp(prev_wd, "REINDEX") == 0)
@@ -3089,20 +3120,7 @@ psql_completion(char *text, int start, int end)
 
 /* TRUNCATE */
 	else if (pg_strcasecmp(prev_wd, "TRUNCATE") == 0)
-	{
-		/* Assume that they want to specify an object type. */
-		static const char *const my_list[] =
-		{"TABLE", "MATERIALIZED VIEW", NULL};
-
-		COMPLETE_WITH_LIST(my_list);
-	}
-	else if (pg_strcasecmp(prev2_wd, "TRUNCATE") == 0 &&
-			 pg_strcasecmp(prev_wd, "TABLE") == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tables, NULL);
-	else if (pg_strcasecmp(prev3_wd, "TRUNCATE") == 0 &&
-			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
-			 pg_strcasecmp(prev_wd, "VIEW") == 0)
-		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
 
 /* UNLISTEN */
 	else if (pg_strcasecmp(prev_wd, "UNLISTEN") == 0)

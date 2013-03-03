@@ -302,7 +302,7 @@ SELECT * FROM tum;
  x    |      5
 (3 rows)
 
-TRUNCATE tum;
+REFRESH MATERIALIZED VIEW tum WITH NO DATA;
 SELECT pg_relation_is_scannable('tum'::regclass);
  pg_relation_is_scannable 
 --------------------------
@@ -312,7 +312,7 @@ SELECT pg_relation_is_scannable('tum'::regclass);
 SELECT * FROM tum;
 ERROR:  materialized view "tum" has not been populated
 HINT:  Use the REFRESH MATERIALIZED VIEW command.
-REFRESH MATERIALIZED VIEW tum;
+REFRESH MATERIALIZED VIEW tum WITH DATA;
 SELECT pg_relation_is_scannable('tum'::regclass);
  pg_relation_is_scannable 
 --------------------------

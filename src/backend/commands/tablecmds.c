@@ -975,25 +975,6 @@ ExecuteTruncate(TruncateStmt *stmt)
 			heap_close(rel, AccessExclusiveLock);
 			continue;
 		}
-		switch (stmt->objtype)
-		{
-			case OBJECT_TABLE:
-				if (rel->rd_rel->relkind != RELKIND_RELATION)
-					ereport(ERROR,
-							(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-							 errmsg("\"%s\" is not a table",
-							 RelationGetRelationName(rel))));
-				break;
-			case OBJECT_MATVIEW:
-				if (rel->rd_rel->relkind != RELKIND_MATVIEW)
-					ereport(ERROR,
-							(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-							 errmsg("\"%s\" is not a materialized view",
-							 RelationGetRelationName(rel))));
-				break;
-			default:
-				Assert(stmt->objtype == OBJECT_UNSPECIFIED);
-		}
 		truncate_check_rel(rel);
 		rels = lappend(rels, rel);
 		relids = lappend_oid(relids, myrelid);
@@ -1253,12 +1234,11 @@ truncate_check_rel(Relation rel)
 {
 	AclResult	aclresult;
 
-	/* Only allow truncate on regular tables and materialized views. */
-	if (rel->rd_rel->relkind != RELKIND_RELATION &&
-		rel->rd_rel->relkind != RELKIND_MATVIEW)
+	/* Only allow truncate on regular tables */
+	if (rel->rd_rel->relkind != RELKIND_RELATION)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table or materialized view",
+				 errmsg("\"%s\" is not a table",
 						RelationGetRelationName(rel))));
 
 	/* Permissions checks */

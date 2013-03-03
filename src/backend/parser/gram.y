@@ -3294,10 +3294,11 @@ OptNoLog:	UNLOGGED					{ $$ = RELPERSISTENCE_UNLOGGED; }
  *****************************************************************************/
 
 RefreshMatViewStmt:
-		REFRESH MATERIALIZED VIEW qualified_name
+			REFRESH MATERIALIZED VIEW qualified_name opt_with_data
 				{
 					RefreshMatViewStmt *n = makeNode(RefreshMatViewStmt);
 					n->relation = $4;
+					n->skipData = !($5);
 					$$ = (Node *) n;
 				}
 		;
@@ -5195,31 +5196,12 @@ attrs:		'.' attr_name
  *****************************************************************************/
 
 TruncateStmt:
-			TRUNCATE TABLE relation_expr_list opt_restart_seqs opt_drop_behavior
+			TRUNCATE opt_table relation_expr_list opt_restart_seqs opt_drop_behavior
 				{
 					TruncateStmt *n = makeNode(TruncateStmt);
-					n->objtype = OBJECT_TABLE;
 					n->relations = $3;
 					n->restart_seqs = $4;
 					n->behavior = $5;
-					$$ = (Node *)n;
-				}
-			| TRUNCATE MATERIALIZED VIEW relation_expr_list opt_restart_seqs opt_drop_behavior
-				{
-					TruncateStmt *n = makeNode(TruncateStmt);
-					n->objtype = OBJECT_MATVIEW;
-					n->relations = $4;
-					n->restart_seqs = $5;
-					n->behavior = $6;
-					$$ = (Node *)n;
-				}
-			| TRUNCATE relation_expr_list opt_restart_seqs opt_drop_behavior
-				{
-					TruncateStmt *n = makeNode(TruncateStmt);
-					n->objtype = OBJECT_UNSPECIFIED;
-					n->relations = $2;
-					n->restart_seqs = $3;
-					n->behavior = $4;
 					$$ = (Node *)n;
 				}
 		;

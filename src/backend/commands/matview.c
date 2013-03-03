@@ -47,8 +47,8 @@ static void transientrel_startup(DestReceiver *self, int operation, TupleDesc ty
 static void transientrel_receive(TupleTableSlot *slot, DestReceiver *self);
 static void transientrel_shutdown(DestReceiver *self);
 static void transientrel_destroy(DestReceiver *self);
-static void refresh_matview(Oid matviewOid, Oid tableSpace, Query *dataQuery,
-							const char *queryString);
+static void refresh_matview_datafill(DestReceiver *dest, Query *query,
+									 const char *queryString);
 
 /*
  * SetRelationIsScannable
@@ -81,6 +81,23 @@ SetRelationIsScannable(Relation relation)
 
 /*
  * ExecRefreshMatView -- execute a REFRESH MATERIALIZED VIEW command
+ *
+ * This refreshes the materialized view by creating a new table and swapping
+ * the relfilenodes of the new table and the old materialized view, so the OID
+ * of the original materialized view is preserved. Thus we do not lose GRANT
+ * nor references to this materialized view.
+ *
+ * If WITH NO DATA was specified, this is effectively like a TRUNCATE;
+ * otherwise it is like a TRUNCATE followed by an INSERT using the SELECT
+ * statement associated with the materialized view.  The statement node's
+ * skipData field is used to indicate that the clause was used.
+ *
+ * Indexes are rebuilt too, via REINDEX. Since we are effectively bulk-loading
+ * the new heap, it's better to create the indexes afterwards than to fill them
+ * incrementally while we load.
+ *
+ * The scannable state is changed based on whether the contents reflect the
+ * result set of the materialized view's query.
  */
 void
 ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
@@ -92,6 +109,8 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	List	   *actions;
 	Query	   *dataQuery;
 	Oid			tableSpace;
+	Oid			OIDNewHeap;
+	DestReceiver *dest;
 
 	/*
 	 * Get a lock until end of transaction.
@@ -162,32 +181,32 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 
 	heap_close(matviewRel, NoLock);
 
-	refresh_matview(matviewOid, tableSpace, dataQuery, queryString);
+	/* Create the transient table that will receive the regenerated data. */
+	OIDNewHeap = make_new_heap(matviewOid, tableSpace);
+	dest = CreateTransientRelDestReceiver(OIDNewHeap);
+
+	if (!stmt->skipData)
+		refresh_matview_datafill(dest, dataQuery, queryString);
+
+	/*
+	 * Swap the physical files of the target and transient tables, then
+	 * rebuild the target's indexes and throw away the transient table.
+	 */
+	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, RecentXmin,
+					 ReadNextMultiXactId());
+
+	RelationCacheInvalidateEntry(matviewOid);
 }
 
 /*
- * refresh_matview
- *
- * This refreshes the materialized view by creating a new table and swapping
- * the relfilenodes of the new table and the old materialized view, so the OID
- * of the original materialized view is preserved. Thus we do not lose GRANT
- * nor references to this materialized view.
- *
- * Indexes are rebuilt too, via REINDEX. Since we are effectively bulk-loading
- * the new heap, it's better to create the indexes afterwards than to fill them
- * incrementally while we load.
- *
- * If the materialized view was considered not scannable, success of this
- * command will change it to scannable.
+ * refresh_matview_datafill
  */
 static void
-refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
-				const char *queryString)
+refresh_matview_datafill(DestReceiver *dest, Query *query,
+						 const char *queryString)
 {
-	Oid			OIDNewHeap;
 	List       *rewritten;
 	PlannedStmt *plan;
-	DestReceiver *dest;
 	QueryDesc  *queryDesc;
 	List	   *rtable;
 	RangeTblEntry	*initial_rte;
@@ -205,11 +224,11 @@ refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
 
 	/*
 	 * Kludge here to allow refresh of a materialized view which is invalid
-	 * (that is, it was created WITH NO DATA or was TRUNCATED). We flag the
-	 * first two RangeTblEntry list elements, which were added to the front
-	 * of the rewritten Query to keep the rules system happy, with the
-	 * isResultRel flag to indicate that it is OK if they are flagged as
-	 * invalid. See UpdateRangeTableOfViewParse() for details.
+	 * (that is, it was created or refreshed WITH NO DATA. We flag the first
+	 * two RangeTblEntry list elements, which were added to the front of the
+	 * rewritten Query to keep the rules system happy, with the isResultRel
+	 * flag to indicate that it is OK if they are flagged as invalid. See
+	 * UpdateRangeTableOfViewParse() for details.
 	 *
 	 * NOTE: The rewrite has switched the frist two RTEs, but they are still
 	 * in the first two positions. If that behavior changes, the asserts here
@@ -225,10 +244,6 @@ refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
 
 	/* Plan the query which will generate data for the refresh. */
 	plan = pg_plan_query(query, 0, NULL);
-
-	/* Create the transient table that will receive the regenerated data. */
-	OIDNewHeap = make_new_heap(matviewOid, tableSpace);
-	dest = CreateTransientRelDestReceiver(OIDNewHeap);
 
 	/*
 	 * Use a snapshot with an updated command ID to ensure this query sees
@@ -257,15 +272,6 @@ refresh_matview(Oid matviewOid, Oid tableSpace, Query *query,
 	FreeQueryDesc(queryDesc);
 
 	PopActiveSnapshot();
-
-	/*
-	 * Swap the physical files of the target and transient tables, then
-	 * rebuild the target's indexes and throw away the transient table.
-	 */
-	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, RecentXmin,
-					 ReadNextMultiXactId());
-
-	RelationCacheInvalidateEntry(matviewOid);
 }
 
 DestReceiver *

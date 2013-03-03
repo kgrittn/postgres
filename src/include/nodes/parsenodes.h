@@ -1152,7 +1152,6 @@ typedef enum ObjectType
 	OBJECT_TSPARSER,
 	OBJECT_TSTEMPLATE,
 	OBJECT_TYPE,
-	OBJECT_UNSPECIFIED,
 	OBJECT_VIEW
 } ObjectType;
 
@@ -1966,7 +1965,6 @@ typedef struct DropStmt
 typedef struct TruncateStmt
 {
 	NodeTag		type;
-	ObjectType	objtype;
 	List	   *relations;		/* relations (RangeVars) to be truncated */
 	bool		restart_seqs;	/* restart owned sequences? */
 	DropBehavior behavior;		/* RESTRICT or CASCADE behavior */
@@ -2474,6 +2472,7 @@ typedef struct CreateTableAsStmt
 typedef struct RefreshMatViewStmt
 {
 	NodeTag		type;
+	bool		skipData;		/* true for WITH NO DATA */
 	RangeVar   *relation;		/* relation to insert into */
 } RefreshMatViewStmt;
 
