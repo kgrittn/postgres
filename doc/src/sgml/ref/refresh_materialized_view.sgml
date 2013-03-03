@@ -12,7 +12,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>REFRESH MATERIALIZED VIEW</refname>
-  <refpurpose>refresh a materialized view</refpurpose>
+  <refpurpose>replace the contents of a materialized view</refpurpose>
  </refnamediv>
 
  <indexterm zone="sql-refreshmaterializedview">
@@ -22,6 +22,7 @@ PostgreSQL documentation
  <refsynopsisdiv>
 <synopsis>
 REFRESH MATERIALIZED VIEW <replaceable class="PARAMETER">name</replaceable>
+    [ WITH [ NO ] DATA ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -29,8 +30,13 @@ REFRESH MATERIALIZED VIEW <replaceable class="PARAMETER">name</replaceable>
   <title>Description</title>
 
   <para>
-   <command>REFRESH MATERIALIZED VIEW</command> refreshes the contents of a
-   materialized view by re-executing the backing query.
+   <command>REFRESH MATERIALIZED VIEW</command> completely replaces the
+   contents of a materialized view.  The old contents are discarded.  If
+   <literal>WITH DATA</literal> is specified (or defaults) the backing query
+   is executed to provide the new data, and the materialized view is left in a
+   scannable state.  If <literal>WITH NO DATA</literal> is specified no new
+   data is generated and the materialized view is left in an unscannable
+   state.
   </para>
  </refsect1>
 
@@ -67,11 +73,22 @@ REFRESH MATERIALIZED VIEW <replaceable class="PARAMETER">name</replaceable>
   <title>Examples</title>
 
   <para>
-   This command will refresh the materialized view called
-   <literal>order_summary</literal>:
+   This command will replace the contents of the materialized view called
+   <literal>order_summary</literal> using the query from the materialized
+   view's definition, and leave it in a scannable state:
 <programlisting>
 REFRESH MATERIALIZED VIEW order_summary;
-</programlisting></para>
+</programlisting>
+  </para>
+
+  <para>
+   This command will free storage associated with the materialized view
+   <literal>annual_statistics_basis</literal> and leave it in an unscannable
+   state:
+<programlisting>
+REFRESH MATERIALIZED VIEW annual_statistics_basis WITH NO DATA;
+</programlisting>
+  </para>
  </refsect1>
 
  <refsect1>
