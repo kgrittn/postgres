@@ -109,11 +109,8 @@ CREATE [ UNLOGGED ] MATERIALIZED VIEW <replaceable>table_name</replaceable>
     <term><replaceable>query</replaceable></term>
     <listitem>
      <para>
-      A <xref linkend="sql-select">, <link
-      linkend="sql-table">TABLE</link>, or <xref linkend="sql-values">
-      command, or an <xref linkend="sql-execute"> command that runs a
-      prepared <command>SELECT</>, <command>TABLE</>, or
-      <command>VALUES</> query.
+      A <xref linkend="sql-select">, <link linkend="sql-table">TABLE</link>,
+      or <xref linkend="sql-values"> command.
      </para>
     </listitem>
    </varlistentry>
@@ -124,7 +121,7 @@ CREATE [ UNLOGGED ] MATERIALIZED VIEW <replaceable>table_name</replaceable>
      <para>
       This clause specifies whether or not the materialized view should be
       populated at creation time.  If not, the materialized view will be
-      flagged as invalid and cannot be queried until <command>REFRESH
+      flagged as unscannable and cannot be queried until <command>REFRESH
       MATERIALIZED VIEW</> is used.
      </para>
     </listitem>
