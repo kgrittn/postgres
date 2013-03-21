@@ -265,7 +265,7 @@ interpretOidsOption(List *defList, char relkind)
 			if (relkind == RELKIND_MATVIEW)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("unrecognized parameter \"oids\"")));
+						 errmsg("unrecognized parameter \"%s\"", "oids")));
 
 			return defGetBoolean(def);
 		}
