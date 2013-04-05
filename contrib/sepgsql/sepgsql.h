@@ -239,7 +239,8 @@ extern void sepgsql_compute_avd(const char *scontext,
 
 extern char *sepgsql_compute_create(const char *scontext,
 					   const char *tcontext,
-					   uint16 tclass);
+					   uint16 tclass,
+					   const char *objname);
 
 extern bool sepgsql_check_perms(const char *scontext,
 					const char *tcontext,
@@ -302,6 +303,7 @@ extern void sepgsql_schema_post_create(Oid namespaceId);
 extern void sepgsql_schema_drop(Oid namespaceId);
 extern void sepgsql_schema_relabel(Oid namespaceId, const char *seclabel);
 extern void sepgsql_schema_setattr(Oid namespaceId);
+extern bool sepgsql_schema_search(Oid namespaceId, bool abort_on_violation);
 extern void sepgsql_schema_add_name(Oid namespaceId);
 extern void sepgsql_schema_remove_name(Oid namespaceId);
 extern void sepgsql_schema_rename(Oid namespaceId);
