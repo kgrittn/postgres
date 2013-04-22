@@ -947,7 +947,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	 * omitted cases will be checked as SELECT statements in a different
 	 * phase, so checking again here would be wasteful and it would generate
 	 * errors on a materialized view referenced as a target.
-	 * 
+	 *
 	 * NB: This is being done after all relations are locked, files have been
 	 * opened, etc., to avoid duplicating that effort or creating deadlock
 	 * possibilities.
@@ -1618,7 +1618,7 @@ ExecRelCheck(ResultRelInfo *resultRelInfo,
 		qual = resultRelInfo->ri_ConstraintExprs[i];
 
 		/*
-		 * NOTE: SQL92 specifies that a NULL result from a constraint
+		 * NOTE: SQL specifies that a NULL result from a constraint
 		 * expression is not to be treated as a failure.  Therefore, tell
 		 * ExecQual to return TRUE for NULL.
 		 */
