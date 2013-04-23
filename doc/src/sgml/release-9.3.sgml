@@ -67,8 +67,8 @@
       <listitem>
        <para>
         Prevent non-key-field row updates from locking foreign key rows
-        (&Aacute;lvaro Herrera, Marti Raudsepp, Alexander Shulgin,
-        Noah Misch and Andres Freund)
+        (&Aacute;lvaro Herrera, Noah Misch, Andres Freund, Alexander
+        Shulgin, Marti Raudsepp)
        </para>
 
        <para>
@@ -127,13 +127,6 @@
 
       <listitem>
        <para>
-        Improve the ability to detect indexable prefixes in regular
-        expressions (Tom Lane)
-       </para>
-      </listitem>
-
-      <listitem>
-       <para>
         Collect and use histograms for range types (Alexander Korotkov)
        </para>
       </listitem>
@@ -187,14 +180,7 @@
 
       <listitem>
        <para>
-        Implement a generic binary heap and use it for Merge-Append
-        operations (Abhijit Menon-Sen)
-       </para>
-      </listitem>
-
-      <listitem>
-       <para>
-        "Allow in-memory sorts to use their full memory allocation (Jeff Janes)
+        Allow in-memory sorts to use their full memory allocation (Jeff Janes)
        </para>
 
        <para>
@@ -215,12 +201,6 @@
         Improve performance of the CREATE TABLE ... ON COMMIT DELETE ROWS
         clause by only issuing delete if the temporary table was accessed
         (Heikki Linnakangas)
-       </para>
-      </listitem>
-
-      <listitem>
-       <para>
-        Allow heap-only tuple updates on system tables (Andres Freund)
        </para>
       </listitem>
 
@@ -285,17 +265,6 @@
        <para>
         Previously statistics collection would stop until the time again
         reached the previously-stored latest time.
-       </para>
-      </listitem>
-
-      <listitem>
-       <para>
-        Add function to report the size of the GIN pending index insertion
-        list (Fujii Masao)
-       </para>
-
-       <para>
-        The function is pgstatginindex() in pgstattuple.
        </para>
       </listitem>
 
@@ -367,7 +336,7 @@
       <listitem>
        <para>
         Allow the postmaster to listen on multiple Unix-domain sockets
-        (Honza Horak)
+        (Honza Hor&aacute;k)
        </para>
 
        <para>
@@ -463,13 +432,15 @@
 
       <listitem>
        <para>
-        Improve performance of non-synchronous streaming log shipping (Andres Freund)
+        Improve performance of streaming log shipping with
+        synchronous_commit disabled (Andres Freund)
        </para>
       </listitem>
 
       <listitem>
        <para>
-        Allow much faster fail-over to a standby server (Simon Riggs)
+        Allow much faster promotion of a streaming standby to primary (Simon
+        Riggs, Kyotaro Horiguchi)
        </para>
       </listitem>
 
@@ -612,7 +583,8 @@
 
       <listitem>
        <para>
-        Add support to event triggers (Dimitri Fontaine, Tom Lane)
+        Add support to event triggers (Dimitri Fontaine, Robert Haas,
+        &Aacute;lvaro Herrera)
        </para>
 
        <para>
@@ -636,18 +608,7 @@
       <listitem>
        <para>
         Throw an error if expiring tuple is again updated or deleted (Kevin Grittner)
-        KEEP?
-       </para>
-      </listitem>
-
-      <listitem>
-       <para>
-        Have DROP OWNED only remove user-matching GRANTs on shared objects,
-        e.g. databases, tablespaces (&Aacute;lvaro Herrera)
-       </para>
-
-       <para>
-        Previously it tried to remove such objects, leading to an error.
+        DETAILS?  BACKWARD INCOMPATIBILITY
        </para>
       </listitem>
 
@@ -728,7 +689,7 @@
        </para>
 
        <para>
-        These were previously stored as "&amp;unspecified&amp;".
+        These were previously stored as "&lt;unspecified&gt;".
         This changes the value stored in system column
         pg_constraint.confmatchtype.  BACKWARD COMPATIBILITY CHANGE
        </para>
@@ -1103,7 +1064,7 @@
       <listitem>
        <para>
         Add libpq function PQconninfo() to return connection information
-        (Zoltan Boszormenyi, Magnus Hagander)
+        (Zolt&aacute;n B&ouml;sz&ouml;rm&eacute;nyi, Magnus Hagander)
        </para>
       </listitem>
 
@@ -1485,6 +1446,13 @@
 
       <listitem>
        <para>
+        Implement a generic binary heap and use it for Merge-Append
+        operations (Abhijit Menon-Sen)
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
         Improve ability to detect official timezone abbreviation changes
         (Tom Lane)
        </para>
@@ -1560,6 +1528,17 @@
       <listitem>
        <para>
         Improve pg_trgm handling of multibyte characters (Tom Lane)
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        Add function to report the size of the GIN pending index insertion
+        list (Fujii Masao)
+       </para>
+
+       <para>
+        The function is pgstatginindex() in pgstattuple.
        </para>
       </listitem>
 
