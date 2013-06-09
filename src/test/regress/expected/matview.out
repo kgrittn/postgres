@@ -281,6 +281,9 @@ SELECT * FROM tvvm;
 -- test diemv when the mv does not exist
 DROP MATERIALIZED VIEW IF EXISTS no_such_mv;
 NOTICE:  materialized view "no_such_mv" does not exist, skipping
+-- make sure invalid comination of options is prohibited
+REFRESH MATERIALIZED VIEW CONCURRENTLY tvmm WITH NO DATA;
+ERROR:  CONCURRENTLY and WITH NO DATA options cannot be used together
 -- test join of mv and view
 SELECT type, m.totamt AS mtot, v.totamt AS vtot FROM tm m LEFT JOIN tv v USING (type) ORDER BY type;
  type | mtot | vtot 
