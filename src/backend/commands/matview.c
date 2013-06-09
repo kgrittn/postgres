@@ -50,6 +50,8 @@ static void transientrel_shutdown(DestReceiver *self);
 static void transientrel_destroy(DestReceiver *self);
 static void refresh_matview_datafill(DestReceiver *dest, Query *query,
 						 const char *queryString);
+static void refresh_by_match_merge(Oid matviewOid, Oid OIDNewHeap);
+static void refresh_by_heap_swap(Oid matviewOid, Oid OIDNewHeap);
 
 /*
  * SetMatViewPopulatedState
