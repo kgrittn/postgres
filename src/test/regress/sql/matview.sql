@@ -57,7 +57,7 @@ INSERT INTO t VALUES (6, 'z', 13);
 -- confirm pre- and post-refresh contents of fairly simple materialized views
 SELECT * FROM tm ORDER BY type;
 SELECT * FROM tvm ORDER BY type;
-REFRESH MATERIALIZED VIEW tm;
+REFRESH MATERIALIZED VIEW CONCURRENTLY tm;
 REFRESH MATERIALIZED VIEW tvm;
 SELECT * FROM tm ORDER BY type;
 SELECT * FROM tvm ORDER BY type;
@@ -74,7 +74,7 @@ SELECT * FROM tmm;
 SELECT * FROM tvmm;
 SELECT * FROM tvvm;
 REFRESH MATERIALIZED VIEW tmm;
-REFRESH MATERIALIZED VIEW tvmm;
+REFRESH MATERIALIZED VIEW CONCURRENTLY tvmm;
 REFRESH MATERIALIZED VIEW tvvm;
 EXPLAIN (costs off)
   SELECT * FROM tmm;
@@ -88,6 +88,9 @@ SELECT * FROM tvvm;
 
 -- test diemv when the mv does not exist
 DROP MATERIALIZED VIEW IF EXISTS no_such_mv;
+
+-- make sure invalid comination of options is prohibited
+REFRESH MATERIALIZED VIEW CONCURRENTLY tvmm WITH NO DATA;
 
 -- test join of mv and view
 SELECT type, m.totamt AS mtot, v.totamt AS vtot FROM tm m LEFT JOIN tv v USING (type) ORDER BY type;

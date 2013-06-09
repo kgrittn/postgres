@@ -2472,6 +2472,7 @@ typedef struct CreateTableAsStmt
 typedef struct RefreshMatViewStmt
 {
 	NodeTag		type;
+	bool		concurrent;		/* allow concurrent access? */
 	bool		skipData;		/* true for WITH NO DATA */
 	RangeVar   *relation;		/* relation to insert into */
 } RefreshMatViewStmt;

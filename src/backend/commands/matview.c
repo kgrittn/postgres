@@ -125,12 +125,18 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	Oid			tableSpace;
 	Oid			OIDNewHeap;
 	DestReceiver *dest;
+	bool		concurrent;
+	LOCKMODE	lockmode;
+
+	/* Determine strength of lock needed. */
+	concurrent = stmt->concurrent;
+	lockmode = concurrent ? ExclusiveLock : AccessExclusiveLock;
 
 	/*
 	 * Get a lock until end of transaction.
 	 */
 	matviewOid = RangeVarGetRelidExtended(stmt->relation,
-										  AccessExclusiveLock, false, false,
+										  lockmode, false, false,
 										  RangeVarCallbackOwnsTable, NULL);
 	matviewRel = heap_open(matviewOid, NoLock);
 
@@ -140,6 +146,12 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("\"%s\" is not a materialized view",
 						RelationGetRelationName(matviewRel))));
+
+	/* Check that conflicting options have not been specified. */
+	if (concurrent && stmt->skipData)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("CONCURRENTLY and WITH NO DATA options cannot be used together")));
 
 	/*
 	 * We're not using materialized views in the system catalogs.
@@ -209,14 +221,11 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	if (!stmt->skipData)
 		refresh_matview_datafill(dest, dataQuery, queryString);
 
-	/*
-	 * Swap the physical files of the target and transient tables, then
-	 * rebuild the target's indexes and throw away the transient table.
-	 */
-	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, true,
-					 RecentXmin, ReadNextMultiXactId());
-
-	RelationCacheInvalidateEntry(matviewOid);
+	/* Make the matview match the newly generated data. */
+	if (concurrent)
+		refresh_by_match_merge(matviewOid, OIDNewHeap);
+	else
+		refresh_by_heap_swap(matviewOid, OIDNewHeap);
 }
 
 /*
@@ -368,4 +377,30 @@ static void
 transientrel_destroy(DestReceiver *self)
 {
 	pfree(self);
+}
+
+/*
+ * Compare the new data to the old through a full join, and apply changes row
+ * by row, with transactional semantics.
+ */
+static void
+refresh_by_match_merge(Oid matviewOid, Oid OIDNewHeap)
+{
+	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, true,
+					 RecentXmin, ReadNextMultiXactId());
+
+	RelationCacheInvalidateEntry(matviewOid);
+}
+
+/*
+ * Swap the physical files of the target and transient tables, then rebuild
+ * the target's indexes and throw away the transient table.
+ */
+static void
+refresh_by_heap_swap(Oid matviewOid, Oid OIDNewHeap)
+{
+	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, true,
+					 RecentXmin, ReadNextMultiXactId());
+
+	RelationCacheInvalidateEntry(matviewOid);
 }
