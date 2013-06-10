@@ -23,11 +23,14 @@
 #include "commands/cluster.h"
 #include "commands/matview.h"
 #include "commands/tablecmds.h"
+#include "commands/tablespace.h"
 #include "executor/executor.h"
+#include "executor/spi.h"
 #include "miscadmin.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"
+#include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
@@ -44,13 +47,16 @@ typedef struct
 	BulkInsertState bistate;	/* bulk insert state */
 } DR_transientrel;
 
+#define MAX_QUOTED_NAME_LEN  (NAMEDATALEN*2+3)
+#define MAX_QUOTED_REL_NAME_LEN  (MAX_QUOTED_NAME_LEN*2)
+
 static void transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
 static void transientrel_receive(TupleTableSlot *slot, DestReceiver *self);
 static void transientrel_shutdown(DestReceiver *self);
 static void transientrel_destroy(DestReceiver *self);
 static void refresh_matview_datafill(DestReceiver *dest, Query *query,
 						 const char *queryString);
-static void refresh_by_match_merge(Oid matviewOid, Oid OIDNewHeap);
+static void refresh_by_match_merge(Oid matviewOid, Oid tempOid);
 static void refresh_by_heap_swap(Oid matviewOid, Oid OIDNewHeap);
 
 /*
@@ -211,7 +217,11 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	 */
 	SetMatViewPopulatedState(matviewRel, !stmt->skipData);
 
-	tableSpace = matviewRel->rd_rel->reltablespace;
+	/* Concurrent refresh builds new data in temp tablespace, and does diff. */
+	if (concurrent)
+		tableSpace = GetDefaultTablespace(RELPERSISTENCE_TEMP);
+	else
+		tableSpace = matviewRel->rd_rel->reltablespace;
 
 	heap_close(matviewRel, NoLock);
 
@@ -381,17 +391,141 @@ transientrel_destroy(DestReceiver *self)
 	pfree(self);
 }
 
+
+/*
+ * quoteOneName --- safely quote a single SQL name
+ *
+ * buffer must be MAX_QUOTED_NAME_LEN long (includes room for \0)
+ */
+static void
+quoteOneName(char *buffer, const char *name)
+{
+	/* Rather than trying to be smart, just always quote it. */
+	*buffer++ = '"';
+	while (*name)
+	{
+		if (*name == '"')
+			*buffer++ = '"';
+		*buffer++ = *name++;
+	}
+	*buffer++ = '"';
+	*buffer = '\0';
+}
+
+/*
+ * quoteRelationName --- safely quote a fully qualified relation name
+ *
+ * buffer must be MAX_QUOTED_REL_NAME_LEN long (includes room for \0)
+ */
+static void
+quoteRelationName(char *buffer, Relation rel)
+{
+	quoteOneName(buffer, get_namespace_name(RelationGetNamespace(rel)));
+	buffer += strlen(buffer);
+	*buffer++ = '.';
+	quoteOneName(buffer, RelationGetRelationName(rel));
+}
+
 /*
  * Compare the new data to the old through a full join, and apply changes row
  * by row, with transactional semantics.
  */
 static void
-refresh_by_match_merge(Oid matviewOid, Oid OIDNewHeap)
+refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 {
-	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, true,
-					 RecentXmin, ReadNextMultiXactId());
+	StringInfoData querybuf;
+	Relation	matviewRel;
+	Relation	tempRel;
+	char		matviewname[MAX_QUOTED_REL_NAME_LEN];
+	char		tempname[MAX_QUOTED_REL_NAME_LEN];
+	TupleDesc	tupdesc;
+	bool		foundUniqueIndex;
+	List	   *indexoidlist;
+	ListCell   *indexoidscan;
 
-	RelationCacheInvalidateEntry(matviewOid);
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+
+	initStringInfo(&querybuf);
+	matviewRel = heap_open(matviewOid, NoLock);
+	quoteRelationName(matviewname, matviewRel);
+	tempRel = heap_open(tempOid, NoLock);
+	quoteRelationName(tempname, tempRel);
+
+	appendStringInfoString(&querybuf, "SELECT ");
+
+	/* Fill in before and after columns. */
+	
+	
+	
+
+	appendStringInfo(&querybuf, " FROM %s x FULL JOIN %s y ON (",
+					  matviewname, tempname);
+
+	/*
+	 * Get the list of index OIDs for the table from the relcache, and look up
+	 * each one in the pg_index syscache.  We will test for equality on all
+	 * columns present in all unique indexes.
+	 */
+	tupdesc = matviewRel->rd_att;
+	foundUniqueIndex = false;
+	indexoidlist = RelationGetIndexList(matviewRel);
+
+	foreach(indexoidscan, indexoidlist)
+	{
+		Oid			indexoid = lfirst_oid(indexoidscan);
+		HeapTuple	indexTuple;
+		Form_pg_index index;
+
+		indexTuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indexoid));
+		if (!HeapTupleIsValid(indexTuple))		/* should not happen */
+			elog(ERROR, "cache lookup failed for index %u", indexoid);
+		index = (Form_pg_index) GETSTRUCT(indexTuple);
+
+		/* we're only interested if it is unique and valid */
+		if (index->indisunique && IndexIsValid(index))
+		{
+			int			numatts = index->indnatts;
+			int			i;
+
+			for (i = 0; i < numatts; i++)
+			{
+				int			colno = index->indkey.values[i];
+				char		colname[MAX_QUOTED_NAME_LEN];
+
+				if (foundUniqueIndex)
+					appendStringInfoString(&querybuf, " AND ");
+
+				quoteOneName(colname,
+							 NameStr((tupdesc->attrs[colno - 1])->attname));
+				appendStringInfo(&querybuf, "y.%s = x.%s", colname, colname);
+
+				foundUniqueIndex = true;
+			}
+		}
+		ReleaseSysCache(indexTuple);
+	}
+
+	list_free(indexoidlist);
+
+// 	if (!foundUniqueIndex)
+// 		ereport(ERROR,
+// 				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
+// 				 errmsg("concurrent refresh requires a unique index on the materialized view")));
+	
+
+	appendStringInfoString(&querybuf,
+						   " AND (y.*) IS NOT DISTINCT FROM (x.*)) "
+						   "WHERE (y.*) IS DISTINCT FROM (x.*)");
+	
+
+
+	
+	elog(ERROR, "%s", querybuf.data);
+	
+	
+	if (SPI_finish() != SPI_OK_FINISH)
+		elog(ERROR, "SPI_finish failed");
 }
 
 /*
