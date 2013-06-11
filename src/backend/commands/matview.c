@@ -20,6 +20,7 @@
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_operator.h"
 #include "commands/cluster.h"
 #include "commands/matview.h"
 #include "commands/tablecmds.h"
@@ -27,6 +28,7 @@
 #include "executor/executor.h"
 #include "executor/spi.h"
 #include "miscadmin.h"
+#include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"
@@ -34,6 +36,7 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/typcache.h"
 
 
 typedef struct
@@ -59,12 +62,7 @@ static void refresh_matview_datafill(DestReceiver *dest, Query *query,
 
 static void quoteOneName(char *buffer, const char *name);
 static void quoteRelationName(char *buffer, Relation rel);
-static void ri_GenerateQual(StringInfo buf,
-				const char *sep,
-				const char *leftop, Oid leftoptype,
-				Oid opoid,
-				const char *rightop, Oid rightoptype);
-static void ri_add_cast_to(StringInfo buf, Oid typid);
+static void mv_GenerateOper(StringInfo buf, Oid opoid);
 
 static void refresh_by_match_merge(Oid matviewOid, Oid tempOid);
 static void refresh_by_heap_swap(Oid matviewOid, Oid OIDNewHeap);
@@ -436,78 +434,24 @@ quoteRelationName(char *buffer, Relation rel)
 	quoteOneName(buffer, RelationGetRelationName(rel));
 }
 
-/*
- * ri_GenerateQual --- generate a WHERE clause equating two variables
- *
- * The idea is to append " sep leftop op rightop" to buf.  The complexity
- * comes from needing to be sure that the parser will select the desired
- * operator.  We always name the operator using OPERATOR(schema.op) syntax
- * (readability isn't a big priority here), so as to avoid search-path
- * uncertainties.  We have to emit casts too, if either input isn't already
- * the input type of the operator; else we are at the mercy of the parser's
- * heuristics for ambiguous-operator resolution.
- */
 static void
-ri_GenerateQual(StringInfo buf,
-				const char *sep,
-				const char *leftop, Oid leftoptype,
-				Oid opoid,
-				const char *rightop, Oid rightoptype)
+mv_GenerateOper(StringInfo buf, Oid opoid)
 {
 	HeapTuple	opertup;
 	Form_pg_operator operform;
-	char	   *oprname;
-	char	   *nspname;
+	char		nspname[MAX_QUOTED_NAME_LEN];
 
 	opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(opoid));
 	if (!HeapTupleIsValid(opertup))
 		elog(ERROR, "cache lookup failed for operator %u", opoid);
 	operform = (Form_pg_operator) GETSTRUCT(opertup);
 	Assert(operform->oprkind == 'b');
-	oprname = NameStr(operform->oprname);
 
-	nspname = get_namespace_name(operform->oprnamespace);
-
-	appendStringInfo(buf, " %s %s", sep, leftop);
-	if (leftoptype != operform->oprleft)
-		ri_add_cast_to(buf, operform->oprleft);
-	appendStringInfo(buf, " OPERATOR(%s.", quote_identifier(nspname));
-	appendStringInfoString(buf, oprname);
-	appendStringInfo(buf, ") %s", rightop);
-	if (rightoptype != operform->oprright)
-		ri_add_cast_to(buf, operform->oprright);
+	quoteOneName(nspname, get_namespace_name(operform->oprnamespace));
+	appendStringInfo(buf, "OPERATOR(%s.%s)",
+					 nspname, NameStr(operform->oprname));
 
 	ReleaseSysCache(opertup);
-}
-
-/*
- * Add a cast specification to buf.  We spell out the type name the hard way,
- * intentionally not using format_type_be().  This is to avoid corner cases
- * for CHARACTER, BIT, and perhaps other types, where specifying the type
- * using SQL-standard syntax results in undesirable data truncation.  By
- * doing it this way we can be certain that the cast will have default (-1)
- * target typmod.
- */
-static void
-ri_add_cast_to(StringInfo buf, Oid typid)
-{
-	HeapTuple	typetup;
-	Form_pg_type typform;
-	char	   *typname;
-	char	   *nspname;
-
-	typetup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typid));
-	if (!HeapTupleIsValid(typetup))
-		elog(ERROR, "cache lookup failed for type %u", typid);
-	typform = (Form_pg_type) GETSTRUCT(typetup);
-
-	typname = NameStr(typform->typname);
-	nspname = get_namespace_name(typform->typnamespace);
-
-	appendStringInfo(buf, "::%s.%s",
-					 quote_identifier(nspname), quote_identifier(typname));
-
-	ReleaseSysCache(typetup);
 }
 
 /*
@@ -536,17 +480,9 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	tempRel = heap_open(tempOid, NoLock);
 	quoteRelationName(tempname, tempRel);
 
-	appendStringInfoString(&querybuf, "SELECT ");
-
-	/* Fill in before and after columns. */
-	
-	
-	appendStringInfoString(&querybuf, " * ");
-	
-	
-
-	appendStringInfo(&querybuf, " FROM (SELECT true, * FROM %s) x FULL JOIN (SELECT true, * FROM %s) y ON (",
-					  matviewname, tempname);
+	appendStringInfo(&querybuf,
+					 "SELECT x.ctid, y FROM %s x FULL JOIN %s y ON (",
+					 matviewname, tempname);
 
 	/*
 	 * Get the list of index OIDs for the table from the relcache, and look up
@@ -576,12 +512,20 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 			for (i = 0; i < numatts; i++)
 			{
-				int			colno = index->indkey.values[i];
+				int			attnum = index->indkey.values[i];
+				Oid			type = attnumTypeId(matviewRel, attnum);
+				Oid			op = lookup_type_cache(type,
+												   TYPECACHE_EQ_OPR)->eq_opr;
 				char		colname[MAX_QUOTED_NAME_LEN];
 
+				if (foundUniqueIndex)
+					appendStringInfoString(&querybuf, " AND ");
+
 				quoteOneName(colname,
-							 NameStr((tupdesc->attrs[colno - 1])->attname));
-				appendStringInfo(&querybuf, "y.%s = x.%s AND ", colname, colname);
+							 NameStr((tupdesc->attrs[attnum - 1])->attname));
+				appendStringInfo(&querybuf, "y.%s ", colname);
+				mv_GenerateOper(&querybuf, op);
+				appendStringInfo(&querybuf, " x.%s", colname);
 
 				foundUniqueIndex = true;
 			}
@@ -591,22 +535,25 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 	list_free(indexoidlist);
 
-// 	if (!foundUniqueIndex)
-// 		ereport(ERROR,
-// 				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-// 				 errmsg("concurrent refresh requires a unique index on the materialized view")));
-	
+	if (!foundUniqueIndex)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("concurrent refresh requires a unique index on the materialized view")));
 
 	appendStringInfoString(&querybuf,
-						   "(y.*) = (x.*)) "
-						   "WHERE (y.*) IS DISTINCT FROM (x.*)");
+						   ") WHERE (y.*) IS DISTINCT FROM (x.*)"
+						   " ORDER BY ctid");
+
 	
-
-
+	
+	
 	
 	elog(ERROR, "%s", querybuf.data);
 	
 	
+	
+	
+
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
 }

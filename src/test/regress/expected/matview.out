@@ -238,6 +238,8 @@ SELECT * FROM tvvm;
 
 REFRESH MATERIALIZED VIEW tmm;
 REFRESH MATERIALIZED VIEW CONCURRENTLY tvmm;
+ERROR:  concurrent refresh requires a unique index on the materialized view
+REFRESH MATERIALIZED VIEW tvmm;
 REFRESH MATERIALIZED VIEW tvvm;
 EXPLAIN (costs off)
   SELECT * FROM tmm;
