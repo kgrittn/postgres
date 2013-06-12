@@ -29,6 +29,8 @@ CREATE MATERIALIZED VIEW tvm AS SELECT * FROM tv ORDER BY type;
 SELECT * FROM tvm;
 CREATE MATERIALIZED VIEW tmm AS SELECT sum(totamt) AS grandtot FROM tm;
 CREATE MATERIALIZED VIEW tvmm AS SELECT sum(totamt) AS grandtot FROM tvm;
+CREATE UNIQUE INDEX tvmm_expr ON tvmm ((grandtot > 0));
+CREATE UNIQUE INDEX tvmm_pred ON tvmm (grandtot) WHERE grandtot < 0;
 CREATE VIEW tvv AS SELECT sum(totamt) AS grandtot FROM tv;
 EXPLAIN (costs off)
   CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;

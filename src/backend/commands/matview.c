@@ -14,6 +14,7 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/htup_details.h"
 #include "access/multixact.h"
 #include "access/xact.h"
@@ -234,7 +235,7 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	heap_close(matviewRel, NoLock);
 
 	/* Create the transient table that will receive the regenerated data. */
-	OIDNewHeap = make_new_heap(matviewOid, tableSpace);
+	OIDNewHeap = make_new_heap(matviewOid, tableSpace, concurrent);
 	dest = CreateTransientRelDestReceiver(OIDNewHeap);
 
 	/* Generate the data, if wanted. */
@@ -470,15 +471,19 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	bool		foundUniqueIndex;
 	List	   *indexoidlist;
 	ListCell   *indexoidscan;
-
-	if (SPI_connect() != SPI_OK_CONNECT)
-		elog(ERROR, "SPI_connect failed");
+	int16		relnatts;
+	bool	   *attReferenced;
+	SPIPlanPtr	plan;
+	Portal		portal;
 
 	initStringInfo(&querybuf);
 	matviewRel = heap_open(matviewOid, NoLock);
 	quoteRelationName(matviewname, matviewRel);
 	tempRel = heap_open(tempOid, NoLock);
 	quoteRelationName(tempname, tempRel);
+
+	relnatts = matviewRel->rd_rel->relnatts;
+	attReferenced = (bool *) palloc0(sizeof(bool) * relnatts);
 
 	appendStringInfo(&querybuf,
 					 "SELECT x.ctid, y FROM %s x FULL JOIN %s y ON (",
@@ -487,7 +492,8 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	/*
 	 * Get the list of index OIDs for the table from the relcache, and look up
 	 * each one in the pg_index syscache.  We will test for equality on all
-	 * columns present in all unique indexes.
+	 * columns present in all unique indexes which only reference columns and
+	 * include all rows.
 	 */
 	tupdesc = matviewRel->rd_att;
 	foundUniqueIndex = false;
@@ -504,26 +510,69 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 			elog(ERROR, "cache lookup failed for index %u", indexoid);
 		index = (Form_pg_index) GETSTRUCT(indexTuple);
 
-		/* we're only interested if it is unique and valid */
+		/* We're only interested if it is unique and valid. */
 		if (index->indisunique && IndexIsValid(index))
 		{
 			int			numatts = index->indnatts;
 			int			i;
+			bool		expr = false;
+			Relation	indexRel;
 
+			/* Skip any index on an expression. */
+			for (i = 0; i < numatts; i++)
+			{
+				if (index->indkey.values[i] == 0)
+				{
+					expr = true;
+					break;
+				}
+			}
+			if (expr)
+			{
+				ReleaseSysCache(indexTuple);
+				continue;
+			}
+
+			/*
+			 * Skip partial indexes.  We count on the ExclusiveLock on the
+			 * heap to keep things stable while we check this.
+			 */
+			indexRel = index_open(index->indexrelid, NoLock);
+			if (indexRel->rd_indpred != NIL)
+			{
+				index_close(indexRel, NoLock);
+				ReleaseSysCache(indexTuple);
+				continue;
+			}
+			index_close(indexRel, NoLock);
+
+			/* Add quals for all columns from this index. */
 			for (i = 0; i < numatts; i++)
 			{
 				int			attnum = index->indkey.values[i];
-				Oid			type = attnumTypeId(matviewRel, attnum);
-				Oid			op = lookup_type_cache(type,
-												   TYPECACHE_EQ_OPR)->eq_opr;
+				Oid			type;
+				Oid			op;
 				char		colname[MAX_QUOTED_NAME_LEN];
 
+				/*
+				 * Only include the column once regardless of how many times
+				 * it shows up in how many indexes.
+				 */
+				if (attReferenced[attnum])
+					continue;
+				attReferenced[attnum] = true;
+
+				/*
+				 * Actually add the qual, ANDed with any others.
+				 */
 				if (foundUniqueIndex)
 					appendStringInfoString(&querybuf, " AND ");
 
 				quoteOneName(colname,
 							 NameStr((tupdesc->attrs[attnum - 1])->attname));
 				appendStringInfo(&querybuf, "y.%s ", colname);
+				type = attnumTypeId(matviewRel, attnum);
+				op = lookup_type_cache(type, TYPECACHE_EQ_OPR)->eq_opr;
 				mv_GenerateOper(&querybuf, op);
 				appendStringInfo(&querybuf, " x.%s", colname);
 
@@ -538,14 +587,49 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	if (!foundUniqueIndex)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("concurrent refresh requires a unique index on the materialized view")));
+				 errmsg("concurrent refresh requires a unique index on just columns for all rows of the materialized view")));
 
 	appendStringInfoString(&querybuf,
 						   ") WHERE (y.*) IS DISTINCT FROM (x.*)"
 						   " ORDER BY ctid");
 
-	
-	
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+
+	if ((plan = SPI_prepare(querybuf.data, 0, NULL)) == NULL)
+		elog(ERROR, "SPI_prepare(\"%s\") failed", querybuf.data);
+
+	if ((portal = SPI_cursor_open(NULL, plan, NULL, NULL, true)) == NULL)
+		elog(ERROR, "SPI_cursor_open(\"%s\") failed", querybuf.data);
+
+	SPI_cursor_fetch(portal, true, 10);
+
+	Assert(SPI_tuptable != NULL && SPI_tuptable->tupdesc->natts == 2);
+
+	/*
+	 * Each row in this result set represents a one-row INSERT, UPDATE, or
+	 * DELETE in the materialized view.
+	 */
+	while (SPI_processed > 0)
+	{
+		int i;
+
+		for (i = 0; i < SPI_processed; i++)
+		{
+		}
+
+		SPI_freetuptable(SPI_tuptable);
+		SPI_cursor_fetch(portal, true, 10);
+	}
+
+	SPI_freetuptable(SPI_tuptable);
+	SPI_cursor_close(portal);
+	if (SPI_freeplan(plan) != 0)
+		elog(ERROR, "SPI_freeplan failed");
+	if (SPI_finish() != SPI_OK_FINISH)
+		elog(ERROR, "SPI_finish failed");
+
 	
 	
 	elog(ERROR, "%s", querybuf.data);
@@ -554,8 +638,6 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	
 	
 
-	if (SPI_finish() != SPI_OK_FINISH)
-		elog(ERROR, "SPI_finish failed");
 }
 
 /*
