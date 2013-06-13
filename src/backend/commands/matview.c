@@ -54,6 +54,8 @@ typedef struct
 #define MAX_QUOTED_NAME_LEN  (NAMEDATALEN*2+3)
 #define MAX_QUOTED_REL_NAME_LEN  (MAX_QUOTED_NAME_LEN*2)
 
+static int matview_maintenance_depth = 0;
+
 static void transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
 static void transientrel_receive(TupleTableSlot *slot, DestReceiver *self);
 static void transientrel_shutdown(DestReceiver *self);
@@ -67,6 +69,9 @@ static void mv_GenerateOper(StringInfo buf, Oid opoid);
 
 static void refresh_by_match_merge(Oid matviewOid, Oid tempOid);
 static void refresh_by_heap_swap(Oid matviewOid, Oid OIDNewHeap);
+
+static void OpenMatViewIncrementalMaintenance(void);
+static void CloseMatViewIncrementalMaintenance(void);
 
 /*
  * SetMatViewPopulatedState
@@ -467,27 +472,40 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	Relation	tempRel;
 	char		matviewname[MAX_QUOTED_REL_NAME_LEN];
 	char		tempname[MAX_QUOTED_REL_NAME_LEN];
+	char		diffname[MAX_QUOTED_REL_NAME_LEN];
 	TupleDesc	tupdesc;
 	bool		foundUniqueIndex;
 	List	   *indexoidlist;
 	ListCell   *indexoidscan;
 	int16		relnatts;
-	bool	   *attReferenced;
-	SPIPlanPtr	plan;
-	Portal		portal;
+	bool	   *usedForQual;
 
 	initStringInfo(&querybuf);
 	matviewRel = heap_open(matviewOid, NoLock);
 	quoteRelationName(matviewname, matviewRel);
 	tempRel = heap_open(tempOid, NoLock);
 	quoteRelationName(tempname, tempRel);
+	strcpy(diffname, tempname);
+	strcpy(diffname + strlen(diffname) - 1, "_2\"");
 
 	relnatts = matviewRel->rd_rel->relnatts;
-	attReferenced = (bool *) palloc0(sizeof(bool) * relnatts);
+	usedForQual = (bool *) palloc0(sizeof(bool) * relnatts);
 
+	/* Open SPI context. */
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+
+	/* Analyze the temp table with the new contents. */
+	appendStringInfo(&querybuf, "ANALYZE %s", tempname);
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	/* Start building the query for creating the diff table. */
+	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
-					 "SELECT x.ctid, y FROM %s x FULL JOIN %s y ON (",
-					 matviewname, tempname);
+					 "CREATE TEMP TABLE %s AS "
+					 "SELECT x.ctid AS tid, y FROM %s x FULL JOIN %s y ON (",
+					 diffname, matviewname, tempname);
 
 	/*
 	 * Get the list of index OIDs for the table from the relcache, and look up
@@ -558,9 +576,9 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				 * Only include the column once regardless of how many times
 				 * it shows up in how many indexes.
 				 */
-				if (attReferenced[attnum])
+				if (usedForQual[attnum])
 					continue;
-				attReferenced[attnum] = true;
+				usedForQual[attnum] = true;
 
 				/*
 				 * Actually add the qual, ANDed with any others.
@@ -591,53 +609,73 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 	appendStringInfoString(&querybuf,
 						   ") WHERE (y.*) IS DISTINCT FROM (x.*)"
-						   " ORDER BY ctid");
+						   " ORDER BY tid");
+
+	/* Create the temporary "diff" table. */
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	/* Analyze the diff table. */
+	resetStringInfo(&querybuf);
+	appendStringInfo(&querybuf, "ANALYZE %s", diffname);
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	OpenMatViewIncrementalMaintenance();
+
+	/* Deletes must come before inserts; do them first. */
+	resetStringInfo(&querybuf);
+	appendStringInfo(&querybuf,
+					 "DELETE FROM %s WHERE ctid IN "
+					 "(SELECT d.tid FROM %s d "
+					 "WHERE (d.y) IS NOT DISTINCT FROM NULL)",
+					 matviewname, diffname);
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	/* Updates before inserts gives a better chance at HOT updates. */
+	resetStringInfo(&querybuf);
+	appendStringInfo(&querybuf, "UPDATE %s x SET ", matviewname);
+
+/*
+ * Don't SET anything which had equality comparison above!
+id = (d.y).id
+, 
+val = (d.y).val
+*/
 
 
-	if (SPI_connect() != SPI_OK_CONNECT)
-		elog(ERROR, "SPI_connect failed");
 
-	if ((plan = SPI_prepare(querybuf.data, 0, NULL)) == NULL)
-		elog(ERROR, "SPI_prepare(\"%s\") failed", querybuf.data);
 
-	if ((portal = SPI_cursor_open(NULL, plan, NULL, NULL, true)) == NULL)
-		elog(ERROR, "SPI_cursor_open(\"%s\") failed", querybuf.data);
 
-	SPI_cursor_fetch(portal, true, 10);
 
-	Assert(SPI_tuptable != NULL && SPI_tuptable->tupdesc->natts == 2);
 
-	/*
-	 * Each row in this result set represents a one-row INSERT, UPDATE, or
-	 * DELETE in the materialized view.
-	 */
-	while (SPI_processed > 0)
-	{
-		int i;
 
-		for (i = 0; i < SPI_processed; i++)
-		{
-		}
+	appendStringInfo(&querybuf, " FROM %s d WHERE x.ctid = d.tid",
+					 diffname);
 
-		SPI_freetuptable(SPI_tuptable);
-		SPI_cursor_fetch(portal, true, 10);
-	}
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
-	SPI_freetuptable(SPI_tuptable);
-	SPI_cursor_close(portal);
-	if (SPI_freeplan(plan) != 0)
-		elog(ERROR, "SPI_freeplan failed");
+	/* Inserts go last. */
+	resetStringInfo(&querybuf);
+	appendStringInfo(&querybuf,
+					 "INSERT INTO %s SELECT (y).* FROM %s WHERE tid IS NULL",
+					 matviewname, diffname);
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	CloseMatViewIncrementalMaintenance();
+
+	/* Clean up temp tables. */
+	resetStringInfo(&querybuf);
+	appendStringInfo(&querybuf, "DROP TABLE %s, %s", tempname, diffname);
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	/* Close SPI context. */
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
-
-	
-	
-	elog(ERROR, "%s", querybuf.data);
-	
-	
-	
-	
-
 }
 
 /*
@@ -651,4 +689,23 @@ refresh_by_heap_swap(Oid matviewOid, Oid OIDNewHeap)
 					 RecentXmin, ReadNextMultiXactId());
 
 	RelationCacheInvalidateEntry(matviewOid);
+}
+
+static void
+OpenMatViewIncrementalMaintenance(void)
+{
+	matview_maintenance_depth++;
+}
+
+static void
+CloseMatViewIncrementalMaintenance(void)
+{
+	matview_maintenance_depth--;
+	Assert(matview_maintenance_depth >= 0);
+}
+
+bool
+MatViewIncrementalMaintenanceIsEnabled(void)
+{
+	return matview_maintenance_depth > 0;
 }

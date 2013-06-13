@@ -73,6 +73,8 @@ SELECT * FROM tvm;
 
 CREATE MATERIALIZED VIEW tmm AS SELECT sum(totamt) AS grandtot FROM tm;
 CREATE MATERIALIZED VIEW tvmm AS SELECT sum(totamt) AS grandtot FROM tvm;
+CREATE UNIQUE INDEX tvmm_expr ON tvmm ((grandtot > 0));
+CREATE UNIQUE INDEX tvmm_pred ON tvmm (grandtot) WHERE grandtot < 0;
 CREATE VIEW tvv AS SELECT sum(totamt) AS grandtot FROM tv;
 EXPLAIN (costs off)
   CREATE MATERIALIZED VIEW tvvm AS SELECT * FROM tvv;
@@ -141,6 +143,9 @@ ALTER MATERIALIZED VIEW tvm SET SCHEMA mvschema;
   Column  |  Type   | Modifiers | Storage | Stats target | Description 
 ----------+---------+-----------+---------+--------------+-------------
  grandtot | numeric |           | main    |              | 
+Indexes:
+    "tvmm_expr" UNIQUE, btree ((grandtot > 0::numeric))
+    "tvmm_pred" UNIQUE, btree (grandtot) WHERE grandtot < 0::numeric
 View definition:
  SELECT sum(tvm.totamt) AS grandtot
    FROM mvschema.tvm;
@@ -238,7 +243,7 @@ SELECT * FROM tvvm;
 
 REFRESH MATERIALIZED VIEW tmm;
 REFRESH MATERIALIZED VIEW CONCURRENTLY tvmm;
-ERROR:  concurrent refresh requires a unique index on the materialized view
+ERROR:  concurrent refresh requires a unique index on just columns for all rows of the materialized view
 REFRESH MATERIALIZED VIEW tvmm;
 REFRESH MATERIALIZED VIEW tvvm;
 EXPLAIN (costs off)
