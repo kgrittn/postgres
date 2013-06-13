@@ -950,7 +950,7 @@ ExecModifyTable(ModifyTableState *node)
 				bool		isNull;
 
 				relkind = resultRelInfo->ri_RelationDesc->rd_rel->relkind;
-				if (relkind == RELKIND_RELATION)
+				if (relkind == RELKIND_RELATION || relkind == RELKIND_MATVIEW)
 				{
 					datum = ExecGetJunkAttribute(slot,
 												 junkfilter->jf_junkAttNo,

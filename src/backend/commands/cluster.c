@@ -583,7 +583,8 @@ rebuild_relation(Relation OldHeap, Oid indexOid,
 	heap_close(OldHeap, NoLock);
 
 	/* Create the transient table that will receive the re-ordered data */
-	OIDNewHeap = make_new_heap(tableOid, tableSpace, false);
+	OIDNewHeap = make_new_heap(tableOid, tableSpace, false,
+							   AccessExclusiveLock);
 
 	/* Copy the heap data into the new table in the desired order */
 	copy_heap_data(OIDNewHeap, tableOid, indexOid,
@@ -610,7 +611,8 @@ rebuild_relation(Relation OldHeap, Oid indexOid,
  * data, then call finish_heap_swap to complete the operation.
  */
 Oid
-make_new_heap(Oid OIDOldHeap, Oid NewTableSpace, bool forcetemp)
+make_new_heap(Oid OIDOldHeap, Oid NewTableSpace, bool forcetemp,
+			  LOCKMODE lockmode)
 {
 	TupleDesc	OldHeapDesc;
 	char		NewHeapName[NAMEDATALEN];
@@ -623,7 +625,7 @@ make_new_heap(Oid OIDOldHeap, Oid NewTableSpace, bool forcetemp)
 	Oid			namespaceid;
 	char		relpersistence;
 
-	OldHeap = heap_open(OIDOldHeap, AccessExclusiveLock);
+	OldHeap = heap_open(OIDOldHeap, lockmode);
 	OldHeapDesc = RelationGetDescr(OldHeap);
 
 	/*

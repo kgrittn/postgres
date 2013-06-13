@@ -181,11 +181,10 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("CONCURRENTLY and WITH NO DATA options cannot be used together")));
 
-	/*
-	 * We're not using materialized views in the system catalogs.
-	 */
+	/* We're not using materialized views in the system catalogs. */
 	Assert(!IsSystemRelation(matviewRel));
 
+	/* We don't allow an oid column for a materialized view. */
 	Assert(!matviewRel->rd_rel->relhasoids);
 
 	/*
@@ -246,7 +245,8 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	heap_close(matviewRel, NoLock);
 
 	/* Create the transient table that will receive the regenerated data. */
-	OIDNewHeap = make_new_heap(matviewOid, tableSpace, concurrent);
+	OIDNewHeap = make_new_heap(matviewOid, tableSpace, concurrent,
+							   ExclusiveLock);
 	dest = CreateTransientRelDestReceiver(OIDNewHeap);
 
 	/* Generate the data, if wanted. */
@@ -581,10 +581,13 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				/*
 				 * Only include the column once regardless of how many times
 				 * it shows up in how many indexes.
+				 *
+				 * This is also useful later to omit columns which can not
+				 * have changed from the SET clause of the UPDATE statement.
 				 */
-				if (usedForQual[attnum])
+				if (usedForQual[attnum - 1])
 					continue;
-				usedForQual[attnum] = true;
+				usedForQual[attnum - 1] = true;
 
 				/*
 				 * Actually add the qual, ANDed with any others.
@@ -621,12 +624,10 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
-	/* We have no further use for the "full-data" temp table. */
-	heap_close(tempRel, NoLock);
-	resetStringInfo(&querybuf);
-	appendStringInfo(&querybuf, "DROP TABLE %s", tempname);
-	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
-		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+	/*
+	 * We have no further use for data from the "full-data" temp table, but we
+	 * must keep it around because its type is reference from the diff table.
+	 */
 
 	/* Analyze the diff table. */
 	resetStringInfo(&querybuf);
@@ -641,7 +642,8 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	appendStringInfo(&querybuf,
 					 "DELETE FROM %s WHERE ctid IN "
 					 "(SELECT d.tid FROM %s d "
-					 "WHERE (d.y) IS NOT DISTINCT FROM NULL)",
+					 "WHERE d.tid IS NOT NULL "
+					 "AND (d.y) IS NOT DISTINCT FROM NULL)",
 					 matviewname, diffname);
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
@@ -650,24 +652,35 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf, "UPDATE %s x SET ", matviewname);
 
-/*
- * Don't SET anything which had equality comparison above!
-id = (d.y).id
-, 
-val = (d.y).val
-*/
+	{
+		int			i;
+		bool		needComma = false;
 
+		for (i = 0; i < tupdesc->natts; i++)
+		{
+			char		colname[MAX_QUOTED_NAME_LEN];
 
+			if (tupdesc->attrs[i]->attisdropped)
+				continue;
 
+			if (usedForQual[i])
+				continue;
 
+			if (needComma)
+				appendStringInfoString(&querybuf, ", ");
+			needComma = true;
 
+			quoteOneName(colname,
+						 NameStr((tupdesc->attrs[i])->attname));
+			appendStringInfo(&querybuf, "%s = (d.y).%s", colname, colname);
+		}
+	}
 
-
-
-	appendStringInfo(&querybuf, " FROM %s d WHERE x.ctid = d.tid",
+	appendStringInfo(&querybuf,
+					 " FROM %s d WHERE d.tid IS NOT NULL AND x.ctid = d.tid",
 					 diffname);
 
-	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_UPDATE)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
 	/* Inserts go last. */
@@ -675,17 +688,18 @@ val = (d.y).val
 	appendStringInfo(&querybuf,
 					 "INSERT INTO %s SELECT (y).* FROM %s WHERE tid IS NULL",
 					 matviewname, diffname);
-	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_INSERT)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
 	/* We're done maintaining the materialized view. */
 	CloseMatViewIncrementalMaintenance();
+	heap_close(tempRel, NoLock);
 	heap_close(matviewRel, NoLock);
 
-	/* Clean up "diff" table. */
+	/* Clean up temp tables. */
 	resetStringInfo(&querybuf);
-	appendStringInfo(&querybuf, "DROP TABLE %s", diffname);
-	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
+	appendStringInfo(&querybuf, "DROP TABLE %s, %s", diffname, tempname);
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
 	/* Close SPI context. */
@@ -722,5 +736,6 @@ CloseMatViewIncrementalMaintenance(void)
 bool
 MatViewIncrementalMaintenanceIsEnabled(void)
 {
-	return matview_maintenance_depth > 0;
+	/*return matview_maintenance_depth > 0;*/
+	return true;
 }
