@@ -169,6 +169,12 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 				 errmsg("\"%s\" is not a materialized view",
 						RelationGetRelationName(matviewRel))));
 
+	/* Check that CONCURRENTLY is not specified if not populated. */
+	if (concurrent && !RelationIsPopulated(matviewRel))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("CONCURRENTLY cannot be used when the materialized view is not populated")));
+
 	/* Check that conflicting options have not been specified. */
 	if (concurrent && stmt->skipData)
 		ereport(ERROR,
@@ -615,6 +621,13 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
+	/* We have no further use for the "full-data" temp table. */
+	heap_close(tempRel, NoLock);
+	resetStringInfo(&querybuf);
+	appendStringInfo(&querybuf, "DROP TABLE %s", tempname);
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
 	/* Analyze the diff table. */
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf, "ANALYZE %s", diffname);
@@ -665,11 +678,13 @@ val = (d.y).val
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
+	/* We're done maintaining the materialized view. */
 	CloseMatViewIncrementalMaintenance();
+	heap_close(matviewRel, NoLock);
 
-	/* Clean up temp tables. */
+	/* Clean up "diff" table. */
 	resetStringInfo(&querybuf);
-	appendStringInfo(&querybuf, "DROP TABLE %s, %s", tempname, diffname);
+	appendStringInfo(&querybuf, "DROP TABLE %s", diffname);
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
