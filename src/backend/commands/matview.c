@@ -736,6 +736,5 @@ CloseMatViewIncrementalMaintenance(void)
 bool
 MatViewIncrementalMaintenanceIsEnabled(void)
 {
-	/*return matview_maintenance_depth > 0;*/
-	return true;
+	return matview_maintenance_depth > 0;
 }
