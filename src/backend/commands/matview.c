@@ -486,7 +486,7 @@ mv_GenerateOper(StringInfo buf, Oid opoid)
  * If any column is NULL in either the old or new version of a row (or both),
  * we must use DELETE and INSERT, since there could be multiple rows which are
  * NOT DISTINCT FROM each other, and we could otherwise end up with the wrong
- * number of occurences in the updated relation.  The temporary table used to
+ * number of occurrences in the updated relation.  The temporary table used to
  * hold the diff results contains just the TID of the old record (if matched)
  * and the ROW from the new table as a single column of complex record type
  * (if matched).
@@ -498,7 +498,7 @@ mv_GenerateOper(StringInfo buf, Oid opoid)
  * Everything from the generation of the new data to applying the differences
  * takes place under cover of an ExclusiveLock, since it seems as though we
  * would want to prohibit not only concurrent REFRESH operations, but also
- * incremental maintenance.  It also doesn't seem resonable or safe to allow
+ * incremental maintenance.  It also doesn't seem reasonable or safe to allow
  * SELECT FOR UPDATE or SELECT FOR SHARE on rows being updated or deleted by
  * this command.
  */
