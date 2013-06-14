@@ -467,8 +467,37 @@ mv_GenerateOper(StringInfo buf, Oid opoid)
 }
 
 /*
- * Compare the new data to the old through a full join, and apply changes row
- * by row, with transactional semantics.
+ * refresh_by_match_merge
+ *
+ * Refresh a materialized view with transactional semantics, while allowing
+ * concurrent reads.
+ *
+ * This is called after a new version of the data has been created in a
+ * temporary table.  It performs a full outer join against the old version of
+ * the data, producing "diff" results.  This join cannot work if there are any
+ * duplicated rows in either the old or new versions, in the sense that every
+ * column would compare as equal between the two rows.  It does work correctly
+ * in the face of rows which have at least one NULL value, with all non-NULL
+ * columns equal.  The behavior of NULLs on equality tests and on UNIQUE
+ * indexes turns out to be quite convenient here; the tests we need to make
+ * are consistent with default behavior.  If there is at least one UNIQUE
+ * index on the materialized view, we have exactly the guarantee we need.  By
+ * joining based on equality on all columns which are part of any unique
+ * index, we identify the rows on which we can use UPDATE without any problem.
+ * If any column is NULL in either the old or new version of a row (or both),
+ * we must use DELETE and INSERT, since there could be multiple rows which are
+ * NOT DISTINCT FROM each other, and we could otherwise end up with the wrong
+ * number of occurences in the updated relation.  The temporary table used to
+ * hold the diff results contains just the TID of the old record (if matched)
+ * and the ROW from the new table as a single column of complex record type
+ * (if matched).
+ *
+ * Once we have the diff table, we perform set-based DELETE, UPDATE, and
+ * INSERT operations against the materialized view, and discard both temporary
+ * tables.
+ *
+ * Everything from the generation of the new data to applying the differences
+ * takes place under cover of an ExclusiveLock.
  */
 static void
 refresh_by_match_merge(Oid matviewOid, Oid tempOid)
@@ -733,6 +762,12 @@ CloseMatViewIncrementalMaintenance(void)
 	Assert(matview_maintenance_depth >= 0);
 }
 
+/*
+ * This should be used to test whether the backend is in a context where it is
+ * OK to allow DML statements to modify materialized views.  We only want to
+ * allow that for internal code driven by the materialized view definition,
+ * not for arbitrary user-supplied code.
+ */
 bool
 MatViewIncrementalMaintenanceIsEnabled(void)
 {
