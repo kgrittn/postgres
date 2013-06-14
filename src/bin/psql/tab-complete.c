@@ -2872,7 +2872,7 @@ psql_completion(char *text, int start, int end)
 			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
 			 pg_strcasecmp(prev_wd, "VIEW") == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews,
-									" UNION SELECT 'CONCURRENTLY'");
+								   " UNION SELECT 'CONCURRENTLY'");
 	else if (pg_strcasecmp(prev4_wd, "REFRESH") == 0 &&
 			 pg_strcasecmp(prev3_wd, "MATERIALIZED") == 0 &&
 			 pg_strcasecmp(prev2_wd, "VIEW") == 0 &&

@@ -53,7 +53,7 @@ typedef struct
 #define MAX_QUOTED_NAME_LEN  (NAMEDATALEN*2+3)
 #define MAX_QUOTED_REL_NAME_LEN  (MAX_QUOTED_NAME_LEN*2)
 
-static int matview_maintenance_depth = 0;
+static int	matview_maintenance_depth = 0;
 
 static void transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
 static void transientrel_receive(TupleTableSlot *slot, DestReceiver *self);
@@ -473,9 +473,9 @@ mv_GenerateOper(StringInfo buf, Oid opoid)
  *
  * This is called after a new version of the data has been created in a
  * temporary table.  It performs a full outer join against the old version of
- * the data, producing "diff" results.  This join cannot work if there are any
+ * the data, producing "diff" results.	This join cannot work if there are any
  * duplicated rows in either the old or new versions, in the sense that every
- * column would compare as equal between the two rows.  It does work correctly
+ * column would compare as equal between the two rows.	It does work correctly
  * in the face of rows which have at least one NULL value, with all non-NULL
  * columns equal.  The behavior of NULLs on equality tests and on UNIQUE
  * indexes turns out to be quite convenient here; the tests we need to make
