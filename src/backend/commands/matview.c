@@ -14,7 +14,6 @@
  */
 #include "postgres.h"
 
-#include "access/genam.h"
 #include "access/htup_details.h"
 #include "access/multixact.h"
 #include "access/xact.h"
@@ -497,7 +496,11 @@ mv_GenerateOper(StringInfo buf, Oid opoid)
  * tables.
  *
  * Everything from the generation of the new data to applying the differences
- * takes place under cover of an ExclusiveLock.
+ * takes place under cover of an ExclusiveLock, since it seems as though we
+ * would want to prohibit not only concurrent REFRESH operations, but also
+ * incremental maintenance.  It also doesn't seem resonable or safe to allow
+ * SELECT FOR UPDATE or SELECT FOR SHARE on rows being updated or deleted by
+ * this command.
  */
 static void
 refresh_by_match_merge(Oid matviewOid, Oid tempOid)
