@@ -32,6 +32,7 @@
 #include "rewrite/rewriteHandler.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"
+#include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
@@ -62,8 +63,7 @@ static void transientrel_destroy(DestReceiver *self);
 static void refresh_matview_datafill(DestReceiver *dest, Query *query,
 						 const char *queryString);
 
-static void quoteOneName(char *buffer, const char *name);
-static void quoteRelationName(char *buffer, Relation rel);
+static char *make_temptable_name_n(char *tempname, int n);
 static void mv_GenerateOper(StringInfo buf, Oid opoid);
 
 static void refresh_by_match_merge(Oid matviewOid, Oid tempOid);
@@ -412,37 +412,21 @@ transientrel_destroy(DestReceiver *self)
 
 
 /*
- * quoteOneName --- safely quote a single SQL name
+ * Given a qualified temporary table name, append an underscore followed by
+ * the given integer, to make a new table name based on the old one.
  *
- * buffer must be MAX_QUOTED_NAME_LEN long (includes room for \0)
+ * This leaks memory through palloc(), which won't be cleaned up until the
+ * current memory memory context is freed.
  */
-static void
-quoteOneName(char *buffer, const char *name)
+static char *
+make_temptable_name_n(char *tempname, int n)
 {
-	/* Rather than trying to be smart, just always quote it. */
-	*buffer++ = '"';
-	while (*name)
-	{
-		if (*name == '"')
-			*buffer++ = '"';
-		*buffer++ = *name++;
-	}
-	*buffer++ = '"';
-	*buffer = '\0';
-}
+	StringInfoData namebuf;
 
-/*
- * quoteRelationName --- safely quote a fully qualified relation name
- *
- * buffer must be MAX_QUOTED_REL_NAME_LEN long (includes room for \0)
- */
-static void
-quoteRelationName(char *buffer, Relation rel)
-{
-	quoteOneName(buffer, get_namespace_name(RelationGetNamespace(rel)));
-	buffer += strlen(buffer);
-	*buffer++ = '.';
-	quoteOneName(buffer, RelationGetRelationName(rel));
+	initStringInfo(&namebuf);
+	appendStringInfoString(&namebuf, tempname);
+	appendStringInfo(&namebuf, "_%i", n);
+	return namebuf.data;
 }
 
 static void
@@ -450,7 +434,6 @@ mv_GenerateOper(StringInfo buf, Oid opoid)
 {
 	HeapTuple	opertup;
 	Form_pg_operator operform;
-	char		nspname[MAX_QUOTED_NAME_LEN];
 
 	opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(opoid));
 	if (!HeapTupleIsValid(opertup))
@@ -458,9 +441,9 @@ mv_GenerateOper(StringInfo buf, Oid opoid)
 	operform = (Form_pg_operator) GETSTRUCT(opertup);
 	Assert(operform->oprkind == 'b');
 
-	quoteOneName(nspname, get_namespace_name(operform->oprnamespace));
 	appendStringInfo(buf, "OPERATOR(%s.%s)",
-					 nspname, NameStr(operform->oprname));
+					 quote_identifier(get_namespace_name(operform->oprnamespace)),
+					 NameStr(operform->oprname));
 
 	ReleaseSysCache(opertup);
 }
@@ -508,9 +491,9 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	StringInfoData querybuf;
 	Relation	matviewRel;
 	Relation	tempRel;
-	char		matviewname[MAX_QUOTED_REL_NAME_LEN];
-	char		tempname[MAX_QUOTED_REL_NAME_LEN];
-	char		diffname[MAX_QUOTED_REL_NAME_LEN];
+	char	   *matviewname;
+	char	   *tempname;
+	char	   *diffname;
 	TupleDesc	tupdesc;
 	bool		foundUniqueIndex;
 	List	   *indexoidlist;
@@ -520,11 +503,12 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 	initStringInfo(&querybuf);
 	matviewRel = heap_open(matviewOid, NoLock);
-	quoteRelationName(matviewname, matviewRel);
+	matviewname = quote_qualified_identifier(get_namespace_name(RelationGetNamespace(matviewRel)),
+											  RelationGetRelationName(matviewRel));
 	tempRel = heap_open(tempOid, NoLock);
-	quoteRelationName(tempname, tempRel);
-	strcpy(diffname, tempname);
-	strcpy(diffname + strlen(diffname) - 1, "_2\"");
+	tempname = quote_qualified_identifier(get_namespace_name(RelationGetNamespace(tempRel)),
+										   RelationGetRelationName(tempRel));
+	diffname = make_temptable_name_n(tempname, 2);
 
 	relnatts = matviewRel->rd_rel->relnatts;
 	usedForQual = (bool *) palloc0(sizeof(bool) * relnatts);
@@ -608,7 +592,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				int			attnum = index->indkey.values[i];
 				Oid			type;
 				Oid			op;
-				char		colname[MAX_QUOTED_NAME_LEN];
+				const char	   *colname;
 
 				/*
 				 * Only include the column once regardless of how many times
@@ -627,8 +611,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				if (foundUniqueIndex)
 					appendStringInfoString(&querybuf, " AND ");
 
-				quoteOneName(colname,
-							 NameStr((tupdesc->attrs[attnum - 1])->attname));
+				colname = quote_identifier(NameStr((tupdesc->attrs[attnum - 1])->attname));
 				appendStringInfo(&querybuf, "y.%s ", colname);
 				type = attnumTypeId(matviewRel, attnum);
 				op = lookup_type_cache(type, TYPECACHE_EQ_OPR)->eq_opr;
@@ -690,7 +673,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 		for (i = 0; i < tupdesc->natts; i++)
 		{
-			char		colname[MAX_QUOTED_NAME_LEN];
+			const char	   *colname;
 
 			if (tupdesc->attrs[i]->attisdropped)
 				continue;
@@ -702,8 +685,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				appendStringInfoString(&querybuf, ", ");
 			needComma = true;
 
-			quoteOneName(colname,
-						 NameStr((tupdesc->attrs[i])->attname));
+			colname = quote_identifier(NameStr((tupdesc->attrs[i])->attname));
 			appendStringInfo(&querybuf, "%s = (d.y).%s", colname, colname);
 		}
 	}
