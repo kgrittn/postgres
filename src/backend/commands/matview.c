@@ -629,7 +629,9 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	if (!foundUniqueIndex)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("concurrent refresh requires a unique index on just columns for all rows of the materialized view")));
+				 errmsg("cannot refresh materialized view \"%s\" concurrently",
+						matviewname),
+				 errhint("Create a UNIQUE index with no WHERE clause on one or more columns of the materialized view.")));
 
 	appendStringInfoString(&querybuf,
 						   ") WHERE (y.*) IS DISTINCT FROM (x.*)"
