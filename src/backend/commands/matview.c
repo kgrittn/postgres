@@ -51,9 +51,6 @@ typedef struct
 	BulkInsertState bistate;	/* bulk insert state */
 } DR_transientrel;
 
-#define MAX_QUOTED_NAME_LEN  (NAMEDATALEN*2+3)
-#define MAX_QUOTED_REL_NAME_LEN  (MAX_QUOTED_NAME_LEN*2)
-
 static int	matview_maintenance_depth = 0;
 
 static void transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
