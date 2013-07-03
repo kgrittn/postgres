@@ -668,7 +668,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 	{
 		int			i;
-		bool		needComma = false;
+		bool		targetColFound = false;
 
 		for (i = 0; i < tupdesc->natts; i++)
 		{
@@ -680,21 +680,25 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 			if (usedForQual[i])
 				continue;
 
-			if (needComma)
+			if (targetColFound)
 				appendStringInfoString(&querybuf, ", ");
-			needComma = true;
+			targetColFound = true;
 
 			colname = quote_identifier(NameStr((tupdesc->attrs[i])->attname));
 			appendStringInfo(&querybuf, "%s = (d.y).%s", colname, colname);
 		}
+
+		if (targetColFound)
+		{
+			appendStringInfo(&querybuf,
+							  " FROM %s d "
+							  "WHERE d.tid IS NOT NULL AND x.ctid = d.tid",
+							  diffname);
+
+			if (SPI_exec(querybuf.data, 0) != SPI_OK_UPDATE)
+				elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+		}
 	}
-
-	appendStringInfo(&querybuf,
-					 " FROM %s d WHERE d.tid IS NOT NULL AND x.ctid = d.tid",
-					 diffname);
-
-	if (SPI_exec(querybuf.data, 0) != SPI_OK_UPDATE)
-		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
 	/* Inserts go last. */
 	resetStringInfo(&querybuf);
