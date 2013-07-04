@@ -131,7 +131,7 @@ VACUUM ANALYZE;
 SELECT * FROM hogeview WHERE i < 10;
 DROP TABLE hoge CASCADE;
 
--- test that duplicate index prevents refresh with duplicates
+-- test that duplicate values on unique index prevent refresh
 CREATE TABLE foo(a, b) AS VALUES(1, 10);
 CREATE MATERIALIZED VIEW mv AS SELECT * FROM foo;
 CREATE UNIQUE INDEX ON mv(a);

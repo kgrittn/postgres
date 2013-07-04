@@ -570,17 +570,15 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				continue;
 			}
 
-			/*
-			 * Skip partial indexes.  We count on the ExclusiveLock on the
-			 * heap to keep things stable while we check this.
-			 */
-			indexRel = index_open(index->indexrelid, NoLock);
+			/* Skip partial indexes. */
+			indexRel = index_open(index->indexrelid, RowExclusiveLock);
 			if (indexRel->rd_indpred != NIL)
 			{
 				index_close(indexRel, NoLock);
 				ReleaseSysCache(indexTuple);
 				continue;
 			}
+			/* Hold the locks, since we're about to run DML which needs them. */
 			index_close(indexRel, NoLock);
 
 			/* Add quals for all columns from this index. */
