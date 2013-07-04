@@ -396,3 +396,26 @@ SELECT * FROM hogeview WHERE i < 10;
 
 DROP TABLE hoge CASCADE;
 NOTICE:  drop cascades to materialized view hogeview
+-- test that duplicate values on unique index prevent refresh
+CREATE TABLE foo(a, b) AS VALUES(1, 10);
+CREATE MATERIALIZED VIEW mv AS SELECT * FROM foo;
+CREATE UNIQUE INDEX ON mv(a);
+INSERT INTO foo SELECT * FROM foo;
+REFRESH MATERIALIZED VIEW mv;
+ERROR:  could not create unique index "mv_a_idx"
+DETAIL:  Key (a)=(1) is duplicated.
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv;
+DROP TABLE foo CASCADE;
+NOTICE:  drop cascades to materialized view mv
+-- make sure that all indexes covered by unique indexes works
+CREATE TABLE foo(a, b, c) AS VALUES(1, 2, 3);
+CREATE MATERIALIZED VIEW mv AS SELECT * FROM foo;
+CREATE UNIQUE INDEX ON mv (a);
+CREATE UNIQUE INDEX ON mv (b);
+CREATE UNIQUE INDEX on mv (c);
+INSERT INTO foo VALUES(2, 3, 4);
+INSERT INTO foo VALUES(3, 4, 5);
+REFRESH MATERIALIZED VIEW mv;
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv;
+DROP TABLE foo CASCADE;
+NOTICE:  drop cascades to materialized view mv
