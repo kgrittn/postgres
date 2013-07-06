@@ -519,6 +519,31 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
+	/*
+	 * We need to ensure that there are not duplicate rows without NULLs in
+	 * the new data set before we can count on the "diff" results.  Check for
+	 * that in a way that allows showing the first duplicated row found.  Even
+	 * after we pass this test, a unique index on the materialized view may
+	 * find a duplicate key problem.
+	 */
+	resetStringInfo(&querybuf);
+	appendStringInfo(&querybuf,
+					  "SELECT x FROM %s x WHERE x IS NOT NULL AND EXISTS "
+					  "(SELECT * FROM %s y WHERE (y.*) = (x.*) "
+					  "AND y.ctid <> x.ctid) LIMIT 1",
+					  tempname, tempname);
+	if (SPI_execute(querybuf.data, false, 1) != SPI_OK_SELECT)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+	if (SPI_processed > 0)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_CARDINALITY_VIOLATION),
+				 errmsg("new data for \"%s\" contains duplicate rows without any NULL columns",
+						RelationGetRelationName(matviewRel)),
+				 errdetail("Row: %s",
+						   SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1))));
+	}
+
 	/* Start building the query for creating the diff table. */
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
