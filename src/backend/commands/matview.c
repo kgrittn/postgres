@@ -529,8 +529,8 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
 					  "SELECT x FROM %s x WHERE x IS NOT NULL AND EXISTS "
-					  "(SELECT * FROM %s y WHERE (y.*) = (x.*) "
-					  "AND y.ctid <> x.ctid) LIMIT 1",
+					  "(SELECT * FROM %s y WHERE y IS NOT NULL "
+					  "AND (y.*) = (x.*) AND y.ctid <> x.ctid) LIMIT 1",
 					  tempname, tempname);
 	if (SPI_execute(querybuf.data, false, 1) != SPI_OK_SELECT)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
