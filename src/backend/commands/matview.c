@@ -251,7 +251,21 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 
 	/* Make the matview match the newly generated data. */
 	if (concurrent)
-		refresh_by_match_merge(matviewOid, OIDNewHeap);
+	{
+		int		old_depth = matview_maintenance_depth;
+
+		PG_TRY();
+		{
+			refresh_by_match_merge(matviewOid, OIDNewHeap);
+		}
+		PG_CATCH();
+		{
+			matview_maintenance_depth = old_depth;
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
+		Assert(matview_maintenance_depth == old_depth);
+	}
 	else
 		refresh_by_heap_swap(matviewOid, OIDNewHeap);
 }
@@ -654,7 +668,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				 errhint("Create a UNIQUE index with no WHERE clause on one or more columns of the materialized view.")));
 
 	appendStringInfoString(&querybuf,
-						   ") WHERE (y.*) IS DISTINCT FROM (x.*)"
+						   " AND y = x) WHERE (y.*) IS DISTINCT FROM (x.*)"
 						   " ORDER BY tid");
 
 	/* Create the temporary "diff" table. */
