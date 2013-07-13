@@ -140,9 +140,6 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	RewriteRule *rule;
 	List	   *actions;
 	Query	   *dataQuery;
-	Oid			save_userid;
-	int			save_sec_context;
-	int			save_nestlevel;
 	Oid			tableSpace;
 	Oid			OIDNewHeap;
 	DestReceiver *dest;
@@ -230,16 +227,6 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	CheckTableNotInUse(matviewRel, "REFRESH MATERIALIZED VIEW");
 
 	/*
-	 * Switch to the owner's userid, so that any functions are run as that
-	 * user.  Also lock down security-restricted operations and arrange to
-	 * make GUC variable changes local to this command.
-	 */
-	GetUserIdAndSecContext(&save_userid, &save_sec_context);
-	SetUserIdAndSecContext(matviewRel->rd_rel->relowner,
-						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
-	save_nestlevel = NewGUCNestLevel();
-
-	/*
 	 * Tentatively mark the matview as populated or not (this will roll back
 	 * if we fail later).
 	 */
@@ -281,12 +268,6 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	}
 	else
 		refresh_by_heap_swap(matviewOid, OIDNewHeap);
-
-	/* Roll back any GUC changes */
-	AtEOXact_GUC(false, save_nestlevel);
-
-	/* Restore userid and security context */
-	SetUserIdAndSecContext(save_userid, save_sec_context);
 }
 
 /*
@@ -299,6 +280,19 @@ refresh_matview_datafill(DestReceiver *dest, Query *query,
 	List	   *rewritten;
 	PlannedStmt *plan;
 	QueryDesc  *queryDesc;
+	Oid			save_userid;
+	int			save_sec_context;
+	int			save_nestlevel;
+
+	/*
+	 * Switch to the owner's userid, so that any functions are run as that
+	 * user.  Also lock down security-restricted operations and arrange to
+	 * make GUC variable changes local to this command.
+	 */
+	GetUserIdAndSecContext(&save_userid, &save_sec_context);
+	SetUserIdAndSecContext(matviewRel->rd_rel->relowner,
+						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+	save_nestlevel = NewGUCNestLevel();
 
 	/* Rewrite, copying the given Query to make sure it's not changed */
 	rewritten = QueryRewrite((Query *) copyObject(query));
@@ -341,6 +335,12 @@ refresh_matview_datafill(DestReceiver *dest, Query *query,
 	FreeQueryDesc(queryDesc);
 
 	PopActiveSnapshot();
+
+	/* Roll back any GUC changes */
+	AtEOXact_GUC(false, save_nestlevel);
+
+	/* Restore userid and security context */
+	SetUserIdAndSecContext(save_userid, save_sec_context);
 }
 
 DestReceiver *
@@ -530,6 +530,9 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	ListCell   *indexoidscan;
 	int16		relnatts;
 	bool	   *usedForQual;
+	Oid			save_userid;
+	int			save_sec_context;
+	int			save_nestlevel;
 
 	initStringInfo(&querybuf);
 	matviewRel = heap_open(matviewOid, NoLock);
@@ -707,6 +710,16 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 	OpenMatViewIncrementalMaintenance();
 
+	/*
+	 * Switch to the owner's userid, so that any functions are run as that
+	 * user.  Also lock down security-restricted operations and arrange to
+	 * make GUC variable changes local to this command.
+	 */
+	GetUserIdAndSecContext(&save_userid, &save_sec_context);
+	SetUserIdAndSecContext(matviewRel->rd_rel->relowner,
+						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+	save_nestlevel = NewGUCNestLevel();
+
 	/* Deletes must come before inserts; do them first. */
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
@@ -764,6 +777,12 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_INSERT)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
+	/* Roll back any GUC changes */
+	AtEOXact_GUC(false, save_nestlevel);
+
+	/* Restore userid and security context */
+	SetUserIdAndSecContext(save_userid, save_sec_context);
+
 	/* We're done maintaining the materialized view. */
 	CloseMatViewIncrementalMaintenance();
 	heap_close(tempRel, NoLock);
@@ -782,7 +801,8 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 /*
  * Swap the physical files of the target and transient tables, then rebuild
- * the target's indexes and throw away the transient table.
+ * the target's indexes and throw away the transient table.  Security context
+ * swapping is handled by the called function, so it is not needed here.
  */
 static void
 refresh_by_heap_swap(Oid matviewOid, Oid OIDNewHeap)
