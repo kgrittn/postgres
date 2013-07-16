@@ -248,12 +248,12 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	/* Generate the data, if wanted. */
 	if (!stmt->skipData)
 		refresh_matview_datafill(dest, dataQuery, queryString,
-								  matviewRel->rd_rel->relowner);
+								 matviewRel->rd_rel->relowner);
 
 	/* Make the matview match the newly generated data. */
 	if (concurrent)
 	{
-		int		old_depth = matview_maintenance_depth;
+		int			old_depth = matview_maintenance_depth;
 
 		PG_TRY();
 		{
@@ -473,7 +473,7 @@ mv_GenerateOper(StringInfo buf, Oid opoid)
 	Assert(operform->oprkind == 'b');
 
 	appendStringInfo(buf, "OPERATOR(%s.%s)",
-					 quote_identifier(get_namespace_name(operform->oprnamespace)),
+				quote_identifier(get_namespace_name(operform->oprnamespace)),
 					 NameStr(operform->oprname));
 
 	ReleaseSysCache(opertup);
@@ -538,10 +538,10 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	initStringInfo(&querybuf);
 	matviewRel = heap_open(matviewOid, NoLock);
 	matviewname = quote_qualified_identifier(get_namespace_name(RelationGetNamespace(matviewRel)),
-											  RelationGetRelationName(matviewRel));
+										RelationGetRelationName(matviewRel));
 	tempRel = heap_open(tempOid, NoLock);
 	tempname = quote_qualified_identifier(get_namespace_name(RelationGetNamespace(tempRel)),
-										   RelationGetRelationName(tempRel));
+										  RelationGetRelationName(tempRel));
 	diffname = make_temptable_name_n(tempname, 2);
 
 	relnatts = matviewRel->rd_rel->relnatts;
@@ -558,17 +558,17 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 	/*
 	 * We need to ensure that there are not duplicate rows without NULLs in
-	 * the new data set before we can count on the "diff" results.  Check for
+	 * the new data set before we can count on the "diff" results.	Check for
 	 * that in a way that allows showing the first duplicated row found.  Even
 	 * after we pass this test, a unique index on the materialized view may
 	 * find a duplicate key problem.
 	 */
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
-					  "SELECT x FROM %s x WHERE x IS NOT NULL AND EXISTS "
-					  "(SELECT * FROM %s y WHERE y IS NOT NULL "
-					  "AND (y.*) = (x.*) AND y.ctid <> x.ctid) LIMIT 1",
-					  tempname, tempname);
+					 "SELECT x FROM %s x WHERE x IS NOT NULL AND EXISTS "
+					 "(SELECT * FROM %s y WHERE y IS NOT NULL "
+					 "AND (y.*) = (x.*) AND y.ctid <> x.ctid) LIMIT 1",
+					 tempname, tempname);
 	if (SPI_execute(querybuf.data, false, 1) != SPI_OK_SELECT)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 	if (SPI_processed > 0)
@@ -578,7 +578,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				 errmsg("new data for \"%s\" contains duplicate rows without any NULL columns",
 						RelationGetRelationName(matviewRel)),
 				 errdetail("Row: %s",
-						   SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1))));
+			SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1))));
 	}
 
 	/* Start building the query for creating the diff table. */
@@ -649,7 +649,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				int			attnum = index->indkey.values[i];
 				Oid			type;
 				Oid			op;
-				const char	   *colname;
+				const char *colname;
 
 				/*
 				 * Only include the column once regardless of how many times
@@ -686,8 +686,8 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	if (!foundUniqueIndex)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("cannot refresh materialized view \"%s\" concurrently",
-						matviewname),
+			   errmsg("cannot refresh materialized view \"%s\" concurrently",
+					  matviewname),
 				 errhint("Create a UNIQUE index with no WHERE clause on one or more columns of the materialized view.")));
 
 	appendStringInfoString(&querybuf,
@@ -742,7 +742,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 		for (i = 0; i < tupdesc->natts; i++)
 		{
-			const char	   *colname;
+			const char *colname;
 
 			if (tupdesc->attrs[i]->attisdropped)
 				continue;
@@ -761,9 +761,9 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 		if (targetColFound)
 		{
 			appendStringInfo(&querybuf,
-							  " FROM %s d "
-							  "WHERE d.tid IS NOT NULL AND x.ctid = d.tid",
-							  diffname);
+							 " FROM %s d "
+							 "WHERE d.tid IS NOT NULL AND x.ctid = d.tid",
+							 diffname);
 
 			if (SPI_exec(querybuf.data, 0) != SPI_OK_UPDATE)
 				elog(ERROR, "SPI_exec failed: %s", querybuf.data);
