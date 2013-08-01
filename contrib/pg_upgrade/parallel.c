@@ -87,6 +87,24 @@ parallel_exec_prog(const char *log_file, const char *opt_log_file,
 	{
 		/* parallel */
 #ifdef WIN32
+		if (thread_handles == NULL)
+			thread_handles = pg_malloc(user_opts.jobs * sizeof(HANDLE));
+
+		if (exec_thread_args == NULL)
+		{
+			int			i;
+
+			exec_thread_args = pg_malloc(user_opts.jobs * sizeof(exec_thread_arg *));
+
+			/*
+			 * For safety and performance, we keep the args allocated during
+			 * the entire life of the process, and we don't free the args in a
+			 * thread different from the one that allocated it.
+			 */
+			for (i = 0; i < user_opts.jobs; i++)
+				exec_thread_args[i] = pg_malloc0(sizeof(exec_thread_arg));
+		}
+
 		cur_thread_args = (void **) exec_thread_args;
 #endif
 		/* harvest any dead children */
@@ -112,25 +130,7 @@ parallel_exec_prog(const char *log_file, const char *opt_log_file,
 			/* fork failed */
 			pg_log(PG_FATAL, "could not create worker process: %s\n", strerror(errno));
 #else
-		if (thread_handles == NULL)
-			thread_handles = pg_malloc(user_opts.jobs * sizeof(HANDLE));
-
-		if (exec_thread_args == NULL)
-		{
-			int			i;
-
-			exec_thread_args = pg_malloc(user_opts.jobs * sizeof(exec_thread_arg *));
-
-			/*
-			 * For safety and performance, we keep the args allocated during
-			 * the entire life of the process, and we don't free the args in a
-			 * thread different from the one that allocated it.
-			 */
-			for (i = 0; i < user_opts.jobs; i++)
-				exec_thread_args[i] = pg_malloc0(sizeof(exec_thread_arg));
-		}
-
-		/* use first empty array element */
+		/* empty array element are always at the end */
 		new_arg = exec_thread_args[parallel_jobs - 1];
 
 		/* Can only pass one pointer into the function, so use a struct */
@@ -196,6 +196,24 @@ parallel_transfer_all_new_dbs(DbInfoArr *old_db_arr, DbInfoArr *new_db_arr,
 	{
 		/* parallel */
 #ifdef WIN32
+		if (thread_handles == NULL)
+			thread_handles = pg_malloc(user_opts.jobs * sizeof(HANDLE));
+
+		if (transfer_thread_args == NULL)
+		{
+			int			i;
+
+			transfer_thread_args = pg_malloc(user_opts.jobs * sizeof(transfer_thread_arg *));
+
+			/*
+			 * For safety and performance, we keep the args allocated during
+			 * the entire life of the process, and we don't free the args in a
+			 * thread different from the one that allocated it.
+			 */
+			for (i = 0; i < user_opts.jobs; i++)
+				transfer_thread_args[i] = pg_malloc0(sizeof(transfer_thread_arg));
+		}
+
 		cur_thread_args = (void **) transfer_thread_args;
 #endif
 		/* harvest any dead children */
@@ -226,25 +244,7 @@ parallel_transfer_all_new_dbs(DbInfoArr *old_db_arr, DbInfoArr *new_db_arr,
 			/* fork failed */
 			pg_log(PG_FATAL, "could not create worker process: %s\n", strerror(errno));
 #else
-		if (thread_handles == NULL)
-			thread_handles = pg_malloc(user_opts.jobs * sizeof(HANDLE));
-
-		if (transfer_thread_args == NULL)
-		{
-			int			i;
-
-			transfer_thread_args = pg_malloc(user_opts.jobs * sizeof(transfer_thread_arg *));
-
-			/*
-			 * For safety and performance, we keep the args allocated during
-			 * the entire life of the process, and we don't free the args in a
-			 * thread different from the one that allocated it.
-			 */
-			for (i = 0; i < user_opts.jobs; i++)
-				transfer_thread_args[i] = pg_malloc0(sizeof(transfer_thread_arg));
-		}
-
-		/* use first empty array element */
+		/* empty array element are always at the end */
 		new_arg = transfer_thread_args[parallel_jobs - 1];
 
 		/* Can only pass one pointer into the function, so use a struct */
@@ -339,10 +339,10 @@ reap_child(bool wait_for_child)
 		thread_handles[thread_num] = thread_handles[parallel_jobs - 1];
 
 		/*
-		 * We must swap the arg struct pointers because the thread we just
-		 * moved is active, and we must make sure it is not reused by the next
-		 * created thread.	Instead, the new thread will use the arg struct of
-		 * the thread that just died.
+		 * Move last active thead arg struct into the now-dead slot,
+		 * and the now-dead slot to the end for reuse by the next thread.
+		 * Though the thread struct is in use by another thread, we can
+		 * safely swap the struct pointers within the array.
 		 */
 		tmp_args = cur_thread_args[thread_num];
 		cur_thread_args[thread_num] = cur_thread_args[parallel_jobs - 1];
