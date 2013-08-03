@@ -601,18 +601,18 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 		Oid			indexoid = lfirst_oid(indexoidscan);
 		Relation	indexRel;
 		HeapTuple	indexTuple;
-		Form_pg_index index;
+		Form_pg_index indexStruct;
 
 		indexRel = index_open(indexoid, RowExclusiveLock);
 		indexTuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indexoid));
 		if (!HeapTupleIsValid(indexTuple))		/* should not happen */
 			elog(ERROR, "cache lookup failed for index %u", indexoid);
-		index = (Form_pg_index) GETSTRUCT(indexTuple);
+		indexStruct = (Form_pg_index) GETSTRUCT(indexTuple);
 
 		/* We're only interested if it is unique and valid. */
-		if (index->indisunique && IndexIsValid(index))
+		if (indexStruct->indisunique && IndexIsValid(indexStruct))
 		{
-			int			numatts = index->indnatts;
+			int			numatts = indexStruct->indnatts;
 			int			i;
 
 			/* Skip any index on an expression. */
@@ -637,7 +637,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 			/* Add quals for all columns from this index. */
 			for (i = 0; i < numatts; i++)
 			{
-				int			attnum = index->indkey.values[i];
+				int			attnum = indexStruct->indkey.values[i];
 				Oid			type;
 				Oid			op;
 				const char *colname;
