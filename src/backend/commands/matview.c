@@ -496,19 +496,14 @@ mv_GenerateOper(StringInfo buf, Oid opoid)
  * columns equal.  The behavior of NULLs on equality tests and on UNIQUE
  * indexes turns out to be quite convenient here; the tests we need to make
  * are consistent with default behavior.  If there is at least one UNIQUE
- * index on the materialized view, we have exactly the guarantee we need.  By
- * joining based on equality on all columns which are part of any unique
- * index, we identify the rows on which we can use UPDATE without any problem.
- * If any column is NULL in either the old or new version of a row (or both),
- * we must use DELETE and INSERT, since there could be multiple rows which are
- * NOT DISTINCT FROM each other, and we could otherwise end up with the wrong
- * number of occurrences in the updated relation.  The temporary table used to
- * hold the diff results contains just the TID of the old record (if matched)
- * and the ROW from the new table as a single column of complex record type
- * (if matched).
+ * index on the materialized view, we have exactly the guarantee we need.
  *
- * Once we have the diff table, we perform set-based DELETE, UPDATE, and
- * INSERT operations against the materialized view, and discard both temporary
+ * The temporary table used to hold the diff results contains just the TID of
+ * the old record (if matched) and the ROW from the new table as a single
+ * column of complex record type (if matched).
+ *
+ * Once we have the diff table, we perform set-based DELETE and INSERT
+ * operations against the materialized view, and discard both temporary
  * tables.
  *
  * Everything from the generation of the new data to applying the differences
@@ -569,7 +564,8 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	appendStringInfo(&querybuf,
 					 "SELECT x FROM %s x WHERE x IS NOT NULL AND EXISTS "
 					 "(SELECT * FROM %s y WHERE y IS NOT NULL "
-					 "AND (y.*) = (x.*) AND y.ctid <> x.ctid) LIMIT 1",
+					 "AND y OPERATOR(pg_catalog.=) x "
+					 "AND y.ctid OPERATOR(pg_catalog.<>) x.ctid) LIMIT 1",
 					 tempname, tempname);
 	if (SPI_execute(querybuf.data, false, 1) != SPI_OK_SELECT)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
@@ -686,7 +682,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				 errhint("Create a UNIQUE index with no WHERE clause on one or more columns of the materialized view.")));
 
 	appendStringInfoString(&querybuf,
-						   " AND y = x) WHERE (y.*) IS DISTINCT FROM (x.*)"
+						   " AND y = x) WHERE y IS NULL OR x IS NULL"
 						   " ORDER BY tid");
 
 	/* Create the temporary "diff" table. */
@@ -719,51 +715,13 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	/* Deletes must come before inserts; do them first. */
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
-					 "DELETE FROM %s WHERE ctid IN "
+					 "DELETE FROM %s WHERE ctid OPERATOR(pg_catalog.=) ANY "
 					 "(SELECT d.tid FROM %s d "
 					 "WHERE d.tid IS NOT NULL "
-					 "AND (d.y) IS NOT DISTINCT FROM NULL)",
+					 "AND d.y IS NULL)",
 					 matviewname, diffname);
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
-
-	/* Updates before inserts gives a better chance at HOT updates. */
-	resetStringInfo(&querybuf);
-	appendStringInfo(&querybuf, "UPDATE %s x SET ", matviewname);
-
-	{
-		int			i;
-		bool		targetColFound = false;
-
-		for (i = 0; i < tupdesc->natts; i++)
-		{
-			const char *colname;
-
-			if (tupdesc->attrs[i]->attisdropped)
-				continue;
-
-			if (usedForQual[i])
-				continue;
-
-			if (targetColFound)
-				appendStringInfoString(&querybuf, ", ");
-			targetColFound = true;
-
-			colname = quote_identifier(NameStr((tupdesc->attrs[i])->attname));
-			appendStringInfo(&querybuf, "%s = (d.y).%s", colname, colname);
-		}
-
-		if (targetColFound)
-		{
-			appendStringInfo(&querybuf,
-							 " FROM %s d "
-							 "WHERE d.tid IS NOT NULL AND x.ctid = d.tid",
-							 diffname);
-
-			if (SPI_exec(querybuf.data, 0) != SPI_OK_UPDATE)
-				elog(ERROR, "SPI_exec failed: %s", querybuf.data);
-		}
-	}
 
 	/* Inserts go last. */
 	resetStringInfo(&querybuf);
