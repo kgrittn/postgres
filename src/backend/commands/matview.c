@@ -603,9 +603,11 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	foreach(indexoidscan, indexoidlist)
 	{
 		Oid			indexoid = lfirst_oid(indexoidscan);
+		Relation	indexRel;
 		HeapTuple	indexTuple;
 		Form_pg_index index;
 
+		indexRel = index_open(indexoid, RowExclusiveLock);
 		indexTuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indexoid));
 		if (!HeapTupleIsValid(indexTuple))		/* should not happen */
 			elog(ERROR, "cache lookup failed for index %u", indexoid);
@@ -616,32 +618,23 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 		{
 			int			numatts = index->indnatts;
 			int			i;
-			bool		expr = false;
-			Relation	indexRel;
 
 			/* Skip any index on an expression. */
-			for (i = 0; i < numatts; i++)
+			if (RelationGetIndexExpressions(indexRel) != NIL)
 			{
-				if (index->indkey.values[i] == 0)
-				{
-					expr = true;
-					break;
-				}
-			}
-			if (expr)
-			{
+				index_close(indexRel, NoLock);
 				ReleaseSysCache(indexTuple);
 				continue;
 			}
 
 			/* Skip partial indexes. */
-			indexRel = index_open(index->indexrelid, RowExclusiveLock);
 			if (RelationGetIndexPredicate(indexRel) != NIL)
 			{
 				index_close(indexRel, NoLock);
 				ReleaseSysCache(indexTuple);
 				continue;
 			}
+
 			/* Hold the locks, since we're about to run DML which needs them. */
 			index_close(indexRel, NoLock);
 
