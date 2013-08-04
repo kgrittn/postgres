@@ -562,10 +562,12 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	 */
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
-					 "SELECT x FROM %s x WHERE x IS NOT NULL AND EXISTS "
-					 "(SELECT * FROM %s y WHERE y IS NOT NULL "
-					 "AND y OPERATOR(pg_catalog.=) x "
-					 "AND y.ctid OPERATOR(pg_catalog.<>) x.ctid) LIMIT 1",
+					 "SELECT newdata FROM %s newdata "
+					 "WHERE newdata IS NOT NULL AND EXISTS "
+					 "(SELECT * FROM %s newdata2 WHERE newdata2 IS NOT NULL "
+					 "AND newdata2 OPERATOR(pg_catalog.=) newdata "
+					 "AND newdata2.ctid OPERATOR(pg_catalog.<>) "
+					 "newdata.ctid) LIMIT 1",
 					 tempname, tempname);
 	if (SPI_execute(querybuf.data, false, 1) != SPI_OK_SELECT)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
@@ -583,7 +585,8 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
 					 "CREATE TEMP TABLE %s AS "
-					 "SELECT x.ctid AS tid, y FROM %s x FULL JOIN %s y ON (",
+					 "SELECT mv.ctid AS tid, newdata "
+					 "FROM %s mv FULL JOIN %s newdata ON (",
 					 diffname, matviewname, tempname);
 
 	/*
@@ -660,11 +663,11 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 					appendStringInfoString(&querybuf, " AND ");
 
 				colname = quote_identifier(NameStr((tupdesc->attrs[attnum - 1])->attname));
-				appendStringInfo(&querybuf, "y.%s ", colname);
+				appendStringInfo(&querybuf, "newdata.%s ", colname);
 				type = attnumTypeId(matviewRel, attnum);
 				op = lookup_type_cache(type, TYPECACHE_EQ_OPR)->eq_opr;
 				mv_GenerateOper(&querybuf, op);
-				appendStringInfo(&querybuf, " x.%s", colname);
+				appendStringInfo(&querybuf, " mv.%s", colname);
 
 				foundUniqueIndex = true;
 			}
@@ -682,7 +685,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 				 errhint("Create a UNIQUE index with no WHERE clause on one or more columns of the materialized view.")));
 
 	appendStringInfoString(&querybuf,
-						   " AND y = x) WHERE y IS NULL OR x IS NULL"
+						   " AND newdata = mv) WHERE newdata IS NULL OR mv IS NULL"
 						   " ORDER BY tid");
 
 	/* Create the temporary "diff" table. */
@@ -715,10 +718,10 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	/* Deletes must come before inserts; do them first. */
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
-					 "DELETE FROM %s WHERE ctid OPERATOR(pg_catalog.=) ANY "
-					 "(SELECT d.tid FROM %s d "
-					 "WHERE d.tid IS NOT NULL "
-					 "AND d.y IS NULL)",
+					 "DELETE FROM %s mv WHERE ctid OPERATOR(pg_catalog.=) ANY "
+					 "(SELECT diff.tid FROM %s diff "
+					 "WHERE diff.tid IS NOT NULL "
+					 "AND diff.newdata IS NULL)",
 					 matviewname, diffname);
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_DELETE)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
@@ -726,7 +729,8 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	/* Inserts go last. */
 	resetStringInfo(&querybuf);
 	appendStringInfo(&querybuf,
-					 "INSERT INTO %s SELECT (y).* FROM %s WHERE tid IS NULL",
+					 "INSERT INTO %s SELECT (diff.newdata).* "
+					 "FROM %s diff WHERE tid IS NULL",
 					 matviewname, diffname);
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_INSERT)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
