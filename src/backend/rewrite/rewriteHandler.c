@@ -1273,12 +1273,8 @@ matchLocks(CmdType event,
 			}
 		}
 
-		if (oneLock->event == event)
-		{
-			if (parsetree->commandType != CMD_SELECT ||
-				rangeTableEntry_used((Node *) parsetree, varno, 0))
-				matching_locks = lappend(matching_locks, oneLock);
-		}
+		if (oneLock->event == event && parsetree->commandType != CMD_SELECT)
+			matching_locks = lappend(matching_locks, oneLock);
 	}
 
 	return matching_locks;
