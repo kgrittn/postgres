@@ -631,6 +631,8 @@ extern Datum record_gt(PG_FUNCTION_ARGS);
 extern Datum record_le(PG_FUNCTION_ARGS);
 extern Datum record_ge(PG_FUNCTION_ARGS);
 extern Datum btrecordcmp(PG_FUNCTION_ARGS);
+extern Datum record_id(PG_FUNCTION_ARGS);
+extern Datum record_ni(PG_FUNCTION_ARGS);
 
 /* ruleutils.c */
 extern bool quote_all_identifiers;

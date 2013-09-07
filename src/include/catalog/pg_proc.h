@@ -4479,6 +4479,10 @@ DATA(insert OID = 2985 (  record_le		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0
 DATA(insert OID = 2986 (  record_ge		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "2249 2249" _null_ _null_ _null_ _null_ record_ge _null_ _null_ _null_ ));
 DATA(insert OID = 2987 (  btrecordcmp	   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 23 "2249 2249" _null_ _null_ _null_ _null_ btrecordcmp _null_ _null_ _null_ ));
 DESCR("less-equal-greater");
+DATA(insert OID = 3180 (  record_id		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "2249 2249" _null_ _null_ _null_ _null_ record_id _null_ _null_ _null_ ));
+DESCR("identical");
+DATA(insert OID = 3181 (  record_ni		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "2249 2249" _null_ _null_ _null_ _null_ record_ni _null_ _null_ _null_ ));
+DESCR("not identical");
 
 /* Extensions */
 DATA(insert OID = 3082 (  pg_available_extensions		PGNSP PGUID 12 10 100 0 0 f f f f t t s 0 0 2249 "" "{19,25,25}" "{o,o,o}" "{name,default_version,comment}" _null_ pg_available_extensions _null_ _null_ _null_ ));

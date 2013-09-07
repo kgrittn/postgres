@@ -1671,6 +1671,10 @@ DATA(insert OID = 2992 (  "<="	   PGNSP PGUID b f f 2249 2249 16 2993 2991 recor
 DESCR("less than or equal");
 DATA(insert OID = 2993 (  ">="	   PGNSP PGUID b f f 2249 2249 16 2992 2990 record_ge scalargtsel scalargtjoinsel ));
 DESCR("greater than or equal");
+DATA(insert OID = 3182 (  "==="	   PGNSP PGUID b f f 2249 2249 16 3182 3183 record_id eqsel eqjoinsel ));
+DESCR("identical");
+DATA(insert OID = 3183 (  "!=="	   PGNSP PGUID b f f 2249 2249 16 3183 3182 record_ni neqsel neqjoinsel ));
+DESCR("not identical");
 
 /* generic range type operators */
 DATA(insert OID = 3882 (  "="	   PGNSP PGUID b t t 3831 3831 16 3882 3883 range_eq eqsel eqjoinsel ));
