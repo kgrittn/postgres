@@ -1037,14 +1037,18 @@ ORDER BY 1, 2, 3;
  amopmethod | amopstrategy | oprname 
 ------------+--------------+---------
         403 |            1 | <
+        403 |            1 | <<<
         403 |            1 | ~<~
         403 |            2 | <=
+        403 |            2 | <==
         403 |            2 | ~<=~
         403 |            3 | =
         403 |            3 | ===
         403 |            4 | >=
+        403 |            4 | >==
         403 |            4 | ~>=~
         403 |            5 | >
+        403 |            5 | >>>
         403 |            5 | ~>~
         405 |            1 | =
         783 |            1 | <<
@@ -1099,7 +1103,7 @@ ORDER BY 1, 2, 3;
        4000 |           15 | >
        4000 |           16 | @>
        4000 |           18 | =
-(63 rows)
+(67 rows)
 
 -- Check that all opclass search operators have selectivity estimators.
 -- This is not absolutely required, but it seems a reasonable thing
