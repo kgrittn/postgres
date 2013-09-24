@@ -1696,14 +1696,14 @@ record_image_eq(PG_FUNCTION_ARGS)
 			else if (tupdesc1->attrs[i1]->attbyval)
 			{
 				result = (memcmp(&(values1[i1]),
-								  &(values2[i2]),
-								  tupdesc1->attrs[i1]->attlen) == 0);
+								 &(values2[i2]),
+								 tupdesc1->attrs[i1]->attlen) == 0);
 			}
 			else
 			{
 				result = (memcmp(DatumGetPointer(values1[i1]),
-								  DatumGetPointer(values2[i2]),
-								  tupdesc1->attrs[i1]->attlen) == 0);
+								 DatumGetPointer(values2[i2]),
+								 tupdesc1->attrs[i1]->attlen) == 0);
 			}
 			if (!result)
 				break;
