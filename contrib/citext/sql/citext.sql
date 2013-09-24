@@ -725,12 +725,12 @@ CREATE UNIQUE INDEX citext_matview_id
   ON citext_matview (id);
 SELECT *
   FROM citext_matview m
-  FULL JOIN citext_table t ON (t.id = m.id AND t === m)
+  FULL JOIN citext_table t ON (t.id = m.id AND t *= m)
   WHERE t.id IS NULL OR m.id IS NULL;
 UPDATE citext_table SET name = 'Two' WHERE name = 'TWO';
 SELECT *
   FROM citext_matview m
-  FULL JOIN citext_table t ON (t.id = m.id AND t === m)
+  FULL JOIN citext_table t ON (t.id = m.id AND t *= m)
   WHERE t.id IS NULL OR m.id IS NULL;
 REFRESH MATERIALIZED VIEW CONCURRENTLY citext_matview;
 SELECT * FROM citext_matview ORDER BY id;
