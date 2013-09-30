@@ -13168,14 +13168,14 @@ AND
    <literal>*&lt;=</>,
    <literal>*&gt;</>, and
    <literal>*&gt;=</>.
-   These operators are also used internally to maintain materialized views,
-   and may be useful to replication software.  To ensure that all user
-   visible changes are detected, even when the equality operator for the
-   type treats old and new values as equal, the byte images of the stored
-   data are compared.  While ordering is deterministic, it is not generally
-   useful except to facilitate merge joins.  Ordering may differ between
-   system architectures and major releases of
-   <productname>PostgreSQL</productname>.
+   These operators compare the internal binary representation of the two
+   rows.  Two rows might have a different binary representation even
+   though comparisons of the two rows with the equality operator is true. 
+   The ordering of rows under these comparision operators is deterministic
+   but not otherwise meaningful.  These operators are used internally for
+   materialized views and might be useful for other specialized purposes
+   such as replication but are not intended to be generally useful for
+   writing queries.
   </para>
   </sect2>
  </sect1>
