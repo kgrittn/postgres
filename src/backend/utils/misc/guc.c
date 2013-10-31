@@ -6187,7 +6187,7 @@ flatten_set_variable_args(const char *name, List *args)
 		A_Const    *con;
 
 		if (l != list_head(args))
-			appendStringInfo(&buf, ", ");
+			appendStringInfoString(&buf, ", ");
 
 		if (IsA(arg, TypeCast))
 		{
@@ -7938,8 +7938,7 @@ GUCArrayAdd(ArrayType *array, const char *name, const char *value)
 		name = record->name;
 
 	/* build new item for array */
-	newval = palloc(strlen(name) + 1 + strlen(value) + 1);
-	sprintf(newval, "%s=%s", name, value);
+	newval = psprintf("%s=%s", name, value);
 	datum = CStringGetTextDatum(newval);
 
 	if (array)
