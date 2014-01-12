@@ -258,6 +258,82 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	}
 
 	/*
+	 * We don't yet support naming ROW transition variables, but the parser
+	 * recognizes the syntax so we can give a nicer message here.
+	 *
+	 * Per standard, REFERENCING TABLE names are only allowed on AFTER
+	 * triggers.  Per standard, REFERENCING ROW names are not allowed with FOR
+	 * EACH STATEMENT.  Per standard, each OLD/NEW, ROW/TABLE permutation is
+	 * only allowed once.  Per standard, OLD may not be specified when
+	 * creating a trigger only for INSERT, and NEW may not be specified when
+	 * creating a trigger only for DELETE.
+	 *
+	 * Notice that the standard allows an AFTER ... FOR EACH ROW trigger to
+	 * reference both ROW and TABLE transition data.
+	 */
+	if (stmt->transitionRels != NIL)
+	{
+		List	   *varList = stmt->transitionRels;
+		ListCell   *lc;
+
+		foreach(lc, varList)
+		{
+			TriggerTransition   *tt = (TriggerTransition *) lfirst(lc);
+			bool		old_table_specified = false;
+			bool		new_table_specified = false;
+
+			if (!(tt->isTable))
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("ROW variable naming in the REFERENCING clause is not supported"),
+						 errhint("Use OLD TABLE or NEW TABLE for naming transition tables.  "
+								 "Use OLD and NEW for transition row variable names.")));
+
+			/*
+			 * Because of the above test, we omit further ROW-related testing
+			 * below.  If we later allow naming OLD and NEW ROW varialbes,
+			 * adjustments will be needed below.
+			 */
+
+			if (stmt->timing != TRIGGER_TYPE_AFTER)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+						 errmsg("transition table name can only be specified for an AFTER trigger")));
+
+			if (tt->isNew)
+			{
+				if (!(TRIGGER_FOR_INSERT(tgtype) ||
+					  TRIGGER_FOR_UPDATE(tgtype)))
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+							 errmsg("NEW TABLE can only be specified for an INSERT or UPDATE trigger")));
+
+				if (new_table_specified)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+							 errmsg("NEW TABLE cannot be specified multiple times")));
+
+				new_table_specified = true;
+			}
+			else
+			{
+				if (!(TRIGGER_FOR_DELETE(tgtype) ||
+					  TRIGGER_FOR_UPDATE(tgtype)))
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+							 errmsg("OLD TABLE can only be specified for a DELETE or UPDATE trigger")));
+
+				if (old_table_specified)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+							 errmsg("OLD TABLE cannot be specified multiple times")));
+
+				old_table_specified = true;
+			}
+		}
+	}
+
+	/*
 	 * Parse the WHEN clause, if any
 	 */
 	if (stmt->whenClause)
