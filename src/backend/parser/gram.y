@@ -4461,9 +4461,9 @@ TransitionOldOrNew:
 TransitionRowOrTable:
 			TABLE									{ $$ = TRUE; }
 			/*
-			 * Explicit ROW specification is not used to avoid fully reserving
-			 * the keyword ROW.  According to the standard, lack of a keyword
-			 * here means ROW anyway.
+			 * Explicit ROW specification is not supported to avoid fully
+			 * reserving the keyword ROW.  According to the standard, lack of
+			 * a keyword here means ROW anyway.
 			 */
 			| /*EMPTY*/								{ $$ = FALSE; }
 		;
