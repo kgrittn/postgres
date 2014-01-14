@@ -275,12 +275,14 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	{
 		List	   *varList = stmt->transitionRels;
 		ListCell   *lc;
+		bool		old_table_specified = false;
+		bool		new_table_specified = false;
 
 		foreach(lc, varList)
 		{
 			TriggerTransition   *tt = (TriggerTransition *) lfirst(lc);
-			bool		old_table_specified = false;
-			bool		new_table_specified = false;
+
+			Assert(IsA(tt, TriggerTransition));
 
 			if (!(tt->isTable))
 				ereport(ERROR,
