@@ -146,6 +146,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	Oid			constrrelid = InvalidOid;
 	ObjectAddress myself,
 				referenced;
+	char	   *oldtablename = NULL;
+	char	   *newtablename = NULL;
 
 	rel = heap_openrv(stmt->relation, AccessExclusiveLock);
 
@@ -275,8 +277,6 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	{
 		List	   *varList = stmt->transitionRels;
 		ListCell   *lc;
-		bool		old_table_specified = false;
-		bool		new_table_specified = false;
 
 		foreach(lc, varList)
 		{
@@ -310,12 +310,12 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 							 errmsg("NEW TABLE can only be specified for an INSERT or UPDATE trigger")));
 
-				if (new_table_specified)
+				if (newtablename != NULL)
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 							 errmsg("NEW TABLE cannot be specified multiple times")));
 
-				new_table_specified = true;
+				newtablename = tt->name;
 			}
 			else
 			{
@@ -325,12 +325,12 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 							 errmsg("OLD TABLE can only be specified for a DELETE or UPDATE trigger")));
 
-				if (old_table_specified)
+				if (oldtablename != NULL)
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 							 errmsg("OLD TABLE cannot be specified multiple times")));
 
-				old_table_specified = true;
+				oldtablename = tt->name;
 			}
 		}
 	}
