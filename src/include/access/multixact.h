@@ -25,6 +25,8 @@
 
 #define MultiXactIdIsValid(multi) ((multi) != InvalidMultiXactId)
 
+#define MaxMultiXactOffset	((MultiXactOffset) 0xFFFFFFFF)
+
 /* Number of SLRU buffers to use for multixact */
 #define NUM_MXACTOFFSET_BUFFERS		8
 #define NUM_MXACTMEMBER_BUFFERS		16
@@ -47,6 +49,10 @@ typedef enum
 } MultiXactStatus;
 
 #define MaxMultiXactStatus MultiXactStatusUpdate
+
+/* does a status value correspond to a tuple update? */
+#define ISUPDATE_from_mxstatus(status) \
+			((status) > MultiXactStatusForUpdate)
 
 
 typedef struct MultiXactMember

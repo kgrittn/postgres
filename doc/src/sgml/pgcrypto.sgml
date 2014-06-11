@@ -366,7 +366,7 @@ gen_salt(type text [, iter_count integer ]) returns text
        <entry>4</entry>
       </row>
       <row>
-       <entry><literal>md5 hash</></entry>
+       <entry><literal>md5</> (hash)</entry>
        <entry>150085504</entry>
        <entry>22.5 minutes</entry>
        <entry>17 days</entry>
@@ -1083,6 +1083,17 @@ gen_random_bytes(count integer) returns bytea
    Returns <parameter>count</> cryptographically strong random bytes.
    At most 1024 bytes can be extracted at a time.  This is to avoid
    draining the randomness generator pool.
+  </para>
+
+  <indexterm>
+   <primary>gen_random_uuid</primary>
+  </indexterm>
+
+<synopsis>
+gen_random_uuid() returns uuid
+</synopsis>
+  <para>
+   Returns a version 4 (random) UUID.
   </para>
  </sect2>
 
