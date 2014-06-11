@@ -336,7 +336,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 
 			/*
 			 * Because of the above test, we omit further ROW-related testing
-			 * below.  If we later allow naming OLD and NEW ROW varialbes,
+			 * below.  If we later allow naming OLD and NEW ROW variables,
 			 * adjustments will be needed below.
 			 */
 
