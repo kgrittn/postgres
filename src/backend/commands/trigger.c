@@ -3529,6 +3529,7 @@ AfterTriggerExecute(AfterTriggerEvent event,
 {
 	AfterTriggerShared evtshared = GetTriggerSharedData(event);
 	Oid			tgoid = evtshared->ats_tgoid;
+	int			event_op = evtshared->ats_event & TRIGGER_EVENT_OPMASK;
 	TriggerData LocTriggerData;
 	HeapTupleData tuple1;
 	HeapTupleData tuple2;
@@ -3573,8 +3574,7 @@ AfterTriggerExecute(AfterTriggerEvent event,
 											 trig_tuple_slot1))
 					elog(ERROR, "failed to fetch tuple1 for AFTER trigger");
 
-				if ((evtshared->ats_event & TRIGGER_EVENT_OPMASK) ==
-					TRIGGER_EVENT_UPDATE &&
+				if (event_op == TRIGGER_EVENT_UPDATE &&
 					!tuplestore_gettupleslot(fdw_tuplestore, true, false,
 											 trig_tuple_slot2))
 					elog(ERROR, "failed to fetch tuple2 for AFTER trigger");
@@ -3595,9 +3595,7 @@ AfterTriggerExecute(AfterTriggerEvent event,
 				ExecMaterializeSlot(trig_tuple_slot1);
 			LocTriggerData.tg_trigtuplebuf = InvalidBuffer;
 
-			LocTriggerData.tg_newtuple =
-				((evtshared->ats_event & TRIGGER_EVENT_OPMASK) ==
-				 TRIGGER_EVENT_UPDATE) ?
+			LocTriggerData.tg_newtuple = (event_op == TRIGGER_EVENT_UPDATE) ?
 				ExecMaterializeSlot(trig_tuple_slot2) : NULL;
 			LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 
@@ -3634,6 +3632,25 @@ AfterTriggerExecute(AfterTriggerEvent event,
 				LocTriggerData.tg_newtuple = NULL;
 				LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 			}
+	}
+
+	/*
+	 * Set up the tuplestore information.
+	 */
+	if (RelationGeneratesDeltas(rel))
+	{
+		if (event_op == TRIGGER_EVENT_DELETE ||
+			event_op == TRIGGER_EVENT_UPDATE)
+			LocTriggerData.tg_olddelta =
+				GetCurrentTuplestore(afterTriggers->old_tuplestores);
+		else
+			LocTriggerData.tg_olddelta = NULL;
+		if (event_op == TRIGGER_EVENT_INSERT ||
+			event_op == TRIGGER_EVENT_UPDATE)
+			LocTriggerData.tg_newdelta =
+				GetCurrentTuplestore(afterTriggers->new_tuplestores);
+		else
+			LocTriggerData.tg_newdelta = NULL;
 	}
 
 	/*
