@@ -2060,8 +2060,10 @@ ExecARInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
-	if (RelationGeneratesDeltas(relinfo->ri_RelationDesc) ||
-		(trigdesc && trigdesc->trig_insert_after_row))
+	if (trigdesc &&
+		(trigdesc->trig_insert_after_row ||
+		 (trigdesc->trig_insert_after_statement &&
+		  RelationGeneratesDeltas(relinfo->ri_RelationDesc))))
 		AfterTriggerSaveEvent(estate, relinfo, TRIGGER_EVENT_INSERT,
 							  true, NULL, trigtuple, recheckIndexes, NULL);
 }
@@ -2264,8 +2266,10 @@ ExecARDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
-	if (RelationGeneratesDeltas(relinfo->ri_RelationDesc) ||
-		(trigdesc && trigdesc->trig_delete_after_row))
+	if (trigdesc &&
+		(trigdesc->trig_delete_after_row ||
+		 (trigdesc->trig_delete_after_statement &&
+		  RelationGeneratesDeltas(relinfo->ri_RelationDesc))))
 	{
 		HeapTuple	trigtuple;
 
@@ -2530,8 +2534,10 @@ ExecARUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
-	if (RelationGeneratesDeltas(relinfo->ri_RelationDesc) ||
-		(trigdesc && trigdesc->trig_update_after_row))
+	if (trigdesc &&
+		(trigdesc->trig_update_after_row ||
+		 (trigdesc->trig_update_after_statement &&
+		  RelationGeneratesDeltas(relinfo->ri_RelationDesc))))
 	{
 		HeapTuple	trigtuple;
 
@@ -4780,6 +4786,7 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 					  List *recheckIndexes, Bitmapset *modifiedCols)
 {
 	Relation	rel = relinfo->ri_RelationDesc;
+	bool		generate_deltas = RelationGeneratesDeltas(rel);
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 	AfterTriggerEventData new_event;
 	AfterTriggerSharedData new_shared;
@@ -4800,11 +4807,21 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 		elog(ERROR, "AfterTriggerSaveEvent() called outside of query");
 
 	/*
+	 * If the relation has enabled generate_deltas, capture rows into
+	 * tuplestores for AFTER EACH STATEMENT triggers.
+	 */
+
+
+
+	/*
 	 * Validate the event code and collect the associated tuple CTIDs.
 	 *
 	 * The event code will be used both as a bitmask and an array offset, so
 	 * validation is important to make sure we don't walk off the edge of our
 	 * arrays.
+	 *
+	 * If we are only saving a row for statement level delta relations, return
+	 * early.
 	 */
 	switch (event)
 	{
@@ -4814,6 +4831,11 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 			{
 				Assert(oldtup == NULL);
 				Assert(newtup != NULL);
+				if (!(trigdesc->trig_insert_after_row))
+				{
+					Assert(generate_deltas);
+					return;
+				}
 				ItemPointerCopy(&(newtup->t_self), &(new_event.ate_ctid1));
 				ItemPointerSetInvalid(&(new_event.ate_ctid2));
 			}
@@ -4831,6 +4853,11 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 			{
 				Assert(oldtup != NULL);
 				Assert(newtup == NULL);
+				if (!(trigdesc->trig_delete_after_row))
+				{
+					Assert(generate_deltas);
+					return;
+				}
 				ItemPointerCopy(&(oldtup->t_self), &(new_event.ate_ctid1));
 				ItemPointerSetInvalid(&(new_event.ate_ctid2));
 			}
@@ -4848,6 +4875,11 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 			{
 				Assert(oldtup != NULL);
 				Assert(newtup != NULL);
+				if (!(trigdesc->trig_update_after_row))
+				{
+					Assert(generate_deltas);
+					return;
+				}
 				ItemPointerCopy(&(oldtup->t_self), &(new_event.ate_ctid1));
 				ItemPointerCopy(&(newtup->t_self), &(new_event.ate_ctid2));
 			}
