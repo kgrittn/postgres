@@ -299,6 +299,14 @@ typedef struct StdRdOptions
 	 ((StdRdOptions *) (relation)->rd_options)->user_catalog_table : false)
 
 /*
+ * RelationGeneratesDeltas
+ *		Returns whether the relation captures delta information when changed.
+ */
+#define RelationGeneratesDeltas(relation)	\
+	((relation)->rd_options ?				\
+	 ((StdRdOptions *) (relation)->rd_options)->generate_deltas : false)
+
+/*
  * RelationIsValid
  *		True iff relation descriptor is valid.
  */

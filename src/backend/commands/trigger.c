@@ -2060,7 +2060,8 @@ ExecARInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
-	if (trigdesc && trigdesc->trig_insert_after_row)
+	if (RelationGeneratesDeltas(relinfo->ri_RelationDesc) ||
+		(trigdesc && trigdesc->trig_insert_after_row))
 		AfterTriggerSaveEvent(estate, relinfo, TRIGGER_EVENT_INSERT,
 							  true, NULL, trigtuple, recheckIndexes, NULL);
 }
@@ -2263,7 +2264,8 @@ ExecARDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
-	if (trigdesc && trigdesc->trig_delete_after_row)
+	if (RelationGeneratesDeltas(relinfo->ri_RelationDesc) ||
+		(trigdesc && trigdesc->trig_delete_after_row))
 	{
 		HeapTuple	trigtuple;
 
@@ -2528,7 +2530,8 @@ ExecARUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
-	if (trigdesc && trigdesc->trig_update_after_row)
+	if (RelationGeneratesDeltas(relinfo->ri_RelationDesc) ||
+		(trigdesc && trigdesc->trig_update_after_row))
 	{
 		HeapTuple	trigtuple;
 
