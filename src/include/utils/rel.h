@@ -220,6 +220,7 @@ typedef struct StdRdOptions
 	int			check_option_offset;	/* for views */
 	bool		user_catalog_table;		/* use as an additional catalog
 										 * relation */
+	bool		generate_deltas;		/* generate delta relations */
 } StdRdOptions;
 
 #define HEAP_MIN_FILLFACTOR			10

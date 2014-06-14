@@ -85,6 +85,14 @@ static relopt_bool boolRelOpts[] =
 		},
 		false
 	},
+	{
+		{
+			"generate_deltas",
+			"Relation generates delta relations for use by AFTER triggers",
+			RELOPT_KIND_HEAP
+		},
+		false
+	},
 	/* list terminator */
 	{{NULL}}
 };
@@ -1205,7 +1213,9 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 		{"check_option", RELOPT_TYPE_STRING,
 		offsetof(StdRdOptions, check_option_offset)},
 		{"user_catalog_table", RELOPT_TYPE_BOOL,
-		offsetof(StdRdOptions, user_catalog_table)}
+		offsetof(StdRdOptions, user_catalog_table)},
+		{"generate_deltas", RELOPT_TYPE_BOOL,
+		offsetof(StdRdOptions, generate_deltas)}
 	};
 
 	options = parseRelOptions(reloptions, validate, kind, &numoptions);
