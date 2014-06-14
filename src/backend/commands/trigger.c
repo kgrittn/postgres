@@ -3169,8 +3169,11 @@ typedef struct AfterTriggerEventList
  * fdw_tuplestores[query_depth] is a tuplestore containing the foreign tuples
  * needed for the current query.
  *
- * maxquerydepth is just the allocated length of query_stack and
- * fdw_tuplestores.
+ * old_tuplestores[query_depth] and new_tuplestores[query_depth] hold the
+ * delta relations for the current query.
+ *
+ * maxquerydepth is just the allocated length of query_stack and the
+ * tuplestores.
  *
  * state_stack is a stack of pointers to saved copies of the SET CONSTRAINTS
  * state data; each subtransaction level that modifies that state first
@@ -3199,7 +3202,9 @@ typedef struct AfterTriggersData
 	AfterTriggerEventList events;		/* deferred-event list */
 	int			query_depth;	/* current query list index */
 	AfterTriggerEventList *query_stack; /* events pending from each query */
-	Tuplestorestate **fdw_tuplestores;	/* foreign tuples from each query */
+	Tuplestorestate **fdw_tuplestores;	/* foreign tuples for one row from each query */
+	Tuplestorestate **old_tuplestores;	/* all old tuples from each query */
+	Tuplestorestate **new_tuplestores;	/* all new tuples from each query */
 	int			maxquerydepth;	/* allocated len of above array */
 	MemoryContext event_cxt;	/* memory context for events, if any */
 
@@ -3233,11 +3238,11 @@ static SetConstraintState SetConstraintStateAddItem(SetConstraintState state,
  * Gets the current query fdw tuplestore and initializes it if necessary
  */
 static Tuplestorestate *
-GetCurrentFDWTuplestore()
+GetCurrentTuplestore(Tuplestorestate **tss)
 {
 	Tuplestorestate *ret;
 
-	ret = afterTriggers->fdw_tuplestores[afterTriggers->query_depth];
+	ret = tss[afterTriggers->query_depth];
 	if (ret == NULL)
 	{
 		MemoryContext oldcxt;
@@ -3264,7 +3269,7 @@ GetCurrentFDWTuplestore()
 		CurrentResourceOwner = saveResourceOwner;
 		MemoryContextSwitchTo(oldcxt);
 
-		afterTriggers->fdw_tuplestores[afterTriggers->query_depth] = ret;
+		tss[afterTriggers->query_depth] = ret;
 	}
 
 	return ret;
@@ -3561,7 +3566,8 @@ AfterTriggerExecute(AfterTriggerEvent event,
 	{
 		case AFTER_TRIGGER_FDW_FETCH:
 			{
-				Tuplestorestate *fdw_tuplestore = GetCurrentFDWTuplestore();
+				Tuplestorestate *fdw_tuplestore =
+					GetCurrentTuplestore(afterTriggers->fdw_tuplestores);
 
 				if (!tuplestore_gettupleslot(fdw_tuplestore, true, false,
 											 trig_tuple_slot1))
@@ -3930,6 +3936,12 @@ AfterTriggerBeginXact(void)
 	afterTriggers->fdw_tuplestores = (Tuplestorestate **)
 		MemoryContextAllocZero(TopTransactionContext,
 							   8 * sizeof(Tuplestorestate *));
+	afterTriggers->old_tuplestores = (Tuplestorestate **)
+		MemoryContextAllocZero(TopTransactionContext,
+							   8 * sizeof(Tuplestorestate *));
+	afterTriggers->new_tuplestores = (Tuplestorestate **)
+		MemoryContextAllocZero(TopTransactionContext,
+							   8 * sizeof(Tuplestorestate *));
 	afterTriggers->maxquerydepth = 8;
 
 	/* Context for events is created only when needed */
@@ -3979,8 +3991,18 @@ AfterTriggerBeginQuery(void)
 		afterTriggers->fdw_tuplestores = (Tuplestorestate **)
 			repalloc(afterTriggers->fdw_tuplestores,
 					 new_alloc * sizeof(Tuplestorestate *));
+		afterTriggers->old_tuplestores = (Tuplestorestate **)
+			repalloc(afterTriggers->old_tuplestores,
+					 new_alloc * sizeof(Tuplestorestate *));
+		afterTriggers->new_tuplestores = (Tuplestorestate **)
+			repalloc(afterTriggers->new_tuplestores,
+					 new_alloc * sizeof(Tuplestorestate *));
 		/* Clear newly-allocated slots for subsequent lazy initialization. */
 		memset(afterTriggers->fdw_tuplestores + old_alloc,
+			   0, (new_alloc - old_alloc) * sizeof(Tuplestorestate *));
+		memset(afterTriggers->old_tuplestores + old_alloc,
+			   0, (new_alloc - old_alloc) * sizeof(Tuplestorestate *));
+		memset(afterTriggers->new_tuplestores + old_alloc,
 			   0, (new_alloc - old_alloc) * sizeof(Tuplestorestate *));
 		afterTriggers->maxquerydepth = new_alloc;
 	}
@@ -4010,6 +4032,8 @@ AfterTriggerEndQuery(EState *estate)
 {
 	AfterTriggerEventList *events;
 	Tuplestorestate *fdw_tuplestore;
+	Tuplestorestate *old_tuplestore;
+	Tuplestorestate *new_tuplestore;
 
 	/* Must be inside a transaction */
 	Assert(afterTriggers != NULL);
@@ -4054,12 +4078,24 @@ AfterTriggerEndQuery(EState *estate)
 			break;
 	}
 
-	/* Release query-local storage for events, including tuplestore if any */
+	/* Release query-local storage for events, including tuplestores, if any */
 	fdw_tuplestore = afterTriggers->fdw_tuplestores[afterTriggers->query_depth];
 	if (fdw_tuplestore)
 	{
 		tuplestore_end(fdw_tuplestore);
 		afterTriggers->fdw_tuplestores[afterTriggers->query_depth] = NULL;
+	}
+	old_tuplestore = afterTriggers->old_tuplestores[afterTriggers->query_depth];
+	if (old_tuplestore)
+	{
+		tuplestore_end(old_tuplestore);
+		afterTriggers->old_tuplestores[afterTriggers->query_depth] = NULL;
+	}
+	new_tuplestore = afterTriggers->new_tuplestores[afterTriggers->query_depth];
+	if (new_tuplestore)
+	{
+		tuplestore_end(new_tuplestore);
+		afterTriggers->new_tuplestores[afterTriggers->query_depth] = NULL;
 	}
 	afterTriggerFreeEventList(&afterTriggers->query_stack[afterTriggers->query_depth]);
 
@@ -4291,6 +4327,18 @@ AfterTriggerEndSubXact(bool isCommit)
 			{
 				tuplestore_end(ts);
 				afterTriggers->fdw_tuplestores[afterTriggers->query_depth] = NULL;
+			}
+			ts = afterTriggers->old_tuplestores[afterTriggers->query_depth];
+			if (ts)
+			{
+				tuplestore_end(ts);
+				afterTriggers->old_tuplestores[afterTriggers->query_depth] = NULL;
+			}
+			ts = afterTriggers->new_tuplestores[afterTriggers->query_depth];
+			if (ts)
+			{
+				tuplestore_end(ts);
+				afterTriggers->new_tuplestores[afterTriggers->query_depth] = NULL;
 			}
 
 			afterTriggerFreeEventList(&afterTriggers->query_stack[afterTriggers->query_depth]);
@@ -4814,11 +4862,36 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 		elog(ERROR, "AfterTriggerSaveEvent() called outside of query");
 
 	/*
-	 * If the relation has enabled generate_deltas, capture AFTER rows into
-	 * delta tuplestores for this depth.
+	 * If the relation has enabled generate_deltas, capture rows into delta
+	 * tuplestores for this depth.
 	 */
+	if (generate_deltas && row_trigger)
+	{
+		if (event == TRIGGER_EVENT_DELETE || event == TRIGGER_EVENT_UPDATE)
+		{
+			Tuplestorestate *old_tuplestore;
 
+			Assert(oldtup != NULL);
+			old_tuplestore =
+				GetCurrentTuplestore(afterTriggers->old_tuplestores);
+			tuplestore_puttuple(old_tuplestore, oldtup);
+		}
+		if (event == TRIGGER_EVENT_INSERT || event == TRIGGER_EVENT_UPDATE)
+		{
+			Tuplestorestate *new_tuplestore;
 
+			Assert(newtup != NULL);
+			new_tuplestore =
+				GetCurrentTuplestore(afterTriggers->new_tuplestores);
+			tuplestore_puttuple(new_tuplestore, newtup);
+		}
+
+		/* If deltas were the only reason we're here, return. */
+		if ((event == TRIGGER_EVENT_DELETE && !trigdesc->trig_delete_after_row) ||
+			(event == TRIGGER_EVENT_INSERT && !trigdesc->trig_insert_after_row) ||
+			(event == TRIGGER_EVENT_UPDATE && !trigdesc->trig_update_after_row))
+			return;
+	}
 
 	/*
 	 * Validate the event code and collect the associated tuple CTIDs.
@@ -4838,11 +4911,6 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 			{
 				Assert(oldtup == NULL);
 				Assert(newtup != NULL);
-				if (!(trigdesc->trig_insert_after_row))
-				{
-					Assert(generate_deltas);
-					return;
-				}
 				ItemPointerCopy(&(newtup->t_self), &(new_event.ate_ctid1));
 				ItemPointerSetInvalid(&(new_event.ate_ctid2));
 			}
@@ -4860,11 +4928,6 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 			{
 				Assert(oldtup != NULL);
 				Assert(newtup == NULL);
-				if (!(trigdesc->trig_delete_after_row))
-				{
-					Assert(generate_deltas);
-					return;
-				}
 				ItemPointerCopy(&(oldtup->t_self), &(new_event.ate_ctid1));
 				ItemPointerSetInvalid(&(new_event.ate_ctid2));
 			}
@@ -4882,11 +4945,6 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 			{
 				Assert(oldtup != NULL);
 				Assert(newtup != NULL);
-				if (!(trigdesc->trig_update_after_row))
-				{
-					Assert(generate_deltas);
-					return;
-				}
 				ItemPointerCopy(&(oldtup->t_self), &(new_event.ate_ctid1));
 				ItemPointerCopy(&(newtup->t_self), &(new_event.ate_ctid2));
 			}
@@ -4935,7 +4993,8 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 		{
 			if (fdw_tuplestore == NULL)
 			{
-				fdw_tuplestore = GetCurrentFDWTuplestore();
+				fdw_tuplestore =
+					GetCurrentTuplestore(afterTriggers->fdw_tuplestores);
 				new_event.ate_flags = AFTER_TRIGGER_FDW_FETCH;
 			}
 			else
