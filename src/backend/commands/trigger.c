@@ -4814,8 +4814,8 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 		elog(ERROR, "AfterTriggerSaveEvent() called outside of query");
 
 	/*
-	 * If the relation has enabled generate_deltas, capture rows into
-	 * tuplestores for AFTER EACH STATEMENT triggers.
+	 * If the relation has enabled generate_deltas, capture AFTER rows into
+	 * tuplestores.
 	 */
 
 
