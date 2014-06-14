@@ -4815,7 +4815,7 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 
 	/*
 	 * If the relation has enabled generate_deltas, capture AFTER rows into
-	 * tuplestores.
+	 * delta tuplestores for this depth.
 	 */
 
 
