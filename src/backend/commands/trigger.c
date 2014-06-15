@@ -4916,9 +4916,6 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 	 * The event code will be used both as a bitmask and an array offset, so
 	 * validation is important to make sure we don't walk off the edge of our
 	 * arrays.
-	 *
-	 * If we are only saving a row for statement level delta relations, return
-	 * early.
 	 */
 	switch (event)
 	{
