@@ -3312,7 +3312,7 @@ static SetConstraintState SetConstraintStateAddItem(SetConstraintState state,
  * Gets the current query fdw tuplestore and initializes it if necessary
  */
 static Tuplestorestate *
-GetCurrentTuplestore(Tuplestorestate **tss)
+GetCurrentTriggerDeltaTuplestore(Tuplestorestate **tss)
 {
 	Tuplestorestate *ret;
 
@@ -3642,7 +3642,8 @@ AfterTriggerExecute(AfterTriggerEvent event,
 		case AFTER_TRIGGER_FDW_FETCH:
 			{
 				Tuplestorestate *fdw_tuplestore =
-					GetCurrentTuplestore(afterTriggers->fdw_tuplestores);
+					GetCurrentTriggerDeltaTuplestore
+						(afterTriggers->fdw_tuplestores);
 
 				if (!tuplestore_gettupleslot(fdw_tuplestore, true, false,
 											 trig_tuple_slot1))
@@ -3715,13 +3716,15 @@ AfterTriggerExecute(AfterTriggerEvent event,
 		if (event_op == TRIGGER_EVENT_DELETE ||
 			event_op == TRIGGER_EVENT_UPDATE)
 			LocTriggerData.tg_olddelta =
-				GetCurrentTuplestore(afterTriggers->old_tuplestores);
+				GetCurrentTriggerDeltaTuplestore
+					(afterTriggers->old_tuplestores);
 		else
 			LocTriggerData.tg_olddelta = NULL;
 		if (event_op == TRIGGER_EVENT_INSERT ||
 			event_op == TRIGGER_EVENT_UPDATE)
 			LocTriggerData.tg_newdelta =
-				GetCurrentTuplestore(afterTriggers->new_tuplestores);
+				GetCurrentTriggerDeltaTuplestore
+					(afterTriggers->new_tuplestores);
 		else
 			LocTriggerData.tg_newdelta = NULL;
 	}
@@ -4961,7 +4964,8 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 
 			Assert(oldtup != NULL);
 			old_tuplestore =
-				GetCurrentTuplestore(afterTriggers->old_tuplestores);
+				GetCurrentTriggerDeltaTuplestore
+					(afterTriggers->old_tuplestores);
 			tuplestore_puttuple(old_tuplestore, oldtup);
 		}
 		if (event == TRIGGER_EVENT_INSERT || event == TRIGGER_EVENT_UPDATE)
@@ -4970,7 +4974,8 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 
 			Assert(newtup != NULL);
 			new_tuplestore =
-				GetCurrentTuplestore(afterTriggers->new_tuplestores);
+				GetCurrentTriggerDeltaTuplestore
+					(afterTriggers->new_tuplestores);
 			tuplestore_puttuple(new_tuplestore, newtup);
 		}
 
@@ -5079,7 +5084,8 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 			if (fdw_tuplestore == NULL)
 			{
 				fdw_tuplestore =
-					GetCurrentTuplestore(afterTriggers->fdw_tuplestores);
+					GetCurrentTriggerDeltaTuplestore
+						(afterTriggers->fdw_tuplestores);
 				new_event.ate_flags = AFTER_TRIGGER_FDW_FETCH;
 			}
 			else
