@@ -331,8 +331,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("ROW variable naming in the REFERENCING clause is not supported"),
-						 errhint("Use OLD TABLE or NEW TABLE for naming transition tables.  "
-								 "Use OLD and NEW for transition row variable names.")));
+						 errhint("Use OLD TABLE or NEW TABLE for naming transition tables.")));
 
 			/*
 			 * Because of the above test, we omit further ROW-related testing
