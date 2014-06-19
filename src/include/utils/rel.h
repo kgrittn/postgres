@@ -220,7 +220,6 @@ typedef struct StdRdOptions
 	int			check_option_offset;	/* for views */
 	bool		user_catalog_table;		/* use as an additional catalog
 										 * relation */
-	bool		generate_deltas;		/* generate delta relations */
 } StdRdOptions;
 
 #define HEAP_MIN_FILLFACTOR			10
@@ -297,14 +296,6 @@ typedef struct StdRdOptions
 #define RelationIsUsedAsCatalogTable(relation)	\
 	((relation)->rd_options ?				\
 	 ((StdRdOptions *) (relation)->rd_options)->user_catalog_table : false)
-
-/*
- * RelationGeneratesDeltas
- *		Returns whether the relation captures delta information when changed.
- */
-#define RelationGeneratesDeltas(relation)	\
-	((relation)->rd_options ?				\
-	 ((StdRdOptions *) (relation)->rd_options)->generate_deltas : false)
 
 /*
  * RelationIsValid
