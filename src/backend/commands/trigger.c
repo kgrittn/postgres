@@ -2140,8 +2140,7 @@ ExecARInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 
 	if (trigdesc &&
 		(trigdesc->trig_insert_after_row ||
-		 (trigdesc->trig_insert_after_statement &&
-		  RelationGeneratesDeltas(relinfo->ri_RelationDesc))))
+		 trigdesc->trig_insert_after_statement))
 		AfterTriggerSaveEvent(estate, relinfo, TRIGGER_EVENT_INSERT,
 							  true, NULL, trigtuple, recheckIndexes, NULL);
 }
@@ -2346,8 +2345,7 @@ ExecARDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 
 	if (trigdesc &&
 		(trigdesc->trig_delete_after_row ||
-		 (trigdesc->trig_delete_after_statement &&
-		  RelationGeneratesDeltas(relinfo->ri_RelationDesc))))
+		 trigdesc->trig_delete_after_statement))
 	{
 		HeapTuple	trigtuple;
 
@@ -2614,8 +2612,7 @@ ExecARUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 
 	if (trigdesc &&
 		(trigdesc->trig_update_after_row ||
-		 (trigdesc->trig_update_after_statement &&
-		  RelationGeneratesDeltas(relinfo->ri_RelationDesc))))
+		 trigdesc->trig_update_after_statement))
 	{
 		HeapTuple	trigtuple;
 
@@ -3715,7 +3712,6 @@ AfterTriggerExecute(AfterTriggerEvent event,
 	/*
 	 * Set up the tuplestore information.
 	 */
-	if (RelationGeneratesDeltas(rel))
 	{
 		if (event_op == TRIGGER_EVENT_DELETE ||
 			event_op == TRIGGER_EVENT_UPDATE)
