@@ -1062,18 +1062,6 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
     </listitem>
    </varlistentry>
 
-   <varlistentry>
-    <term><literal>generate_deltas</literal> (<type>boolean</type>)</term>
-    <listitem>
-     <para>
-      Declare that a table generates delta relations when modified.  This
-      allows <literal>AFTER</> triggers to reference the set of rows modified
-      by a statement. See
-      <xref linkend="sql-createtrigger"> for details.
-     </para>
-    </listitem>
-   </varlistentry>
-
    </variablelist>
 
   </refsect2>
