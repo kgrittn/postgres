@@ -7020,7 +7020,7 @@ validateForeignKeyConstraint(char *conname,
 	trig.tgconstraint = constraintOid;
 	trig.tgdeferrable = FALSE;
 	trig.tginitdeferred = FALSE;
-	/* we needn't fill in tgargs or tgqual */
+	/* we needn't fill in remaining fields */
 
 	/*
 	 * See if we can do it with a single LEFT JOIN query.  A FALSE result

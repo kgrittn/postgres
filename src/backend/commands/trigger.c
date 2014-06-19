@@ -643,6 +643,18 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	values[Anum_pg_trigger_tgconstraint - 1] = ObjectIdGetDatum(constraintOid);
 	values[Anum_pg_trigger_tgdeferrable - 1] = BoolGetDatum(stmt->deferrable);
 	values[Anum_pg_trigger_tginitdeferred - 1] = BoolGetDatum(stmt->initdeferred);
+	if (oldtablename)
+		values[Anum_pg_trigger_tgoldtable - 1] = DirectFunctionCall1(namein,
+												  CStringGetDatum(oldtablename));
+	else
+		values[Anum_pg_trigger_tgoldtable - 1] = DirectFunctionCall1(namein,
+												  CStringGetDatum(""));
+	if (newtablename)
+		values[Anum_pg_trigger_tgnewtable - 1] = DirectFunctionCall1(namein,
+												  CStringGetDatum(newtablename));
+	else
+		values[Anum_pg_trigger_tgnewtable - 1] = DirectFunctionCall1(namein,
+												  CStringGetDatum(""));
 
 	if (stmt->args)
 	{
