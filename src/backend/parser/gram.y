@@ -9280,6 +9280,14 @@ single_set_clause:
 				}
 		;
 
+/*
+ * Ideally, we'd accept any row-valued a_expr as RHS of a multiple_set_clause.
+ * However, per SQL spec the row-constructor case must allow DEFAULT as a row
+ * member, and it's pretty unclear how to do that (unless perhaps we allow
+ * DEFAULT in any a_expr and let parse analysis sort it out later?).  For the
+ * moment, the planner/executor only support a subquery as a multiassignment
+ * source anyhow, so we need only accept ctext_row and subqueries here.
+ */
 multiple_set_clause:
 			'(' set_target_list ')' '=' ctext_row
 				{
@@ -9288,20 +9296,51 @@ multiple_set_clause:
 
 					/*
 					 * Break the ctext_row apart, merge individual expressions
-					 * into the destination ResTargets.  XXX this approach
-					 * cannot work for general row expressions as sources.
+					 * into the destination ResTargets.  This is semantically
+					 * equivalent to, and much cheaper to process than, the
+					 * general case.
 					 */
 					if (list_length($2) != list_length($5))
 						ereport(ERROR,
 								(errcode(ERRCODE_SYNTAX_ERROR),
 								 errmsg("number of columns does not match number of values"),
-								 parser_errposition(@1)));
+								 parser_errposition(@5)));
 					forboth(col_cell, $2, val_cell, $5)
 					{
 						ResTarget *res_col = (ResTarget *) lfirst(col_cell);
 						Node *res_val = (Node *) lfirst(val_cell);
 
 						res_col->val = res_val;
+					}
+
+					$$ = $2;
+				}
+			| '(' set_target_list ')' '=' select_with_parens
+				{
+					SubLink *sl = makeNode(SubLink);
+					int ncolumns = list_length($2);
+					int i = 1;
+					ListCell *col_cell;
+
+					/* First, convert bare SelectStmt into a SubLink */
+					sl->subLinkType = MULTIEXPR_SUBLINK;
+					sl->subLinkId = 0;		/* will be assigned later */
+					sl->testexpr = NULL;
+					sl->operName = NIL;
+					sl->subselect = $5;
+					sl->location = @5;
+
+					/* Create a MultiAssignRef source for each target */
+					foreach(col_cell, $2)
+					{
+						ResTarget *res_col = (ResTarget *) lfirst(col_cell);
+						MultiAssignRef *r = makeNode(MultiAssignRef);
+
+						r->source = (Node *) sl;
+						r->colno = i;
+						r->ncolumns = ncolumns;
+						res_col->val = (Node *) r;
+						i++;
 					}
 
 					$$ = $2;
@@ -11137,6 +11176,7 @@ a_expr:		c_expr									{ $$ = $1; }
 						/* generate foo = ANY (subquery) */
 						SubLink *n = (SubLink *) $3;
 						n->subLinkType = ANY_SUBLINK;
+						n->subLinkId = 0;
 						n->testexpr = $1;
 						n->operName = list_make1(makeString("="));
 						n->location = @2;
@@ -11157,6 +11197,7 @@ a_expr:		c_expr									{ $$ = $1; }
 						/* Make an = ANY node */
 						SubLink *n = (SubLink *) $4;
 						n->subLinkType = ANY_SUBLINK;
+						n->subLinkId = 0;
 						n->testexpr = $1;
 						n->operName = list_make1(makeString("="));
 						n->location = @3;
@@ -11173,6 +11214,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				{
 					SubLink *n = makeNode(SubLink);
 					n->subLinkType = $3;
+					n->subLinkId = 0;
 					n->testexpr = $1;
 					n->operName = $2;
 					n->subselect = $4;
@@ -11332,6 +11374,7 @@ c_expr:		columnref								{ $$ = $1; }
 				{
 					SubLink *n = makeNode(SubLink);
 					n->subLinkType = EXPR_SUBLINK;
+					n->subLinkId = 0;
 					n->testexpr = NULL;
 					n->operName = NIL;
 					n->subselect = $1;
@@ -11353,6 +11396,7 @@ c_expr:		columnref								{ $$ = $1; }
 					SubLink *n = makeNode(SubLink);
 					A_Indirection *a = makeNode(A_Indirection);
 					n->subLinkType = EXPR_SUBLINK;
+					n->subLinkId = 0;
 					n->testexpr = NULL;
 					n->operName = NIL;
 					n->subselect = $1;
@@ -11365,6 +11409,7 @@ c_expr:		columnref								{ $$ = $1; }
 				{
 					SubLink *n = makeNode(SubLink);
 					n->subLinkType = EXISTS_SUBLINK;
+					n->subLinkId = 0;
 					n->testexpr = NULL;
 					n->operName = NIL;
 					n->subselect = $2;
@@ -11375,6 +11420,7 @@ c_expr:		columnref								{ $$ = $1; }
 				{
 					SubLink *n = makeNode(SubLink);
 					n->subLinkType = ARRAY_SUBLINK;
+					n->subLinkId = 0;
 					n->testexpr = NULL;
 					n->operName = NIL;
 					n->subselect = $2;
