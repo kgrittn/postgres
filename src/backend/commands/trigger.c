@@ -762,6 +762,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	heap_close(tgrel, RowExclusiveLock);
 
 	pfree(DatumGetPointer(values[Anum_pg_trigger_tgname - 1]));
+	pfree(DatumGetPointer(values[Anum_pg_trigger_tgoldtable - 1]));
+	pfree(DatumGetPointer(values[Anum_pg_trigger_tgnewtable - 1]));
 	pfree(DatumGetPointer(values[Anum_pg_trigger_tgargs - 1]));
 	pfree(DatumGetPointer(values[Anum_pg_trigger_tgattr - 1]));
 
@@ -1631,6 +1633,10 @@ RelationBuildTriggers(Relation relation)
 		build->tgconstraint = pg_trigger->tgconstraint;
 		build->tgdeferrable = pg_trigger->tgdeferrable;
 		build->tginitdeferred = pg_trigger->tginitdeferred;
+		build->tgoldtable = DatumGetCString(DirectFunctionCall1(nameout,
+											NameGetDatum(&pg_trigger->tgoldtable)));
+		build->tgnewtable = DatumGetCString(DirectFunctionCall1(nameout,
+											NameGetDatum(&pg_trigger->tgnewtable)));
 		build->tgnargs = pg_trigger->tgnargs;
 		/* tgattr is first var-width field, so OK to access directly */
 		build->tgnattr = pg_trigger->tgattr.dim1;
@@ -1759,6 +1765,11 @@ SetTriggerFlags(TriggerDesc *trigdesc, Trigger *trigger)
 	trigdesc->trig_truncate_after_statement |=
 		TRIGGER_TYPE_MATCHES(tgtype, TRIGGER_TYPE_STATEMENT,
 							 TRIGGER_TYPE_AFTER, TRIGGER_TYPE_TRUNCATE);
+
+	trigdesc->trig_old_table |=
+		TRIGGER_USES_TRANSITION_TABLE(trigger->tgoldtable);
+	trigdesc->trig_new_table |=
+		TRIGGER_USES_TRANSITION_TABLE(trigger->tgnewtable);
 }
 
 /*
@@ -1787,6 +1798,8 @@ CopyTriggerDesc(TriggerDesc *trigdesc)
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
 		trigger->tgname = pstrdup(trigger->tgname);
+		trigger->tgoldtable = pstrdup(trigger->tgoldtable);
+		trigger->tgnewtable = pstrdup(trigger->tgnewtable);
 		if (trigger->tgnattr > 0)
 		{
 			int16	   *newattr;
@@ -1830,6 +1843,8 @@ FreeTriggerDesc(TriggerDesc *trigdesc)
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
 		pfree(trigger->tgname);
+		pfree(trigger->tgoldtable);
+		pfree(trigger->tgnewtable);
 		if (trigger->tgnattr > 0)
 			pfree(trigger->tgattr);
 		if (trigger->tgnargs > 0)
@@ -1900,6 +1915,10 @@ equalTriggerDescs(TriggerDesc *trigdesc1, TriggerDesc *trigdesc2)
 			if (trig1->tgdeferrable != trig2->tgdeferrable)
 				return false;
 			if (trig1->tginitdeferred != trig2->tginitdeferred)
+				return false;
+			if (strcmp(trig1->tgoldtable, trig2->tgoldtable) != 0)
+				return false;
+			if (strcmp(trig1->tgnewtable, trig2->tgnewtable) != 0)
 				return false;
 			if (trig1->tgnargs != trig2->tgnargs)
 				return false;
@@ -3321,7 +3340,7 @@ static SetConstraintState SetConstraintStateAddItem(SetConstraintState state,
 
 
 /*
- * Gets the current query fdw tuplestore and initializes it if necessary
+ * Gets a current query delta tuplestore and initializes it if necessary
  */
 static Tuplestorestate *
 GetCurrentTriggerDeltaTuplestore(Tuplestorestate **tss)

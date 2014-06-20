@@ -34,8 +34,8 @@ typedef struct Trigger
 	Oid			tgconstraint;
 	bool		tgdeferrable;
 	bool		tginitdeferred;
-	NameData	tgoldtable;
-	NameData	tgnewtable;
+	char	   *tgoldtable;
+	char	   *tgnewtable;
 	int16		tgnargs;
 	int16		tgnattr;
 	int16	   *tgattr;
@@ -70,6 +70,9 @@ typedef struct TriggerDesc
 	/* there are no row-level truncate triggers */
 	bool		trig_truncate_before_statement;
 	bool		trig_truncate_after_statement;
+	/* Is there at least one trigger specifying each transition relation? */
+	bool		trig_old_table;
+	bool		trig_new_table;
 } TriggerDesc;
 
 #endif   /* RELTRIGGER_H */

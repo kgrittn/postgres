@@ -146,4 +146,15 @@ typedef FormData_pg_trigger *Form_pg_trigger;
 #define TRIGGER_TYPE_MATCHES(type, level, timing, event) \
 	(((type) & (TRIGGER_TYPE_LEVEL_MASK | TRIGGER_TYPE_TIMING_MASK | (event))) == ((level) | (timing) | (event)))
 
+/*
+ * Macro to determine whether tgnewtable or tgoldtable has been specified for
+ * a trigger.
+ *
+ * TODO: Once the dust settles on development, this can probably be
+ * simplified to test for either a NULL pointer or a zero-length cstring, but
+ * for now we'll do both.
+ */
+#define TRIGGER_USES_TRANSITION_TABLE(namepointer) \
+	((namepointer) != (char *) NULL && (*(namepointer)) != '\0')
+
 #endif   /* PG_TRIGGER_H */
