@@ -3748,22 +3748,16 @@ AfterTriggerExecute(AfterTriggerEvent event,
 	/*
 	 * Set up the tuplestore information.
 	 */
-	{
-		if (event_op == TRIGGER_EVENT_DELETE ||
-			event_op == TRIGGER_EVENT_UPDATE)
-			LocTriggerData.tg_olddelta =
-				GetCurrentTriggerDeltaTuplestore
-					(afterTriggers->old_tuplestores);
-		else
-			LocTriggerData.tg_olddelta = NULL;
-		if (event_op == TRIGGER_EVENT_INSERT ||
-			event_op == TRIGGER_EVENT_UPDATE)
-			LocTriggerData.tg_newdelta =
-				GetCurrentTriggerDeltaTuplestore
-					(afterTriggers->new_tuplestores);
-		else
-			LocTriggerData.tg_newdelta = NULL;
-	}
+	if (trigdesc->trig_delete_old_table || trigdesc->trig_update_old_table)
+		LocTriggerData.tg_olddelta =
+			GetCurrentTriggerDeltaTuplestore(afterTriggers->old_tuplestores);
+	else
+		LocTriggerData.tg_olddelta = NULL;
+	if (trigdesc->trig_insert_new_table || trigdesc->trig_update_new_table)
+		LocTriggerData.tg_newdelta =
+			GetCurrentTriggerDeltaTuplestore(afterTriggers->new_tuplestores);
+	else
+		LocTriggerData.tg_newdelta = NULL;
 
 	/*
 	 * Setup the remaining trigger information
