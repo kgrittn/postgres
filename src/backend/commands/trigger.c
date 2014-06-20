@@ -1766,10 +1766,18 @@ SetTriggerFlags(TriggerDesc *trigdesc, Trigger *trigger)
 		TRIGGER_TYPE_MATCHES(tgtype, TRIGGER_TYPE_STATEMENT,
 							 TRIGGER_TYPE_AFTER, TRIGGER_TYPE_TRUNCATE);
 
-	trigdesc->trig_old_table |=
-		TRIGGER_USES_TRANSITION_TABLE(trigger->tgoldtable);
-	trigdesc->trig_new_table |=
-		TRIGGER_USES_TRANSITION_TABLE(trigger->tgnewtable);
+	trigdesc->trig_insert_new_table |=
+		(TRIGGER_FOR_INSERT(tgtype) &&
+		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgnewtable)) ? true : false;
+	trigdesc->trig_update_old_table |=
+		(TRIGGER_FOR_UPDATE(tgtype) &&
+		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgoldtable)) ? true : false;
+	trigdesc->trig_update_new_table |=
+		(TRIGGER_FOR_UPDATE(tgtype) &&
+		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgnewtable)) ? true : false;
+	trigdesc->trig_delete_old_table |=
+		(TRIGGER_FOR_DELETE(tgtype) &&
+		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgoldtable)) ? true : false;
 }
 
 /*
@@ -2169,8 +2177,7 @@ ExecARInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
 	if (trigdesc &&
-		(trigdesc->trig_insert_after_row ||
-		 trigdesc->trig_insert_after_statement))
+		(trigdesc->trig_insert_after_row || trigdesc->trig_insert_new_table))
 		AfterTriggerSaveEvent(estate, relinfo, TRIGGER_EVENT_INSERT,
 							  true, NULL, trigtuple, recheckIndexes, NULL);
 }
@@ -2374,8 +2381,7 @@ ExecARDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
 	if (trigdesc &&
-		(trigdesc->trig_delete_after_row ||
-		 trigdesc->trig_delete_after_statement))
+		(trigdesc->trig_delete_after_row || trigdesc->trig_delete_old_table))
 	{
 		HeapTuple	trigtuple;
 
@@ -2640,9 +2646,8 @@ ExecARUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 
-	if (trigdesc &&
-		(trigdesc->trig_update_after_row ||
-		 trigdesc->trig_update_after_statement))
+	if (trigdesc && (trigdesc->trig_update_after_row ||
+		 trigdesc->trig_update_old_table || trigdesc->trig_update_new_table))
 	{
 		HeapTuple	trigtuple;
 
@@ -4989,7 +4994,10 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 	 */
 	if (row_trigger)
 	{
-		if (event == TRIGGER_EVENT_DELETE || event == TRIGGER_EVENT_UPDATE)
+		if ((event == TRIGGER_EVENT_DELETE &&
+			 trigdesc->trig_delete_old_table) ||
+			(event == TRIGGER_EVENT_UPDATE &&
+			 trigdesc->trig_update_old_table))
 		{
 			Tuplestorestate *old_tuplestore;
 
@@ -4999,7 +5007,10 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 					(afterTriggers->old_tuplestores);
 			tuplestore_puttuple(old_tuplestore, oldtup);
 		}
-		if (event == TRIGGER_EVENT_INSERT || event == TRIGGER_EVENT_UPDATE)
+		if ((event == TRIGGER_EVENT_INSERT &&
+			 trigdesc->trig_insert_new_table) ||
+			(event == TRIGGER_EVENT_UPDATE &&
+			 trigdesc->trig_update_new_table))
 		{
 			Tuplestorestate *new_tuplestore;
 
