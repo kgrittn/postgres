@@ -5016,7 +5016,7 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 			tuplestore_puttuple(new_tuplestore, newtup);
 		}
 
-		/* If deltas were the only reason we're here, return. */
+		/* If deltas are the only reason we're here, return. */
 		if ((event == TRIGGER_EVENT_DELETE && !trigdesc->trig_delete_after_row) ||
 			(event == TRIGGER_EVENT_INSERT && !trigdesc->trig_insert_after_row) ||
 			(event == TRIGGER_EVENT_UPDATE && !trigdesc->trig_update_after_row))
