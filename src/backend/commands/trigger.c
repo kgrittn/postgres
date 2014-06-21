@@ -4949,11 +4949,12 @@ AfterTriggerPendingOnRel(Oid relid)
  *	the event (even if they are disabled).  This function decides which
  *	triggers actually need to be queued.  It is also called after each row,
  *	even if there are no triggers for that event, if there are any AFTER
- *	STATEMENT triggers, so that the delta relations can be built.
+ *	STATEMENT triggers for the statement which use transition tables, so that
+ *	the delta tuplestores can be built.
  *
  *	Delta tuplestores are built now, rather than when events are pulled off
  *	of the queue because AFTER ROW triggers are allowed to select from the
- *	delta relations for the statement.
+ *	transition tables for the statement.
  * ----------
  */
 static void
