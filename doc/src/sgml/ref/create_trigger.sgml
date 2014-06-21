@@ -515,6 +515,30 @@ CREATE TRIGGER view_insert
     FOR EACH ROW
     EXECUTE PROCEDURE view_insert_row();
 </programlisting>
+
+   Execute the function <function>check_transfer_balances_to_zero</> for each
+   statement to confirm that the <literal>transfer</> rows offset to a net of
+   zero:
+
+<programlisting>
+CREATE TRIGGER transfer_insert
+    AFTER INSERT ON transfer
+    FOR EACH STATEMENT
+    REFERENCING NEW TABLE AS inserted
+    EXECUTE PROCEDURE check_transfer_balances_to_zero();
+</programlisting>
+
+   Execute the function <function>check_matching_pairs</> for each row to
+   confirm that changes are made to matching pairs at the same time (by the
+   same statement):
+
+<programlisting>
+CREATE TRIGGER paired_items_update
+    AFTER UPDATE ON paired_items
+    FOR EACH ROW
+    REFERENCING NEW TABLE AS newtab OLD TABLE AS oldtab
+    EXECUTE PROCEDURE check_matching_pairs();
+</programlisting>
   </para>
 
   <para>
