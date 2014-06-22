@@ -4468,11 +4468,14 @@ TransitionOldOrNew:
 TransitionRowOrTable:
 			TABLE									{ $$ = TRUE; }
 			/*
-			 * Explicit ROW specification is not supported to avoid fully
-			 * reserving the keyword ROW.  According to the standard, lack of
-			 * a keyword here means ROW anyway.
+			 * According to the standard, lack of a keyword here implies ROW.
+			 * Support for that would require prohibiting ROW entirely here,
+			 * reserving the keyword ROW, and/or requiring AS (instead of
+			 * allowing it to be optional, as the standard specifies) as the
+			 * next token.  Requiring ROW seems cleanest and easiest to
+			 * explain.
 			 */
-			| /*EMPTY*/								{ $$ = FALSE; }
+			| ROW									{ $$ = FALSE; }
 		;
 
 TransitionRelName:
