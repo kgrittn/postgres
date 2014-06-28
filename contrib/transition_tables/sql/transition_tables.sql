@@ -1,4 +1,4 @@
-CREATE EXTENSION statement_trigger_row;
+CREATE EXTENSION transition_tables;
 
 CREATE TABLE IF NOT EXISTS e(
     i INT
@@ -10,7 +10,7 @@ CREATE TRIGGER statement_dml_e
         OLD TABLE AS old_e
         NEW TABLE AS new_e
     FOR EACH STATEMENT
-        EXECUTE PROCEDURE statement_trigger_row();
+        EXECUTE PROCEDURE transition_tables();
 
 INSERT INTO e(i)
 SELECT * FROM generate_series(1,10000);

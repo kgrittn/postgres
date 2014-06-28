@@ -1,29 +1,28 @@
 /*-------------------------------------------------------------------------
  *
- * statement_trigger_row.c
+ * transition_tables.c
  *		sample of accessing trigger transition tables from a C trigger
  *
  * Portions Copyright (c) 2011-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- * 		contrib/statement_trigger_row.c
+ * 		contrib/transition_tables.c
  *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
 
-#include "executor/spi.h"
 #include "commands/trigger.h"
 #include "utils/rel.h"
 
 PG_MODULE_MAGIC;
 
-PG_FUNCTION_INFO_V1(statement_trigger_row);
+PG_FUNCTION_INFO_V1(transition_tables);
 
 Datum
-statement_trigger_row(PG_FUNCTION_ARGS)
+transition_tables(PG_FUNCTION_ARGS)
 {
 	TriggerData		*trigdata = (TriggerData *) fcinfo->context;
 	TupleDesc		tupdesc;
@@ -35,17 +34,17 @@ statement_trigger_row(PG_FUNCTION_ARGS)
 	if (!CALLED_AS_TRIGGER(fcinfo))
 		ereport(ERROR,
 				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-				 errmsg("statement_trigger_row: must be called as trigger")));
+				 errmsg("transition_tables: must be called as trigger")));
 
 	if (!TRIGGER_FIRED_AFTER(trigdata->tg_event))
 		ereport(ERROR,
 				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-				 errmsg("statement_trigger_row: must be called after the change")));
+				 errmsg("transition_tables: must be called after the change")));
 
 	if (!TRIGGER_FIRED_FOR_STATEMENT(trigdata->tg_event))
 		ereport(ERROR,
 				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-				 errmsg("statement_trigger_row: must be called for each statement")));
+				 errmsg("transition_tables: must be called for each statement")));
 
 	tupdesc = trigdata->tg_relation->rd_att;
 	slot = MakeSingleTupleTableSlot(tupdesc);
@@ -135,12 +134,11 @@ statement_trigger_row(PG_FUNCTION_ARGS)
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-				 errmsg("statement_trigger_row: only INSERT, UPDATE, and DELETE triggers may use transition tables")));
+				 errmsg("transition_tables: only INSERT, UPDATE, and DELETE triggers may use transition tables")));
 
 	ExecDropSingleTupleTableSlot(slot);
 
 	ereport(NOTICE, (errmsg("Total change: " INT64_FORMAT, delta)));
 
 	return PointerGetDatum(NULL);		/* after trigger; value doesn't matter */
-
 }
