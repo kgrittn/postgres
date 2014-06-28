@@ -703,6 +703,8 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	SysScanDesc tgscan;
 	int			findx = 0;
 	char	   *tgname;
+	char	   *tgoldtable;
+	char	   *tgnewtable;
 	Datum		value;
 	bool		isnull;
 
@@ -809,14 +811,25 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 			appendStringInfoString(&buf, "IMMEDIATE ");
 	}
 
-	if (TRIGGER_USES_TRANSITION_TABLE(NameStr(trigrec->tgoldtable)) ||
-		TRIGGER_USES_TRANSITION_TABLE(NameStr(trigrec->tgnewtable)))
+	value = fastgetattr(ht_trig, Anum_pg_trigger_tgoldtable,
+						tgrel->rd_att, &isnull);
+	if (!isnull)
+		tgoldtable = NameStr(*((NameData *) DatumGetPointer(value)));
+	else
+		tgoldtable = NULL;
+	value = fastgetattr(ht_trig, Anum_pg_trigger_tgnewtable,
+						tgrel->rd_att, &isnull);
+	if (!isnull)
+		tgnewtable = NameStr(*((NameData *) DatumGetPointer(value)));
+	else
+		tgnewtable = NULL;
+	if (tgoldtable != NULL || tgnewtable != NULL)
 	{
 		appendStringInfoString(&buf, "REFERENCING ");
-		if (TRIGGER_USES_TRANSITION_TABLE(NameStr(trigrec->tgoldtable)))
-			appendStringInfo(&buf, "OLD TABLE AS %s ", NameStr(trigrec->tgoldtable));
-		if (TRIGGER_USES_TRANSITION_TABLE(NameStr(trigrec->tgnewtable)))
-			appendStringInfo(&buf, "NEW TABLE AS %s ", NameStr(trigrec->tgnewtable));
+		if (tgoldtable != NULL)
+			appendStringInfo(&buf, "OLD TABLE AS %s ", tgoldtable);
+		if (tgnewtable != NULL)
+			appendStringInfo(&buf, "NEW TABLE AS %s ", tgnewtable);
 	}
 
 	if (TRIGGER_FOR_ROW(trigrec->tgtype))

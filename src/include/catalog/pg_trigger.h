@@ -48,8 +48,6 @@ CATALOG(pg_trigger,2620)
 	Oid			tgconstraint;	/* associated pg_constraint entry, if any */
 	bool		tgdeferrable;	/* constraint trigger is deferrable */
 	bool		tginitdeferred; /* constraint trigger is deferred initially */
-	NameData	tgoldtable;		/* Name to use for old delta table for stmt */
-	NameData	tgnewtable;		/* Name to use for new delta table for stmt */
 	int16		tgnargs;		/* # of extra arguments in tgargs */
 
 	/*
@@ -61,6 +59,8 @@ CATALOG(pg_trigger,2620)
 #ifdef CATALOG_VARLEN
 	bytea		tgargs;			/* first\000second\000tgnargs\000 */
 	pg_node_tree tgqual;		/* WHEN expression, or NULL if none */
+	NameData	tgoldtable;		/* old transition table, or NULL if none */
+	NameData	tgnewtable;		/* new transition table, or NULL if none */
 #endif
 } FormData_pg_trigger;
 
@@ -87,12 +87,12 @@ typedef FormData_pg_trigger *Form_pg_trigger;
 #define Anum_pg_trigger_tgconstraint	9
 #define Anum_pg_trigger_tgdeferrable	10
 #define Anum_pg_trigger_tginitdeferred	11
-#define Anum_pg_trigger_tgoldtable		12
-#define Anum_pg_trigger_tgnewtable		13
-#define Anum_pg_trigger_tgnargs			14
-#define Anum_pg_trigger_tgattr			15
-#define Anum_pg_trigger_tgargs			16
-#define Anum_pg_trigger_tgqual			17
+#define Anum_pg_trigger_tgnargs		12
+#define Anum_pg_trigger_tgattr			13
+#define Anum_pg_trigger_tgargs			14
+#define Anum_pg_trigger_tgqual			15
+#define Anum_pg_trigger_tgoldtable		16
+#define Anum_pg_trigger_tgnewtable		17
 
 /* Bits within tgtype */
 #define TRIGGER_TYPE_ROW				(1 << 0)
@@ -149,12 +149,8 @@ typedef FormData_pg_trigger *Form_pg_trigger;
 /*
  * Macro to determine whether tgnewtable or tgoldtable has been specified for
  * a trigger.
- *
- * TODO: Once the dust settles on development, this can probably be
- * simplified to test for either a NULL pointer or a zero-length cstring, but
- * for now we'll do both.
  */
 #define TRIGGER_USES_TRANSITION_TABLE(namepointer) \
-	((namepointer) != (char *) NULL && (*(namepointer)) != '\0')
+	((namepointer) != (char *) NULL)
 
 #endif   /* PG_TRIGGER_H */

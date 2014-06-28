@@ -643,18 +643,6 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	values[Anum_pg_trigger_tgconstraint - 1] = ObjectIdGetDatum(constraintOid);
 	values[Anum_pg_trigger_tgdeferrable - 1] = BoolGetDatum(stmt->deferrable);
 	values[Anum_pg_trigger_tginitdeferred - 1] = BoolGetDatum(stmt->initdeferred);
-	if (oldtablename)
-		values[Anum_pg_trigger_tgoldtable - 1] = DirectFunctionCall1(namein,
-												  CStringGetDatum(oldtablename));
-	else
-		values[Anum_pg_trigger_tgoldtable - 1] = DirectFunctionCall1(namein,
-												  CStringGetDatum(""));
-	if (newtablename)
-		values[Anum_pg_trigger_tgnewtable - 1] = DirectFunctionCall1(namein,
-												  CStringGetDatum(newtablename));
-	else
-		values[Anum_pg_trigger_tgnewtable - 1] = DirectFunctionCall1(namein,
-												  CStringGetDatum(""));
 
 	if (stmt->args)
 	{
@@ -746,6 +734,17 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	else
 		nulls[Anum_pg_trigger_tgqual - 1] = true;
 
+	if (oldtablename)
+		values[Anum_pg_trigger_tgoldtable - 1] = DirectFunctionCall1(namein,
+												  CStringGetDatum(oldtablename));
+	else
+		nulls[Anum_pg_trigger_tgoldtable - 1] = true;
+	if (newtablename)
+		values[Anum_pg_trigger_tgnewtable - 1] = DirectFunctionCall1(namein,
+												  CStringGetDatum(newtablename));
+	else
+		nulls[Anum_pg_trigger_tgnewtable - 1] = true;
+
 	tuple = heap_form_tuple(tgrel->rd_att, values, nulls);
 
 	/* force tuple to have the desired OID */
@@ -762,10 +761,12 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	heap_close(tgrel, RowExclusiveLock);
 
 	pfree(DatumGetPointer(values[Anum_pg_trigger_tgname - 1]));
-	pfree(DatumGetPointer(values[Anum_pg_trigger_tgoldtable - 1]));
-	pfree(DatumGetPointer(values[Anum_pg_trigger_tgnewtable - 1]));
 	pfree(DatumGetPointer(values[Anum_pg_trigger_tgargs - 1]));
 	pfree(DatumGetPointer(values[Anum_pg_trigger_tgattr - 1]));
+	if (oldtablename)
+		pfree(DatumGetPointer(values[Anum_pg_trigger_tgoldtable - 1]));
+	if (newtablename)
+		pfree(DatumGetPointer(values[Anum_pg_trigger_tgnewtable - 1]));
 
 	/*
 	 * Update relation's pg_class entry.  Crucial side-effect: other backends
@@ -1633,10 +1634,6 @@ RelationBuildTriggers(Relation relation)
 		build->tgconstraint = pg_trigger->tgconstraint;
 		build->tgdeferrable = pg_trigger->tgdeferrable;
 		build->tginitdeferred = pg_trigger->tginitdeferred;
-		build->tgoldtable = DatumGetCString(DirectFunctionCall1(nameout,
-											NameGetDatum(&pg_trigger->tgoldtable)));
-		build->tgnewtable = DatumGetCString(DirectFunctionCall1(nameout,
-											NameGetDatum(&pg_trigger->tgnewtable)));
 		build->tgnargs = pg_trigger->tgnargs;
 		/* tgattr is first var-width field, so OK to access directly */
 		build->tgnattr = pg_trigger->tgattr.dim1;
@@ -1648,6 +1645,7 @@ RelationBuildTriggers(Relation relation)
 		}
 		else
 			build->tgattr = NULL;
+
 		if (build->tgnargs > 0)
 		{
 			bytea	   *val;
@@ -1669,6 +1667,23 @@ RelationBuildTriggers(Relation relation)
 		}
 		else
 			build->tgargs = NULL;
+
+		datum = fastgetattr(htup, Anum_pg_trigger_tgoldtable,
+							tgrel->rd_att, &isnull);
+		if (!isnull)
+			build->tgoldtable =
+				DatumGetCString(DirectFunctionCall1(nameout, datum));
+		else
+			build->tgoldtable = NULL;
+
+		datum = fastgetattr(htup, Anum_pg_trigger_tgnewtable,
+							tgrel->rd_att, &isnull);
+		if (!isnull)
+			build->tgnewtable =
+				DatumGetCString(DirectFunctionCall1(nameout, datum));
+		else
+			build->tgnewtable = NULL;
+
 		datum = fastgetattr(htup, Anum_pg_trigger_tgqual,
 							tgrel->rd_att, &isnull);
 		if (!isnull)
@@ -1806,8 +1821,6 @@ CopyTriggerDesc(TriggerDesc *trigdesc)
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
 		trigger->tgname = pstrdup(trigger->tgname);
-		trigger->tgoldtable = pstrdup(trigger->tgoldtable);
-		trigger->tgnewtable = pstrdup(trigger->tgnewtable);
 		if (trigger->tgnattr > 0)
 		{
 			int16	   *newattr;
@@ -1829,6 +1842,10 @@ CopyTriggerDesc(TriggerDesc *trigdesc)
 		}
 		if (trigger->tgqual)
 			trigger->tgqual = pstrdup(trigger->tgqual);
+		if (trigger->tgoldtable)
+			trigger->tgoldtable = pstrdup(trigger->tgoldtable);
+		if (trigger->tgnewtable)
+			trigger->tgnewtable = pstrdup(trigger->tgnewtable);
 		trigger++;
 	}
 
@@ -1851,8 +1868,6 @@ FreeTriggerDesc(TriggerDesc *trigdesc)
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
 		pfree(trigger->tgname);
-		pfree(trigger->tgoldtable);
-		pfree(trigger->tgnewtable);
 		if (trigger->tgnattr > 0)
 			pfree(trigger->tgattr);
 		if (trigger->tgnargs > 0)
@@ -1863,6 +1878,10 @@ FreeTriggerDesc(TriggerDesc *trigdesc)
 		}
 		if (trigger->tgqual)
 			pfree(trigger->tgqual);
+		if (trigger->tgoldtable)
+			pfree(trigger->tgoldtable);
+		if (trigger->tgnewtable)
+			pfree(trigger->tgnewtable);
 		trigger++;
 	}
 	pfree(trigdesc->triggers);
@@ -1924,10 +1943,6 @@ equalTriggerDescs(TriggerDesc *trigdesc1, TriggerDesc *trigdesc2)
 				return false;
 			if (trig1->tginitdeferred != trig2->tginitdeferred)
 				return false;
-			if (strcmp(trig1->tgoldtable, trig2->tgoldtable) != 0)
-				return false;
-			if (strcmp(trig1->tgnewtable, trig2->tgnewtable) != 0)
-				return false;
 			if (trig1->tgnargs != trig2->tgnargs)
 				return false;
 			if (trig1->tgnattr != trig2->tgnattr)
@@ -1944,6 +1959,18 @@ equalTriggerDescs(TriggerDesc *trigdesc1, TriggerDesc *trigdesc2)
 			else if (trig1->tgqual == NULL || trig2->tgqual == NULL)
 				return false;
 			else if (strcmp(trig1->tgqual, trig2->tgqual) != 0)
+				return false;
+			if (trig1->tgoldtable == NULL && trig2->tgoldtable == NULL)
+				 /* ok */ ;
+			else if (trig1->tgoldtable == NULL || trig2->tgoldtable == NULL)
+				return false;
+			else if (strcmp(trig1->tgoldtable, trig2->tgoldtable) != 0)
+				return false;
+			if (trig1->tgnewtable == NULL && trig2->tgnewtable == NULL)
+				 /* ok */ ;
+			else if (trig1->tgnewtable == NULL || trig2->tgnewtable == NULL)
+				return false;
+			else if (strcmp(trig1->tgnewtable, trig2->tgnewtable) != 0)
 				return false;
 		}
 	}

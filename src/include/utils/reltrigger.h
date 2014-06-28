@@ -34,13 +34,13 @@ typedef struct Trigger
 	Oid			tgconstraint;
 	bool		tgdeferrable;
 	bool		tginitdeferred;
-	char	   *tgoldtable;
-	char	   *tgnewtable;
 	int16		tgnargs;
 	int16		tgnattr;
 	int16	   *tgattr;
 	char	  **tgargs;
 	char	   *tgqual;
+	char	   *tgoldtable;
+	char	   *tgnewtable;
 } Trigger;
 
 typedef struct TriggerDesc
