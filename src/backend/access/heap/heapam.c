@@ -2355,6 +2355,8 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 		bool		all_visible_cleared = false;
 		int			nthispage;
 
+		CHECK_FOR_INTERRUPTS();
+
 		/*
 		 * Find buffer where at least the next tuple will fit.  If the page is
 		 * all-visible, this will also pin the requisite visibility map page.
@@ -5516,8 +5518,14 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 		 * was a locker only, it can be removed without any further
 		 * consideration; but if it contained an update, we might need to
 		 * preserve it.
+		 *
+		 * Don't assert MultiXactIdIsRunning if the multi came from a
+		 * pg_upgrade'd share-locked tuple, though, as doing that causes an
+		 * error to be raised unnecessarily.
 		 */
-		Assert(!MultiXactIdIsRunning(multi));
+		Assert((!(t_infomask & HEAP_LOCK_MASK) &&
+				HEAP_XMAX_IS_LOCKED_ONLY(t_infomask)) ||
+			   !MultiXactIdIsRunning(multi));
 		if (HEAP_XMAX_IS_LOCKED_ONLY(t_infomask))
 		{
 			*flags |= FRM_INVALIDATE_XMAX;
