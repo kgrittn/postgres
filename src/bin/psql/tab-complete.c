@@ -2114,7 +2114,8 @@ psql_completion(const char *text, int start, int end)
 	{
 		static const char *const list_DATABASE[] =
 		{"OWNER", "TEMPLATE", "ENCODING", "TABLESPACE", "IS_TEMPLATE",
-		"ALLOW_CONNECTIONS", "CONNECTION LIMIT", NULL};
+		"ALLOW_CONNECTIONS", "CONNECTION LIMIT", "LC_COLLATE", "LC_CTYPE",
+		NULL};
 
 		COMPLETE_WITH_LIST(list_DATABASE);
 	}
@@ -3350,6 +3351,13 @@ psql_completion(const char *text, int start, int end)
 			{"ON", "OFF", "DEFAULT", NULL};
 
 			COMPLETE_WITH_LIST(my_list);
+		}
+		else if (pg_strcasecmp(prev2_wd, "search_path") == 0)
+		{
+			COMPLETE_WITH_QUERY(Query_for_list_of_schemas
+								" AND nspname not like 'pg\\_toast%%' "
+								" AND nspname not like 'pg\\_temp%%' "
+								" UNION SELECT 'DEFAULT' ");
 		}
 		else
 		{
