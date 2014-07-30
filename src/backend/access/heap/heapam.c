@@ -4183,7 +4183,9 @@ l3:
 			 * the case, HeapTupleSatisfiesUpdate would have returned
 			 * MayBeUpdated and we wouldn't be here.
 			 */
-			nmembers = GetMultiXactIdMembers(xwait, &members, false);
+			nmembers =
+				GetMultiXactIdMembers(xwait, &members, false,
+									  HEAP_XMAX_IS_LOCKED_ONLY(infomask));
 
 			for (i = 0; i < nmembers; i++)
 			{
@@ -4204,7 +4206,8 @@ l3:
 				}
 			}
 
-			pfree(members);
+			if (members)
+				pfree(members);
 		}
 
 		/*
@@ -4353,7 +4356,9 @@ l3:
 				 * been the case, HeapTupleSatisfiesUpdate would have returned
 				 * MayBeUpdated and we wouldn't be here.
 				 */
-				nmembers = GetMultiXactIdMembers(xwait, &members, false);
+				nmembers =
+					GetMultiXactIdMembers(xwait, &members, false,
+										  HEAP_XMAX_IS_LOCKED_ONLY(infomask));
 
 				if (nmembers <= 0)
 				{
@@ -4834,7 +4839,7 @@ l5:
 		 * MultiXactIdExpand if we weren't to do this, so this check is not
 		 * incurring extra work anyhow.
 		 */
-		if (!MultiXactIdIsRunning(xmax))
+		if (!MultiXactIdIsRunning(xmax, HEAP_XMAX_IS_LOCKED_ONLY(old_infomask)))
 		{
 			if (HEAP_XMAX_IS_LOCKED_ONLY(old_infomask) ||
 				TransactionIdDidAbort(MultiXactIdGetUpdateXid(xmax,
@@ -5175,7 +5180,8 @@ l4:
 				int			i;
 				MultiXactMember *members;
 
-				nmembers = GetMultiXactIdMembers(rawxmax, &members, false);
+				nmembers = GetMultiXactIdMembers(rawxmax, &members, false,
+									 HEAP_XMAX_IS_LOCKED_ONLY(old_infomask));
 				for (i = 0; i < nmembers; i++)
 				{
 					HTSU_Result res;
@@ -5533,7 +5539,8 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 		 */
 		Assert((!(t_infomask & HEAP_LOCK_MASK) &&
 				HEAP_XMAX_IS_LOCKED_ONLY(t_infomask)) ||
-			   !MultiXactIdIsRunning(multi));
+			   !MultiXactIdIsRunning(multi,
+									 HEAP_XMAX_IS_LOCKED_ONLY(t_infomask)));
 		if (HEAP_XMAX_IS_LOCKED_ONLY(t_infomask))
 		{
 			*flags |= FRM_INVALIDATE_XMAX;
@@ -5576,7 +5583,9 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 
 	allow_old = !(t_infomask & HEAP_LOCK_MASK) &&
 		HEAP_XMAX_IS_LOCKED_ONLY(t_infomask);
-	nmembers = GetMultiXactIdMembers(multi, &members, allow_old);
+	nmembers =
+		GetMultiXactIdMembers(multi, &members, allow_old,
+							  HEAP_XMAX_IS_LOCKED_ONLY(t_infomask));
 	if (nmembers <= 0)
 	{
 		/* Nothing worth keeping */
@@ -5627,17 +5636,13 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 
 			/*
 			 * It's an update; should we keep it?  If the transaction is known
-			 * aborted then it's okay to ignore it, otherwise not.  However,
-			 * if the Xid is older than the cutoff_xid, we must remove it.
-			 * Note that such an old updater cannot possibly be committed,
-			 * because HeapTupleSatisfiesVacuum would have returned
+			 * aborted or crashed then it's okay to ignore it, otherwise not.
+			 * Note that an updater older than cutoff_xid cannot possibly be
+			 * committed, because HeapTupleSatisfiesVacuum would have returned
 			 * HEAPTUPLE_DEAD and we would not be trying to freeze the tuple.
 			 *
-			 * Note the TransactionIdDidAbort() test is just an optimization
-			 * and not strictly necessary for correctness.
-			 *
 			 * As with all tuple visibility routines, it's critical to test
-			 * TransactionIdIsInProgress before the transam.c routines,
+			 * TransactionIdIsInProgress before TransactionIdDidCommit,
 			 * because of race conditions explained in detail in tqual.c.
 			 */
 			if (TransactionIdIsCurrentTransactionId(xid) ||
@@ -5646,46 +5651,40 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 				Assert(!TransactionIdIsValid(update_xid));
 				update_xid = xid;
 			}
-			else if (!TransactionIdDidAbort(xid))
+			else if (TransactionIdDidCommit(xid))
 			{
 				/*
-				 * Test whether to tell caller to set HEAP_XMAX_COMMITTED
-				 * while we have the Xid still in cache.  Note this can only
-				 * be done if the transaction is known not running.
+				 * The transaction committed, so we can tell caller to set
+				 * HEAP_XMAX_COMMITTED.  (We can only do this because we know
+				 * the transaction is not running.)
 				 */
-				if (TransactionIdDidCommit(xid))
-					update_committed = true;
 				Assert(!TransactionIdIsValid(update_xid));
+				update_committed = true;
 				update_xid = xid;
 			}
 
 			/*
+			 * Not in progress, not committed -- must be aborted or crashed;
+			 * we can ignore it.
+			 */
+
+			/*
+			 * Since the tuple wasn't marked HEAPTUPLE_DEAD by vacuum, the
+			 * update Xid cannot possibly be older than the xid cutoff.
+			 */
+			Assert(!TransactionIdIsValid(update_xid) ||
+				   !TransactionIdPrecedes(update_xid, cutoff_xid));
+
+			/*
 			 * If we determined that it's an Xid corresponding to an update
 			 * that must be retained, additionally add it to the list of
-			 * members of the new Multis, in case we end up using that.  (We
+			 * members of the new Multi, in case we end up using that.  (We
 			 * might still decide to use only an update Xid and not a multi,
 			 * but it's easier to maintain the list as we walk the old members
 			 * list.)
-			 *
-			 * It is possible to end up with a very old updater Xid that
-			 * crashed and thus did not mark itself as aborted in pg_clog.
-			 * That would manifest as a pre-cutoff Xid.  Make sure to ignore
-			 * it.
 			 */
 			if (TransactionIdIsValid(update_xid))
-			{
-				if (!TransactionIdPrecedes(update_xid, cutoff_xid))
-				{
-					newmembers[nnewmembers++] = members[i];
-				}
-				else
-				{
-					/* cannot have committed: would be HEAPTUPLE_DEAD */
-					Assert(!TransactionIdDidCommit(update_xid));
-					update_xid = InvalidTransactionId;
-					update_committed = false;
-				}
-			}
+				newmembers[nnewmembers++] = members[i];
 		}
 		else
 		{
@@ -5993,7 +5992,7 @@ GetMultiXactIdHintBits(MultiXactId multi, uint16 *new_infomask,
 	 * We only use this in multis we just created, so they cannot be values
 	 * pre-pg_upgrade.
 	 */
-	nmembers = GetMultiXactIdMembers(multi, &members, false);
+	nmembers = GetMultiXactIdMembers(multi, &members, false, false);
 
 	for (i = 0; i < nmembers; i++)
 	{
@@ -6072,7 +6071,7 @@ MultiXactIdGetUpdateXid(TransactionId xmax, uint16 t_infomask)
 	 * Since we know the LOCK_ONLY bit is not set, this cannot be a multi from
 	 * pre-pg_upgrade.
 	 */
-	nmembers = GetMultiXactIdMembers(xmax, &members, false);
+	nmembers = GetMultiXactIdMembers(xmax, &members, false, false);
 
 	if (nmembers > 0)
 	{
@@ -6158,7 +6157,8 @@ Do_MultiXactIdWait(MultiXactId multi, MultiXactStatus status,
 	int			remain = 0;
 
 	allow_old = !(infomask & HEAP_LOCK_MASK) && HEAP_XMAX_IS_LOCKED_ONLY(infomask);
-	nmembers = GetMultiXactIdMembers(multi, &members, allow_old);
+	nmembers = GetMultiXactIdMembers(multi, &members, allow_old,
+									 HEAP_XMAX_IS_LOCKED_ONLY(infomask));
 
 	if (nmembers >= 0)
 	{
@@ -6304,7 +6304,8 @@ heap_tuple_needs_freeze(HeapTupleHeader tuple, TransactionId cutoff_xid,
 
 			allow_old = !(tuple->t_infomask & HEAP_LOCK_MASK) &&
 				HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask);
-			nmembers = GetMultiXactIdMembers(multi, &members, allow_old);
+			nmembers = GetMultiXactIdMembers(multi, &members, allow_old,
+								HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask));
 
 			for (i = 0; i < nmembers; i++)
 			{
