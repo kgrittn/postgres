@@ -450,6 +450,16 @@ typedef struct CteScan
 } CteScan;
 
 /* ----------------
+ *		TuplestoreScan node
+ * ----------------
+ */
+typedef struct TuplestoreScan
+{
+	Scan		scan;
+	int			tsParam;		/* ID of Param representing ts output */
+} TuplestoreScan;
+
+/* ----------------
  *		WorkTableScan node
  * ----------------
  */

@@ -1477,6 +1477,25 @@ typedef struct CteScanState
 } CteScanState;
 
 /* ----------------
+ *	 TuplestoreScanState information
+ *
+ *		TuplestoreScan nodes are used to scan a Tuplestore created and named
+ *		prior to execution of the query.  An example is a transition table for
+ *		an AFTER trigger.
+ *
+ * Multiple TuplestoreScan nodes can read out from the same Tuplestore.
+ * ----------------
+ */
+typedef struct TuplestoreScanState
+{
+	ScanState	ss;				/* its first field is NodeTag */
+	int			eflags;			/* capability flags to pass to tuplestore */
+	int			readptr;		/* index of my tuplestore read pointer */
+	TupleDesc	tupdesc;		/* format of the tuples in the tuplestore */
+	Tuplestorestate *table;		/* the rows */
+} TuplestoreScanState;
+
+/* ----------------
  *	 WorkTableScanState information
  *
  *		WorkTableScan nodes are used to scan the work table created by

@@ -554,6 +554,27 @@ _copyCteScan(const CteScan *from)
 }
 
 /*
+ * _copyTuplestoreScan
+ */
+static TuplestoreScan *
+_copyTuplestoreScan(const TuplestoreScan *from)
+{
+	TuplestoreScan    *newnode = makeNode(TuplestoreScan);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyScanFields((const Scan *) from, (Scan *) newnode);
+
+	/*
+	 * copy remainder of node
+	 */
+	COPY_SCALAR_FIELD(tsParam);
+
+	return newnode;
+}
+
+/*
  * _copyWorkTableScan
  */
 static WorkTableScan *
@@ -4018,6 +4039,9 @@ copyObject(const void *from)
 			break;
 		case T_CteScan:
 			retval = _copyCteScan(from);
+			break;
+		case T_TuplestoreScan:
+			retval = _copyTuplestoreScan(from);
 			break;
 		case T_WorkTableScan:
 			retval = _copyWorkTableScan(from);

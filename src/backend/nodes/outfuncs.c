@@ -542,6 +542,16 @@ _outCteScan(StringInfo str, const CteScan *node)
 }
 
 static void
+_outTuplestoreScan(StringInfo str, const TuplestoreScan *node)
+{
+	WRITE_NODE_TYPE("TUPLESTORESCAN");
+
+	_outScanInfo(str, (const Scan *) node);
+
+	WRITE_INT_FIELD(tsParam);
+}
+
+static void
 _outWorkTableScan(StringInfo str, const WorkTableScan *node)
 {
 	WRITE_NODE_TYPE("WORKTABLESCAN");
@@ -2854,6 +2864,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_CteScan:
 				_outCteScan(str, obj);
+				break;
+			case T_TuplestoreScan:
+				_outTuplestoreScan(str, obj);
 				break;
 			case T_WorkTableScan:
 				_outWorkTableScan(str, obj);

@@ -44,6 +44,7 @@
 #include "executor/nodeSubplan.h"
 #include "executor/nodeSubqueryscan.h"
 #include "executor/nodeTidscan.h"
+#include "executor/nodeTuplestorescan.h"
 #include "executor/nodeUnique.h"
 #include "executor/nodeValuesscan.h"
 #include "executor/nodeWindowAgg.h"
@@ -187,6 +188,10 @@ ExecReScan(PlanState *node)
 
 		case T_CteScanState:
 			ExecReScanCteScan((CteScanState *) node);
+			break;
+
+		case T_TuplestoreScanState:
+			ExecReScanTuplestoreScan((TuplestoreScanState *) node);
 			break;
 
 		case T_WorkTableScanState:
@@ -542,6 +547,7 @@ ExecMaterializesOutput(NodeTag plantype)
 		case T_Material:
 		case T_FunctionScan:
 		case T_CteScan:
+		case T_TuplestoreScan:
 		case T_WorkTableScan:
 		case T_Sort:
 			return true;
