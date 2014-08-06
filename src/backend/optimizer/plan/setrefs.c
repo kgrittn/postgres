@@ -554,6 +554,17 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
 			}
 			break;
+		case T_TuplestoreScan:
+			{
+				TuplestoreScan *splan = (TuplestoreScan *) plan;
+
+				splan->scan.scanrelid += rtoffset;
+				splan->scan.plan.targetlist =
+					fix_scan_list(root, splan->scan.plan.targetlist, rtoffset);
+				splan->scan.plan.qual =
+					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
+			}
+			break;
 		case T_WorkTableScan:
 			{
 				WorkTableScan *splan = (WorkTableScan *) plan;
