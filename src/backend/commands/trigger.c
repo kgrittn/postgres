@@ -375,6 +375,12 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 				oldtablename = tt->name;
 			}
 		}
+
+		if (newtablename != NULL && oldtablename != NULL &&
+			strcmp(newtablename, oldtablename) == 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+					 errmsg("OLD TABLE name and NEW TABLE name cannot be the same")));
 	}
 
 	/*
