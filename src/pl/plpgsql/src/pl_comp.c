@@ -2402,15 +2402,16 @@ compute_function_hashkey(FunctionCallInfo fcinfo,
 	hashkey->isTrigger = CALLED_AS_TRIGGER(fcinfo);
 
 	/*
-	 * if trigger, get relation OID.  In validation mode we do not know what
-	 * relation is intended to be used, so we leave trigrelOid zero; the hash
-	 * entry built in this case will never really be used.
+	 * if trigger, get its OID.  In validation mode we do not know what
+	 * relation or transition table names are intended to be used, so we leave
+	 * trigOid zero; the hash entry built in this case will never really be
+	 * used.
 	 */
 	if (hashkey->isTrigger && !forValidator)
 	{
 		TriggerData *trigdata = (TriggerData *) fcinfo->context;
 
-		hashkey->trigrelOid = RelationGetRelid(trigdata->tg_relation);
+		hashkey->trigOid = trigdata->tg_trigger->tgoid;
 	}
 
 	/* get input collation, if known */

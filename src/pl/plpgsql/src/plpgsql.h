@@ -666,12 +666,12 @@ typedef struct PLpgSQL_func_hashkey
 	/* be careful that pad bytes in this struct get zeroed! */
 
 	/*
-	 * For a trigger function, the OID of the relation triggered on is part of
-	 * the hash key --- we want to compile the trigger separately for each
-	 * relation it is used with, in case the rowtype is different.  Zero if
-	 * not called as a trigger.
+	 * For a trigger function, the OID of the trigger is part of the hash key
+	 * --- we want to compile the trigger function separately for each trigger
+	 * it is used with, in case the rowtype or transition table names are
+	 * different.  Zero if not called as a trigger.
 	 */
-	Oid			trigrelOid;
+	Oid			trigOid;
 
 	/*
 	 * We must include the input collation as part of the hash key too,
