@@ -30,7 +30,7 @@ typedef struct TsrData
 {
 	Tuplestorestate	   *tstate;		/* data (or tids) */
 	TupleDesc			tupdesc;	/* description of result rows */
-	Oid					reloid;		/* NULL if bytid is false */
+	Oid					reloid;		/* InvalidOid if bytid is false */
 	bool				bytid;		/* store holds tids to point to data? */
 } TsrData;
 
@@ -93,6 +93,8 @@ tsr_register(Tuplestorestate *tstate, TupleDesc tupdesc,
 	TsrNumber	tsrno = ++lastTsrAssigned;
 	Tsr			tsr;
 	bool		found;
+
+	Assert(bytid == (reloid != InvalidOid));
 
 	if (TuplestoreRegistryTable == NULL)
 		tsr_initialize();
