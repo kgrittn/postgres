@@ -90,7 +90,8 @@ TsrNumber
 tsr_register(Tuplestorestate *tstate, TupleDesc tupdesc,
 						 bool bytid, Oid reloid)
 {
-	TsrNumber	tsrno = ++lastTsrAssigned;
+	TsrNumber	tsrno;
+	TsrNumber	tsrnoLast;
 	Tsr			tsr;
 	bool		found;
 
@@ -99,11 +100,33 @@ tsr_register(Tuplestorestate *tstate, TupleDesc tupdesc,
 	if (TuplestoreRegistryTable == NULL)
 		tsr_initialize();
 
-	tsr = (Tsr)
-		hash_search(TuplestoreRegistryTable,
-					(void *) &tsrno,
-					HASH_ENTER, &found);
-	Assert(!found);
+	tsrnoLast = lastTsrAssigned;
+	for (;;)
+	{
+		tsrno = ++lastTsrAssigned;
+
+		if (tsrno == InvalidOid)
+			continue;
+
+		tsr = (Tsr)
+			hash_search(TuplestoreRegistryTable,
+						(void *) &tsrno,
+						HASH_ENTER, &found);
+
+		/*
+		 * In the unlikely event that we wrapped and hit a duplicate number,
+		 * let it loop back up; otherwise we can use this number.
+		 */
+		if (!found)
+			break;
+
+		/*
+		 * Since these should be short-lived, exhausting the set of numbers
+		 * seems extraordinarily unlikely; still we should protect against it.
+		 */
+		if (tsrno == tsrnoLast)
+			elog(ERROR, "tuplestore registry Oid values exhausted");
+	}
 
 	tsr->tstate = tstate;
 	tsr->tupdesc = tupdesc;

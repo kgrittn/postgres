@@ -16,7 +16,13 @@
 #include "utils/hsearch.h"
 #include "utils/tuplestore.h"
 
-/* If TsrNumber is the same size as Oid, we can use a faster hash function. */
+/*
+ * If TsrNumber is the same size as Oid, we can use a faster hash function.
+ * On the other hand, we don't need to be quite as strict assigning these
+ * because each process has its own set of IDs, so we create a new type based
+ * on Oid.  If there are places in parse analysis we don't want to drag this
+ * header in, we can use Oid and cast at the edges.
+ */
 typedef Oid TsrNumber;
 
 extern TsrNumber tsr_register(Tuplestorestate *state, TupleDesc tdesc,
