@@ -25,11 +25,12 @@
  */
 typedef Oid Tsrid;
 
-extern Tsrid tsr_register(Tuplestorestate *state, TupleDesc tdesc,
+extern Tsrid tsr_register(char *name, Tuplestorestate *state, TupleDesc tdesc,
 						 bool accessByTid, Oid rel);
 
 extern void tsr_deregister(Tsrid tsrid);
 
+extern char * tsr_get_tuplestorename(Tsrid tsrid);
 extern Tuplestorestate * tsr_get_tuplestorestate(Tsrid tsrid);
 extern TupleDesc tsr_get_tupledesc(Tsrid tsrid);
 extern bool tsr_get_access_by_tid(Tsrid tsrid);

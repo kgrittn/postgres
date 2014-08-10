@@ -28,6 +28,7 @@
 
 typedef struct TsrData
 {
+	char			   *name;		/* name used to identify the tuplestore */
 	Tuplestorestate	   *tstate;		/* data (or tids) */
 	TupleDesc			tupdesc;	/* description of result rows */
 	Oid					reloid;		/* InvalidOid if bytid is false */
@@ -87,7 +88,7 @@ tsr_get_data(Tsrid tsrid)
 
 
 Tsrid
-tsr_register(Tuplestorestate *tstate, TupleDesc tupdesc,
+tsr_register(char *name, Tuplestorestate *tstate, TupleDesc tupdesc,
 						 bool bytid, Oid reloid)
 {
 	Tsrid	tsrid;
@@ -128,6 +129,7 @@ tsr_register(Tuplestorestate *tstate, TupleDesc tupdesc,
 			elog(ERROR, "tuplestore registry Oid values exhausted");
 	}
 
+	tsr->name = name;
 	tsr->tstate = tstate;
 	tsr->tupdesc = tupdesc;
 	tsr->reloid = reloid;
@@ -156,6 +158,12 @@ tsr_deregister(Tsrid tsrid)
 					HASH_REMOVE, NULL);
 	if (tsr == NULL)
 		elog(ERROR, "unable to find tuplestore in registry");
+}
+
+char *
+tsr_get_tuplestorename(Tsrid tsrid)
+{
+	return tsr_get_data(tsrid)->name;
 }
 
 Tuplestorestate *
