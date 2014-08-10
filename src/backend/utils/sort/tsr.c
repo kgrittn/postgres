@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * tsr.c
- *	  Tuplestore registry to allow access from executor by TsrNumber.
+ *	  Tuplestore registry to allow access from executor by Tsrid.
  *
  * It is the responsibility of the caller to allocate the Tuplestorestate
  * and TupleDesc structures in an appropriate memory context and to ensure
@@ -37,10 +37,10 @@ typedef struct TsrData
 typedef TsrData *Tsr;
 
 static HTAB *TuplestoreRegistryTable = NULL;
-static TsrNumber LastTsrNumberAccessed = 0;
+static Tsrid LastTsridAccessed = 0;
 static Tsr LastTsrAccessed = NULL;
 
-static TsrNumber lastTsrAssigned = 0;
+static Tsrid lastTsrAssigned = 0;
 
 static void
 tsr_initialize(void)
@@ -55,7 +55,7 @@ tsr_initialize(void)
 									ALLOCSET_DEFAULT_MAXSIZE);
 
 	MemSet(&ctl, 0, sizeof(ctl));
-	ctl.keysize = sizeof(TsrNumber);
+	ctl.keysize = sizeof(Tsrid);
 	ctl.entrysize = sizeof(TsrData);
 	ctl.hash = oid_hash;
 	ctl.hcxt = context;
@@ -65,11 +65,11 @@ tsr_initialize(void)
 }
 
 static Tsr
-tsr_get_data(TsrNumber tsrno)
+tsr_get_data(Tsrid tsrid)
 {
 	Tsr			tsr;
 
-	if (tsrno == LastTsrNumberAccessed)
+	if (tsrid == LastTsridAccessed)
 		return LastTsrAccessed;
 
 	if (TuplestoreRegistryTable == NULL)
@@ -77,7 +77,7 @@ tsr_get_data(TsrNumber tsrno)
 
 	tsr = (Tsr)
 		hash_search(TuplestoreRegistryTable,
-					(void *) &tsrno,
+					(void *) &tsrid,
 					HASH_FIND, NULL);
 	if (tsr == NULL)
 		elog(ERROR, "unable to find tuplestore in registry");
@@ -86,12 +86,12 @@ tsr_get_data(TsrNumber tsrno)
 }
 
 
-TsrNumber
+Tsrid
 tsr_register(Tuplestorestate *tstate, TupleDesc tupdesc,
 						 bool bytid, Oid reloid)
 {
-	TsrNumber	tsrno;
-	TsrNumber	tsrnoLast;
+	Tsrid	tsrid;
+	Tsrid	tsridLast;
 	Tsr			tsr;
 	bool		found;
 
@@ -100,17 +100,17 @@ tsr_register(Tuplestorestate *tstate, TupleDesc tupdesc,
 	if (TuplestoreRegistryTable == NULL)
 		tsr_initialize();
 
-	tsrnoLast = lastTsrAssigned;
+	tsridLast = lastTsrAssigned;
 	for (;;)
 	{
-		tsrno = ++lastTsrAssigned;
+		tsrid = ++lastTsrAssigned;
 
-		if (tsrno == InvalidOid)
+		if (tsrid == InvalidOid)
 			continue;
 
 		tsr = (Tsr)
 			hash_search(TuplestoreRegistryTable,
-						(void *) &tsrno,
+						(void *) &tsrid,
 						HASH_ENTER, &found);
 
 		/*
@@ -124,7 +124,7 @@ tsr_register(Tuplestorestate *tstate, TupleDesc tupdesc,
 		 * Since these should be short-lived, exhausting the set of numbers
 		 * seems extraordinarily unlikely; still we should protect against it.
 		 */
-		if (tsrno == tsrnoLast)
+		if (tsrid == tsridLast)
 			elog(ERROR, "tuplestore registry Oid values exhausted");
 	}
 
@@ -133,51 +133,51 @@ tsr_register(Tuplestorestate *tstate, TupleDesc tupdesc,
 	tsr->reloid = reloid;
 	tsr->bytid = bytid;
 
-	LastTsrNumberAccessed = tsrno;
+	LastTsridAccessed = tsrid;
 	LastTsrAccessed = tsr;
 
-	return tsrno;
+	return tsrid;
 }
 
 void
-tsr_deregister(TsrNumber tsrno)
+tsr_deregister(Tsrid tsrid)
 {
 	Tsr			tsr;
 
-	if (tsrno == LastTsrNumberAccessed)
+	if (tsrid == LastTsridAccessed)
 	{
-		LastTsrNumberAccessed = 0;
+		LastTsridAccessed = 0;
 		LastTsrAccessed = NULL;
 	}
 
 	tsr = (Tsr)
 		hash_search(TuplestoreRegistryTable,
-					(void *) &tsrno,
+					(void *) &tsrid,
 					HASH_REMOVE, NULL);
 	if (tsr == NULL)
 		elog(ERROR, "unable to find tuplestore in registry");
 }
 
 Tuplestorestate *
-tsr_get_tuplestorestate(TsrNumber tsrno)
+tsr_get_tuplestorestate(Tsrid tsrid)
 {
-	return tsr_get_data(tsrno)->tstate;
+	return tsr_get_data(tsrid)->tstate;
 }
 
 TupleDesc
-tsr_get_tupledesc(TsrNumber tsrno)
+tsr_get_tupledesc(Tsrid tsrid)
 {
-	return tsr_get_data(tsrno)->tupdesc;
+	return tsr_get_data(tsrid)->tupdesc;
 }
 
 bool
-tsr_get_access_by_tid(TsrNumber tsrno)
+tsr_get_access_by_tid(Tsrid tsrid)
 {
-	return tsr_get_data(tsrno)->bytid;
+	return tsr_get_data(tsrid)->bytid;
 }
 
 Oid
-tsr_get_relation_oid(TsrNumber tsrno)
+tsr_get_relation_oid(Tsrid tsrid)
 {
-	return tsr_get_data(tsrno)->reloid;
+	return tsr_get_data(tsrid)->reloid;
 }
