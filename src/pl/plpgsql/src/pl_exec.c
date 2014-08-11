@@ -583,6 +583,32 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		elog(ERROR, "unrecognized trigger action: not INSERT, DELETE, or UPDATE");
 
 	/*
+	 * Capture the OLD and NEW transition table tuplestores (if specified for
+	 * this trigger).
+	 */
+	func->fn_tuplestores = NIL;
+	if (trigdata->tg_olddelta)
+	{
+		Tsr tsr = palloc(sizeof(Tsr));
+
+		tsr->name = trigdata->tg_trigger->tgoldtable;
+		tsr->tstate = trigdata->tg_olddelta;
+		tsr->tupdesc = trigdata->tg_relation->rd_att;
+		tsr->reloid = InvalidOid;  /* TODO: optimize to use TIDs */
+		lappend(func->fn_tuplestores, tsr);
+	}
+	if (trigdata->tg_newdelta)
+	{
+		Tsr tsr = palloc(sizeof(Tsr));
+
+		tsr->name = trigdata->tg_trigger->tgnewtable;
+		tsr->tstate = trigdata->tg_newdelta;
+		tsr->tupdesc = trigdata->tg_relation->rd_att;
+		tsr->reloid = InvalidOid;  /* TODO: optimize to use TIDs */
+		lappend(func->fn_tuplestores, tsr);
+	}
+
+	/*
 	 * Assign the special tg_ variables
 	 */
 

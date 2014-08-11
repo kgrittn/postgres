@@ -1036,6 +1036,9 @@ add_dummy_return(PLpgSQL_function *function)
 void
 plpgsql_parser_setup(struct ParseState *pstate, PLpgSQL_expr *expr)
 {
+	/* Pass down the list of tuplestores, so they can resolve. */
+	pstate->p_tuplestores = expr->func->fn_tuplestores;
+
 	pstate->p_pre_columnref_hook = plpgsql_pre_column_ref;
 	pstate->p_post_columnref_hook = plpgsql_post_column_ref;
 	pstate->p_paramref_hook = plpgsql_param_ref;

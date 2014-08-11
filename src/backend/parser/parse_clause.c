@@ -36,6 +36,7 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/tuplestore.h"
 
 
 /* Convenience macro for the most common makeNamespaceItem() case */
@@ -444,6 +445,21 @@ transformCTEReference(ParseState *pstate, RangeVar *r,
 }
 
 /*
+ * transformTsrReference --- transform a RangeVar that references a tuplestore
+ * relation
+ */
+static RangeTblEntry *
+transformTsrReference(ParseState *pstate, RangeVar *r,
+					  TuplestoreRelation *tsr)
+{
+	RangeTblEntry *rte;
+
+	rte = addRangeTableEntryForTsr(pstate, tsr, r, true);
+
+	return rte;
+}
+
+/*
  * transformRangeSubselect --- transform a sub-SELECT appearing in FROM
  */
 static RangeTblEntry *
@@ -739,7 +755,10 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		RangeTblEntry *rte = NULL;
 		int			rtindex;
 
-		/* if it is an unqualified name, it might be a CTE reference */
+		/*
+		 * if it is an unqualified name, it might be a CTE or tuplestore
+		 * reference
+		 */
 		if (!rv->schemaname)
 		{
 			CommonTableExpr *cte;
@@ -748,9 +767,17 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 			cte = scanNameSpaceForCTE(pstate, rv->relname, &levelsup);
 			if (cte)
 				rte = transformCTEReference(pstate, rv, cte, levelsup);
+			else
+			{
+				TuplestoreRelation *tsr;
+
+				tsr = scanNameSpaceForTsr(pstate, rv->relname);
+				if (tsr)
+					rte = transformTsrReference(pstate, rv, tsr);
+			}
 		}
 
-		/* if not found as a CTE, must be a table reference */
+		/* if not found above, must be a table reference */
 		if (!rte)
 			rte = transformTableEntry(pstate, rv);
 

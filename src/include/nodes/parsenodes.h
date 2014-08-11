@@ -1019,6 +1019,13 @@ typedef struct CommonTableExpr
 	List	   *ctecolcollations;		/* OID list of column collation OIDs */
 } CommonTableExpr;
 
+/* Convenience macro to get the output tlist of a CTE's query */
+#define GetCTETargetList(cte) \
+	(AssertMacro(IsA((cte)->ctequery, Query)), \
+	 ((Query *) (cte)->ctequery)->commandType == CMD_SELECT ? \
+	 ((Query *) (cte)->ctequery)->targetList : \
+	 ((Query *) (cte)->ctequery)->returningList)
+
 /*
  * TriggerTransition -
  *	   representation of transition row or table naming clause
@@ -1035,13 +1042,18 @@ typedef struct TriggerTransition
 	bool		isTable;
 } TriggerTransition;
 
-/* Convenience macro to get the output tlist of a CTE's query */
-#define GetCTETargetList(cte) \
-	(AssertMacro(IsA((cte)->ctequery, Query)), \
-	 ((Query *) (cte)->ctequery)->commandType == CMD_SELECT ? \
-	 ((Query *) (cte)->ctequery)->targetList : \
-	 ((Query *) (cte)->ctequery)->returningList)
-
+/*
+ * TuplestoreRelation -
+ *	   synthetic node for tuplestore passed in to the query by name
+ *
+ * This is initially added to support trigger transitioin tables, but may find
+ * other uses, so we try to keep it generic.
+ */
+typedef struct TuplestoreRelation
+{
+	NodeTag		type;
+	char	   *name;
+} TuplestoreRelation;
 
 /*****************************************************************************
  *		Optimizable Statements

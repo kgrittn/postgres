@@ -40,6 +40,21 @@
 typedef struct Tuplestorestate Tuplestorestate;
 
 /*
+ * XXX: Does this belong somewhere else?
+ * TODO: explain
+ */
+typedef struct TsrData
+{
+	char			   *name;		/* name used to identify the tuplestore */
+	Tuplestorestate	   *tstate;		/* data (or tids) */
+	TupleDesc			tupdesc;	/* description of result rows */
+	Oid					reloid;		/* InvalidOid if bytid is false */
+} TsrData;
+
+typedef TsrData *Tsr;
+
+
+/*
  * Currently we only need to store MinimalTuples, but it would be easy
  * to support the same behavior for IndexTuples and/or bare Datums.
  */

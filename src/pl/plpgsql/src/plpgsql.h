@@ -705,6 +705,8 @@ typedef struct PLpgSQL_function
 	PLpgSQL_func_hashkey *fn_hashkey;	/* back-link to hashtable key */
 	MemoryContext fn_cxt;
 
+	List	   *fn_tuplestores;
+
 	Oid			fn_rettype;
 	int			fn_rettyplen;
 	bool		fn_retbyval;

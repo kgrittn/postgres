@@ -31,6 +31,7 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/tuplestore.h"
 
 
 static RangeTblEntry *scanNameSpaceForRefname(ParseState *pstate,
@@ -279,6 +280,32 @@ isFutureCTE(ParseState *pstate, const char *refname)
 }
 
 /*
+ * Search the query's CTE namespace for a CTE matching the given unqualified
+ * refname.  Return the CTE (and its levelsup count) if a match, or NULL
+ * if no match.  We need not worry about multiple matches, since parse_cte.c
+ * rejects WITH lists containing duplicate CTE names.
+ */
+TuplestoreRelation *
+scanNameSpaceForTsr(ParseState *pstate, const char *refname)
+{
+	ListCell   *l;
+
+	foreach(l, pstate->p_tuplestores)
+	{
+		Tsr tsr = (Tsr) lfirst(l);
+
+		if (strcmp(tsr->name, refname) == 0)
+		{
+			TuplestoreRelation *node = makeNode(TuplestoreRelation);
+
+			node->name = tsr->name;
+			return node;
+		}
+	}
+	return NULL;
+}
+
+/*
  * searchRangeTableForRel
  *	  See if any RangeTblEntry could possibly match the RangeVar.
  *	  If so, return a pointer to the RangeTblEntry; else return NULL.
@@ -316,6 +343,7 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	 */
 	if (!relation->schemaname)
 		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
+	/* FIXME: check for tuplestores here, too. */
 	if (!cte)
 		relId = RangeVarGetRelid(relation, NoLock, true);
 
@@ -1672,6 +1700,56 @@ addRangeTableEntryForCTE(ParseState *pstate,
 	 */
 	rte->lateral = false;
 	rte->inh = false;			/* never true for subqueries */
+	rte->inFromCl = inFromCl;
+
+	rte->requiredPerms = 0;
+	rte->checkAsUser = InvalidOid;
+	rte->selectedCols = NULL;
+	rte->modifiedCols = NULL;
+
+	/*
+	 * Add completed RTE to pstate's range table list, but not to join list
+	 * nor namespace --- caller must do that if appropriate.
+	 */
+	if (pstate != NULL)
+		pstate->p_rtable = lappend(pstate->p_rtable, rte);
+
+	return rte;
+}
+
+/*
+ * Add an entry for a Tuplestore relation reference to the pstate's range
+ * table (p_rtable).
+ *
+ * This is much like addRangeTableEntry() except that it makes a Tsr RTE.
+ */
+RangeTblEntry *
+addRangeTableEntryForTsr(ParseState *pstate,
+						 TuplestoreRelation *tsr,
+						 RangeVar *rv,
+						 bool inFromCl)
+{
+	RangeTblEntry *rte = makeNode(RangeTblEntry);
+	Alias	   *alias = rv->alias;
+	char	   *refname = alias ? alias->aliasname : tsr->name;
+	Alias	   *eref;
+
+	rte->rtekind = RTE_TUPLESTORE;
+
+	rte->alias = alias;
+	if (alias)
+		eref = copyObject(alias);
+	else
+		eref = makeAlias(refname, NIL);
+	rte->eref = eref;
+
+	/*
+	 * Set flags and access permissions.
+	 *
+	 * Tuplestores are never checked for access rights.
+	 */
+	rte->lateral = false;
+	rte->inh = false;			/* never true for tuplestores */
 	rte->inFromCl = inFromCl;
 
 	rte->requiredPerms = 0;
