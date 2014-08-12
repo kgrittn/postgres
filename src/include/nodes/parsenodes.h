@@ -1030,9 +1030,9 @@ typedef struct CommonTableExpr
  * TriggerTransition -
  *	   representation of transition row or table naming clause
  *
- * Only tables are initially supported, and only for AFTER EACH STATEMENT
- * triggers, but other permutations are accepted by the parser so we can give
- * a meaningful message from C code.
+ * Only transition tables are initially supported in the syntax, and only for
+ * AFTER triggers, but other permutations are accepted by the parser so we can
+ * give a meaningful message from C code.
  */
 typedef struct TriggerTransition
 {

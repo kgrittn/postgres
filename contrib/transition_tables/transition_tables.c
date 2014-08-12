@@ -55,12 +55,12 @@ transition_tables(PG_FUNCTION_ARGS)
 	 */
 	if (TRIGGER_FIRED_BY_INSERT(trigdata->tg_event))
 	{
-		if (trigdata->tg_newdelta == NULL)
+		if (trigdata->tg_newtable == NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
 					 errmsg("NEW TABLE was not specified in the CREATE TRIGGER statement")));
 
-		new_tuplestore = trigdata->tg_newdelta;
+		new_tuplestore = trigdata->tg_newtable;
 		tuplestore_rescan(new_tuplestore);
 
 		/* Iterate through the new tuples, adding. */
@@ -75,12 +75,12 @@ transition_tables(PG_FUNCTION_ARGS)
 	}
 	else if (TRIGGER_FIRED_BY_DELETE(trigdata->tg_event))
 	{
-		if (trigdata->tg_olddelta == NULL)
+		if (trigdata->tg_oldtable == NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
 					 errmsg("OLD TABLE was not specified in the CREATE TRIGGER statement")));
 
-		old_tuplestore = trigdata->tg_olddelta;
+		old_tuplestore = trigdata->tg_oldtable;
 		tuplestore_rescan(old_tuplestore);
 
 		/* Iterate through the old tuples, subtracting. */
@@ -95,17 +95,17 @@ transition_tables(PG_FUNCTION_ARGS)
 	}
 	else if (TRIGGER_FIRED_BY_UPDATE(trigdata->tg_event))
 	{
-		if (trigdata->tg_olddelta == NULL)
+		if (trigdata->tg_oldtable == NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
 					 errmsg("OLD TABLE was not specified in the CREATE TRIGGER statement")));
-		if (trigdata->tg_newdelta == NULL)
+		if (trigdata->tg_newtable == NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
 					 errmsg("NEW TABLE was not specified in the CREATE TRIGGER statement")));
 
-		old_tuplestore = trigdata->tg_olddelta;
-		new_tuplestore = trigdata->tg_newdelta;
+		old_tuplestore = trigdata->tg_oldtable;
+		new_tuplestore = trigdata->tg_newtable;
 		tuplestore_rescan(old_tuplestore);
 		tuplestore_rescan(new_tuplestore);
 

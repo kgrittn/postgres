@@ -1789,16 +1789,16 @@ SetTriggerFlags(TriggerDesc *trigdesc, Trigger *trigger)
 
 	trigdesc->trig_insert_new_table |=
 		(TRIGGER_FOR_INSERT(tgtype) &&
-		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgnewtable)) ? true : false;
+		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgnewtable));
 	trigdesc->trig_update_old_table |=
 		(TRIGGER_FOR_UPDATE(tgtype) &&
-		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgoldtable)) ? true : false;
+		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgoldtable));
 	trigdesc->trig_update_new_table |=
 		(TRIGGER_FOR_UPDATE(tgtype) &&
-		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgnewtable)) ? true : false;
+		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgnewtable));
 	trigdesc->trig_delete_old_table |=
 		(TRIGGER_FOR_DELETE(tgtype) &&
-		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgoldtable)) ? true : false;
+		 TRIGGER_USES_TRANSITION_TABLE(trigger->tgoldtable));
 }
 
 /*
@@ -3313,7 +3313,7 @@ typedef struct AfterTriggerEventList
  * needed for the current query.
  *
  * old_tuplestores[query_depth] and new_tuplestores[query_depth] hold the
- * delta relations for the current query.
+ * transition relations for the current query.
  *
  * maxquerydepth is just the allocated length of query_stack and the
  * tuplestores.
@@ -3378,10 +3378,12 @@ static SetConstraintState SetConstraintStateAddItem(SetConstraintState state,
 
 
 /*
- * Gets a current query delta tuplestore and initializes it if necessary
+ * Gets a current query transition tuplestore and initializes it if necessary.
+ * This can be holding a single transition row tuple (in the case of an FDW)
+ * or a transition table (for an AFTER trigger).
  */
 static Tuplestorestate *
-GetCurrentTriggerDeltaTuplestore(Tuplestorestate **tss)
+GetTriggerTransitionTuplestore(Tuplestorestate **tss)
 {
 	Tuplestorestate *ret;
 
@@ -3710,7 +3712,7 @@ AfterTriggerExecute(AfterTriggerEvent event,
 		case AFTER_TRIGGER_FDW_FETCH:
 			{
 				Tuplestorestate *fdw_tuplestore =
-					GetCurrentTriggerDeltaTuplestore
+					GetTriggerTransitionTuplestore
 						(afterTriggers->fdw_tuplestores);
 
 				if (!tuplestore_gettupleslot(fdw_tuplestore, true, false,
@@ -3783,16 +3785,16 @@ AfterTriggerExecute(AfterTriggerEvent event,
 	/*
 	 * Set up the tuplestore information.
 	 */
-	if (trigdesc->trig_delete_old_table || trigdesc->trig_update_old_table)
-		LocTriggerData.tg_olddelta =
-			GetCurrentTriggerDeltaTuplestore(afterTriggers->old_tuplestores);
+	if (LocTriggerData.tg_trigger->tgoldtable)
+		LocTriggerData.tg_oldtable =
+			GetTriggerTransitionTuplestore(afterTriggers->old_tuplestores);
 	else
-		LocTriggerData.tg_olddelta = NULL;
-	if (trigdesc->trig_insert_new_table || trigdesc->trig_update_new_table)
-		LocTriggerData.tg_newdelta =
-			GetCurrentTriggerDeltaTuplestore(afterTriggers->new_tuplestores);
+		LocTriggerData.tg_oldtable = NULL;
+	if (LocTriggerData.tg_trigger->tgnewtable)
+		LocTriggerData.tg_newtable =
+			GetTriggerTransitionTuplestore(afterTriggers->new_tuplestores);
 	else
-		LocTriggerData.tg_newdelta = NULL;
+		LocTriggerData.tg_newtable = NULL;
 
 	/*
 	 * Setup the remaining trigger information
@@ -4985,10 +4987,10 @@ AfterTriggerPendingOnRel(Oid relid)
  *	triggers actually need to be queued.  It is also called after each row,
  *	even if there are no triggers for that event, if there are any AFTER
  *	STATEMENT triggers for the statement which use transition tables, so that
- *	the delta tuplestores can be built.
+ *	the transition tuplestores can be built.
  *
- *	Delta tuplestores are built now, rather than when events are pulled off
- *	of the queue because AFTER ROW triggers are allowed to select from the
+ *	Transition tuplestores are built now, rather than when events are pulled
+ *	off of the queue because AFTER ROW triggers are allowed to select from the
  *	transition tables for the statement.
  * ----------
  */
@@ -5020,7 +5022,7 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 
 	/*
 	 * If the relation has AFTER ... FOR EACH ROW triggers, capture rows into
-	 * delta tuplestores for this depth.
+	 * transition tuplestores for this depth.
 	 */
 	if (row_trigger)
 	{
@@ -5033,7 +5035,7 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 
 			Assert(oldtup != NULL);
 			old_tuplestore =
-				GetCurrentTriggerDeltaTuplestore
+				GetTriggerTransitionTuplestore
 					(afterTriggers->old_tuplestores);
 			tuplestore_puttuple(old_tuplestore, oldtup);
 		}
@@ -5046,12 +5048,12 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 
 			Assert(newtup != NULL);
 			new_tuplestore =
-				GetCurrentTriggerDeltaTuplestore
+				GetTriggerTransitionTuplestore
 					(afterTriggers->new_tuplestores);
 			tuplestore_puttuple(new_tuplestore, newtup);
 		}
 
-		/* If deltas are the only reason we're here, return. */
+		/* If transition tables are the only reason we're here, return. */
 		if ((event == TRIGGER_EVENT_DELETE && !trigdesc->trig_delete_after_row) ||
 			(event == TRIGGER_EVENT_INSERT && !trigdesc->trig_insert_after_row) ||
 			(event == TRIGGER_EVENT_UPDATE && !trigdesc->trig_update_after_row))
@@ -5156,7 +5158,7 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 			if (fdw_tuplestore == NULL)
 			{
 				fdw_tuplestore =
-					GetCurrentTriggerDeltaTuplestore
+					GetTriggerTransitionTuplestore
 						(afterTriggers->fdw_tuplestores);
 				new_event.ate_flags = AFTER_TRIGGER_FDW_FETCH;
 			}

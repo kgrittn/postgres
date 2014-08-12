@@ -587,22 +587,22 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	 * this trigger).
 	 */
 	func->fn_tuplestores = NIL;
-	if (trigdata->tg_olddelta)
+	if (trigdata->tg_oldtable)
 	{
 		Tsr tsr = palloc(sizeof(Tsr));
 
 		tsr->name = trigdata->tg_trigger->tgoldtable;
-		tsr->tstate = trigdata->tg_olddelta;
+		tsr->tstate = trigdata->tg_oldtable;
 		tsr->tupdesc = trigdata->tg_relation->rd_att;
 		tsr->reloid = InvalidOid;  /* TODO: optimize to use TIDs */
 		lappend(func->fn_tuplestores, tsr);
 	}
-	if (trigdata->tg_newdelta)
+	if (trigdata->tg_newtable)
 	{
 		Tsr tsr = palloc(sizeof(Tsr));
 
 		tsr->name = trigdata->tg_trigger->tgnewtable;
-		tsr->tstate = trigdata->tg_newdelta;
+		tsr->tstate = trigdata->tg_newtable;
 		tsr->tupdesc = trigdata->tg_relation->rd_att;
 		tsr->reloid = InvalidOid;  /* TODO: optimize to use TIDs */
 		lappend(func->fn_tuplestores, tsr);
