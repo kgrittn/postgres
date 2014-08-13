@@ -1651,7 +1651,6 @@ RelationBuildTriggers(Relation relation)
 		}
 		else
 			build->tgattr = NULL;
-
 		if (build->tgnargs > 0)
 		{
 			bytea	   *val;
