@@ -595,7 +595,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		tsr->tstate = trigdata->tg_oldtable;
 		tsr->tupdesc = trigdata->tg_relation->rd_att;
 		tsr->reloid = InvalidOid;  /* TODO: optimize to use TIDs */
-		lappend(func->fn_tuplestores, tsr);
+		func->fn_tuplestores = lappend(func->fn_tuplestores, tsr);
 	}
 	if (trigdata->tg_newtable)
 	{
@@ -605,7 +605,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		tsr->tstate = trigdata->tg_newtable;
 		tsr->tupdesc = trigdata->tg_relation->rd_att;
 		tsr->reloid = InvalidOid;  /* TODO: optimize to use TIDs */
-		lappend(func->fn_tuplestores, tsr);
+		func->fn_tuplestores = lappend(func->fn_tuplestores, tsr);
 	}
 
 	/*
