@@ -280,10 +280,8 @@ isFutureCTE(ParseState *pstate, const char *refname)
 }
 
 /*
- * Search the query's CTE namespace for a CTE matching the given unqualified
- * refname.  Return the CTE (and its levelsup count) if a match, or NULL
- * if no match.  We need not worry about multiple matches, since parse_cte.c
- * rejects WITH lists containing duplicate CTE names.
+ * Search the query's tuplestore namespace for a tuplestore matching the given
+ * unqualified refname.  Return a synthetic TuplestoreRelation RTE if found.
  */
 TuplestoreRelation *
 scanNameSpaceForTsr(ParseState *pstate, const char *refname)
@@ -302,6 +300,7 @@ scanNameSpaceForTsr(ParseState *pstate, const char *refname)
 			return node;
 		}
 	}
+
 	return NULL;
 }
 
