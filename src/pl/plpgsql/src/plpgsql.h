@@ -705,8 +705,6 @@ typedef struct PLpgSQL_function
 	PLpgSQL_func_hashkey *fn_hashkey;	/* back-link to hashtable key */
 	MemoryContext fn_cxt;
 
-	List	   *fn_tuplestores;
-
 	Oid			fn_rettype;
 	int			fn_rettyplen;
 	bool		fn_retbyval;
@@ -783,6 +781,9 @@ typedef struct PLpgSQL_execstate
 	int			found_varno;
 	int			ndatums;
 	PLpgSQL_datum **datums;
+
+	/* the tuplestores relations which the queries can reference by name */
+	List	   *tuplestores;
 
 	/* EState to use for "simple" expression evaluation */
 	EState	   *simple_eval_estate;

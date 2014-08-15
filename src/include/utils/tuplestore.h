@@ -48,7 +48,7 @@ typedef struct TsrData
 	char			   *name;		/* name used to identify the tuplestore */
 	Tuplestorestate	   *tstate;		/* data (or tids) */
 	TupleDesc			tupdesc;	/* description of result rows */
-	Oid					reloid;		/* InvalidOid if bytid is false */
+	Oid					relid;		/* rel to use for statistics, if any */
 } TsrData;
 
 typedef TsrData *Tsr;

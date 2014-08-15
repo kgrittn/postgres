@@ -583,20 +583,10 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		elog(ERROR, "unrecognized trigger action: not INSERT, DELETE, or UPDATE");
 
 	/*
-	 * Capture the OLD and NEW transition table tuplestores (if specified for
+	 * Capture the NEW and OLD transition TABLE tuplestores (if specified for
 	 * this trigger).
 	 */
-	func->fn_tuplestores = NIL;
-	if (trigdata->tg_oldtable)
-	{
-		Tsr tsr = palloc(sizeof(Tsr));
-
-		tsr->name = trigdata->tg_trigger->tgoldtable;
-		tsr->tstate = trigdata->tg_oldtable;
-		tsr->tupdesc = trigdata->tg_relation->rd_att;
-		tsr->reloid = InvalidOid;  /* TODO: optimize to use TIDs */
-		func->fn_tuplestores = lappend(func->fn_tuplestores, tsr);
-	}
+	estate->tuplestores = NIL;
 	if (trigdata->tg_newtable)
 	{
 		Tsr tsr = palloc(sizeof(Tsr));
@@ -604,8 +594,18 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		tsr->name = trigdata->tg_trigger->tgnewtable;
 		tsr->tstate = trigdata->tg_newtable;
 		tsr->tupdesc = trigdata->tg_relation->rd_att;
-		tsr->reloid = InvalidOid;  /* TODO: optimize to use TIDs */
-		func->fn_tuplestores = lappend(func->fn_tuplestores, tsr);
+		tsr->relid = trigdata->tg_relation->rd_id;
+		estate->tuplestores = lappend(estate->tuplestores, tsr);
+	}
+	if (trigdata->tg_oldtable)
+	{
+		Tsr tsr = palloc(sizeof(Tsr));
+
+		tsr->name = trigdata->tg_trigger->tgoldtable;
+		tsr->tstate = trigdata->tg_oldtable;
+		tsr->tupdesc = trigdata->tg_relation->rd_att;
+		tsr->relid = trigdata->tg_relation->rd_id;
+		estate->tuplestores = lappend(estate->tuplestores, tsr);
 	}
 
 	/*
