@@ -1541,6 +1541,27 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 }
 
 /*
+ * create_tuplestorescan_path
+ *	  Creates a path corresponding to a scan of a tuplestore, returning the
+ *	  pathnode.
+ */
+Path *
+create_tuplestorescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
+{
+	Path	   *pathnode = makeNode(Path);
+
+	pathnode->pathtype = T_TuplestoreScan;
+	pathnode->parent = rel;
+	pathnode->param_info = get_baserel_parampathinfo(root, rel,
+													 required_outer);
+	pathnode->pathkeys = NIL;	/* result is always unordered */
+
+	cost_tuplestorescan(pathnode, root, rel, pathnode->param_info);
+
+	return pathnode;
+}
+
+/*
  * create_worktablescan_path
  *	  Creates a path corresponding to a scan of a self-reference CTE,
  *	  returning the pathnode.
