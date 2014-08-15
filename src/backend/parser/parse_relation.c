@@ -341,8 +341,11 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	 * unlocked.
 	 */
 	if (!relation->schemaname)
+	{
 		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
-	/* FIXME: check for tuplestores here, too. */
+		/* FIXME: check for tuplestores here, too. */
+	}
+
 	if (!cte)
 		relId = RangeVarGetRelid(relation, NoLock, true);
 
