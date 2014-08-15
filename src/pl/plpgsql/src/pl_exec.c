@@ -586,7 +586,6 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	 * Capture the NEW and OLD transition TABLE tuplestores (if specified for
 	 * this trigger).
 	 */
-	estate.tuplestores = NIL;
 	if (trigdata->tg_newtable)
 	{
 		Tsr tsr = palloc(sizeof(TsrData));
@@ -3170,6 +3169,8 @@ plpgsql_estate_setup(PLpgSQL_execstate *estate,
 	estate->ndatums = func->ndatums;
 	estate->datums = palloc(sizeof(PLpgSQL_datum *) * estate->ndatums);
 	/* caller is expected to fill the datums array */
+
+	estate->tuplestores = NIL;
 
 	/* set up for use of appropriate simple-expression EState */
 	if (simple_eval_estate)

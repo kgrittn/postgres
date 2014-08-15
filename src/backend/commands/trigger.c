@@ -2008,6 +2008,18 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 	Datum		result;
 	MemoryContext oldContext;
 
+	/*
+	 * Protect against code paths that may fail to initialize transition table
+	 * info.
+	 */
+	Assert(((TRIGGER_FIRED_BY_INSERT(trigdata->tg_event) ||
+			 TRIGGER_FIRED_BY_UPDATE(trigdata->tg_event) ||
+			 TRIGGER_FIRED_BY_DELETE(trigdata->tg_event)) &&
+			TRIGGER_FIRED_AFTER(trigdata->tg_event) &&
+			!(trigdata->tg_event & AFTER_TRIGGER_DEFERRABLE) &&
+			!(trigdata->tg_event & AFTER_TRIGGER_INITDEFERRED)) ||
+		   (trigdata->tg_oldtable == NULL && trigdata->tg_newtable == NULL));
+
 	finfo += tgindx;
 
 	/*
@@ -2098,6 +2110,8 @@ ExecBSInsertTriggers(EState *estate, ResultRelInfo *relinfo)
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
 	LocTriggerData.tg_trigtuple = NULL;
 	LocTriggerData.tg_newtuple = NULL;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	LocTriggerData.tg_trigtuplebuf = InvalidBuffer;
 	LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 	for (i = 0; i < trigdesc->numtriggers; i++)
@@ -2155,6 +2169,8 @@ ExecBRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 		TRIGGER_EVENT_BEFORE;
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
 	LocTriggerData.tg_newtuple = NULL;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
@@ -2231,6 +2247,8 @@ ExecIRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 		TRIGGER_EVENT_INSTEAD;
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
 	LocTriggerData.tg_newtuple = NULL;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
@@ -2298,6 +2316,8 @@ ExecBSDeleteTriggers(EState *estate, ResultRelInfo *relinfo)
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
 	LocTriggerData.tg_trigtuple = NULL;
 	LocTriggerData.tg_newtuple = NULL;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	LocTriggerData.tg_trigtuplebuf = InvalidBuffer;
 	LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 	for (i = 0; i < trigdesc->numtriggers; i++)
@@ -2369,6 +2389,8 @@ ExecBRDeleteTriggers(EState *estate, EPQState *epqstate,
 		TRIGGER_EVENT_BEFORE;
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
 	LocTriggerData.tg_newtuple = NULL;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
@@ -2450,6 +2472,8 @@ ExecIRDeleteTriggers(EState *estate, ResultRelInfo *relinfo,
 		TRIGGER_EVENT_INSTEAD;
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
 	LocTriggerData.tg_newtuple = NULL;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
@@ -2503,6 +2527,8 @@ ExecBSUpdateTriggers(EState *estate, ResultRelInfo *relinfo)
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
 	LocTriggerData.tg_trigtuple = NULL;
 	LocTriggerData.tg_newtuple = NULL;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	LocTriggerData.tg_trigtuplebuf = InvalidBuffer;
 	LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 	for (i = 0; i < trigdesc->numtriggers; i++)
@@ -2615,6 +2641,8 @@ ExecBRUpdateTriggers(EState *estate, EPQState *epqstate,
 		TRIGGER_EVENT_ROW |
 		TRIGGER_EVENT_BEFORE;
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
 		Trigger    *trigger = &trigdesc->triggers[i];
@@ -2718,6 +2746,8 @@ ExecIRUpdateTriggers(EState *estate, ResultRelInfo *relinfo,
 		TRIGGER_EVENT_ROW |
 		TRIGGER_EVENT_INSTEAD;
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	for (i = 0; i < trigdesc->numtriggers; i++)
 	{
 		Trigger    *trigger = &trigdesc->triggers[i];
@@ -2786,6 +2816,8 @@ ExecBSTruncateTriggers(EState *estate, ResultRelInfo *relinfo)
 	LocTriggerData.tg_relation = relinfo->ri_RelationDesc;
 	LocTriggerData.tg_trigtuple = NULL;
 	LocTriggerData.tg_newtuple = NULL;
+	LocTriggerData.tg_oldtable = NULL;
+	LocTriggerData.tg_newtable = NULL;
 	LocTriggerData.tg_trigtuplebuf = InvalidBuffer;
 	LocTriggerData.tg_newtuplebuf = InvalidBuffer;
 	for (i = 0; i < trigdesc->numtriggers; i++)
