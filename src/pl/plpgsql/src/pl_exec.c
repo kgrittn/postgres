@@ -586,7 +586,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	 * Capture the NEW and OLD transition TABLE tuplestores (if specified for
 	 * this trigger).
 	 */
-	estate->tuplestores = NIL;
+	estate.tuplestores = NIL;
 	if (trigdata->tg_newtable)
 	{
 		Tsr tsr = palloc(sizeof(Tsr));
@@ -595,7 +595,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		tsr->tstate = trigdata->tg_newtable;
 		tsr->tupdesc = trigdata->tg_relation->rd_att;
 		tsr->relid = trigdata->tg_relation->rd_id;
-		estate->tuplestores = lappend(estate->tuplestores, tsr);
+		estate.tuplestores = lappend(estate.tuplestores, tsr);
 	}
 	if (trigdata->tg_oldtable)
 	{
@@ -605,7 +605,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		tsr->tstate = trigdata->tg_oldtable;
 		tsr->tupdesc = trigdata->tg_relation->rd_att;
 		tsr->relid = trigdata->tg_relation->rd_id;
-		estate->tuplestores = lappend(estate->tuplestores, tsr);
+		estate.tuplestores = lappend(estate.tuplestores, tsr);
 	}
 
 	/*
