@@ -427,9 +427,6 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 	/* There can't be any outer WITH to worry about */
 	Assert(pstate->p_ctenamespace == NIL);
 
-	/* XXX: is this right? */
-	Assert(pstate->p_tuplestores == NIL);
-
 	qry->commandType = CMD_INSERT;
 	pstate->p_is_insert = true;
 

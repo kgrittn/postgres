@@ -589,7 +589,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	estate.tuplestores = NIL;
 	if (trigdata->tg_newtable)
 	{
-		Tsr tsr = palloc(sizeof(Tsr));
+		Tsr tsr = palloc(sizeof(TsrData));
 
 		tsr->name = trigdata->tg_trigger->tgnewtable;
 		tsr->tstate = trigdata->tg_newtable;
@@ -599,7 +599,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	}
 	if (trigdata->tg_oldtable)
 	{
-		Tsr tsr = palloc(sizeof(Tsr));
+		Tsr tsr = palloc(sizeof(TsrData));
 
 		tsr->name = trigdata->tg_trigger->tgoldtable;
 		tsr->tstate = trigdata->tg_oldtable;
