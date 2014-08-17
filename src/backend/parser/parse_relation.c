@@ -281,7 +281,7 @@ isFutureCTE(ParseState *pstate, const char *refname)
 
 /*
  * Search the query's tuplestore namespace for a tuplestore matching the given
- * unqualified refname.  Return a synthetic TuplestoreRelation RTE if found.
+ * unqualified refname.  Return a synthetic TuplestoreRelation node if found.
  */
 TuplestoreRelation *
 scanNameSpaceForTsr(ParseState *pstate, const char *refname)
@@ -295,7 +295,6 @@ scanNameSpaceForTsr(ParseState *pstate, const char *refname)
 		if (strcmp(tsr->name, refname) == 0)
 		{
 			TuplestoreRelation *node = makeNode(TuplestoreRelation);
-
 			node->name = tsr->name;
 			return node;
 		}
@@ -1727,23 +1726,31 @@ addRangeTableEntryForCTE(ParseState *pstate,
  */
 RangeTblEntry *
 addRangeTableEntryForTsr(ParseState *pstate,
-						 TuplestoreRelation *tsr,
+						 TuplestoreRelation *tsrNode,
 						 RangeVar *rv,
 						 bool inFromCl)
 {
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
 	Alias	   *alias = rv->alias;
-	char	   *refname = alias ? alias->aliasname : tsr->name;
-	Alias	   *eref;
+	char	   *refname = alias ? alias->aliasname : tsrNode->name;
+	ListCell   *lc;
 
 	rte->rtekind = RTE_TUPLESTORE;
 
-	rte->alias = alias;
-	if (alias)
-		eref = copyObject(alias);
-	else
-		eref = makeAlias(refname, NIL);
-	rte->eref = eref;
+	/*
+	 * Build the list of effective column names using user-supplied aliases
+	 * and/or actual column names.
+	 */
+	rte->eref = makeAlias(refname, NIL);
+	foreach(lc, pstate->p_tuplestores)
+	{
+		Tsr tsr = (Tsr) lfirst(lc);
+
+		if (tsr->name == tsrNode->name)
+		{
+			buildRelationAliases(tsr->tupdesc, alias, rte->eref);
+		}
+	}
 
 	/*
 	 * Set flags and access permissions.

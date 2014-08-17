@@ -40,8 +40,8 @@
 typedef struct Tuplestorestate Tuplestorestate;
 
 /*
- * XXX: Does this belong somewhere else?
- * TODO: explain
+ * Tuplestore Relation data; used for parsing named tuplestores, like
+ * transition tables in AFTER triggers.
  */
 typedef struct TsrData
 {
