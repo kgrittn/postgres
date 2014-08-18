@@ -547,8 +547,6 @@ _outTuplestoreScan(StringInfo str, const TuplestoreScan *node)
 	WRITE_NODE_TYPE("TUPLESTORESCAN");
 
 	_outScanInfo(str, (const Scan *) node);
-
-	WRITE_INT_FIELD(tsParam);
 }
 
 static void

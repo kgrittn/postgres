@@ -805,6 +805,13 @@ typedef struct RangeTblEntry
 	List	   *ctecolcollations;		/* OID list of column collation OIDs */
 
 	/*
+	 * Needed for tuplestore RTE...
+	 *
+	 * ... are the cte* List fields from CTE and relid.  We could duplicate
+	 * them here with slightly different names, but why?
+	 */
+
+	/*
 	 * Fields valid in all RTEs:
 	 */
 	Alias	   *alias;			/* user-written alias clause, if any */

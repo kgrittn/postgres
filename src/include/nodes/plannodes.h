@@ -456,7 +456,6 @@ typedef struct CteScan
 typedef struct TuplestoreScan
 {
 	Scan		scan;
-	int			tsParam;		/* ID of Param representing ts output */
 } TuplestoreScan;
 
 /* ----------------

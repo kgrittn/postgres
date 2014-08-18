@@ -1739,7 +1739,7 @@ addRangeTableEntryForTsr(ParseState *pstate,
 
 	/*
 	 * Build the list of effective column names using user-supplied aliases
-	 * and/or actual column names.
+	 * and/or actual column names.  Also build the cannibalized fields.
 	 */
 	rte->eref = makeAlias(refname, NIL);
 	foreach(lc, pstate->p_tuplestores)
@@ -1748,7 +1748,24 @@ addRangeTableEntryForTsr(ParseState *pstate,
 
 		if (tsr->name == tsrNode->name)
 		{
-			buildRelationAliases(tsr->tupdesc, alias, rte->eref);
+			TupleDesc tupdesc = tsr->tupdesc;
+			int		attno;
+
+			buildRelationAliases(tupdesc, alias, rte->eref);
+			rte->relid = tsr->relid;
+
+			rte->ctecoltypes = NIL;
+			rte->ctecoltypmods = NIL;
+			rte->ctecolcollations = NIL;
+			for (attno = 1; attno <= tupdesc->natts; ++attno)
+			{
+				rte->ctecoltypes = lappend_oid(rte->ctecoltypes,
+											   tupdesc->attrs[attno - 1]->atttypid);
+				rte->ctecoltypmods = lappend_int(rte->ctecoltypmods,
+												 tupdesc->attrs[attno - 1]->atttypmod);
+				rte->ctecolcollations = lappend_oid(rte->ctecolcollations,
+													tupdesc->attrs[attno - 1]->attcollation);
+			}
 		}
 	}
 
@@ -2589,8 +2606,10 @@ get_rte_attribute_type(RangeTblEntry *rte, AttrNumber attnum,
 			}
 			break;
 		case RTE_CTE:
+		case RTE_TUPLESTORE:
 			{
 				/* CTE RTE --- get type info from lists in the RTE */
+				/* Also used by tuplestore RTE */
 				Assert(attnum > 0 && attnum <= list_length(rte->ctecoltypes));
 				*vartype = list_nth_oid(rte->ctecoltypes, attnum - 1);
 				*vartypmod = list_nth_int(rte->ctecoltypmods, attnum - 1);

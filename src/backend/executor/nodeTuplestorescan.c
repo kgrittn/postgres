@@ -79,7 +79,6 @@ TuplestoreScanState *
 ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 {
 	TuplestoreScanState *scanstate;
-	ParamExecData *prmdata;
 
 	/* check for unsupported flags */
 	Assert(!(eflags & EXEC_FLAG_MARK));
@@ -103,13 +102,7 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 	scanstate->ss.ps.plan = (Plan *) node;
 	scanstate->ss.ps.state = estate;
 	scanstate->eflags = eflags;
-	scanstate->table = NULL;
 
-	prmdata = &(estate->es_param_exec_vals[node->tsParam]);
-	Assert(prmdata->execPlan == NULL);
-	Assert(!prmdata->isnull);
-
-	prmdata->value = PointerGetDatum(scanstate);
 	scanstate->table = tuplestore_begin_heap(true, false, work_mem);
 	tuplestore_set_eflags(scanstate->table, scanstate->eflags);
 	scanstate->readptr = 0;
