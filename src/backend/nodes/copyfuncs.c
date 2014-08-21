@@ -304,6 +304,21 @@ _copyBitmapOr(const BitmapOr *from)
 	return newnode;
 }
 
+/*
+ * _copyTuplestoreRelation
+ */
+static TuplestoreRelation *
+_copyTuplestoreRelation(const TuplestoreRelation *from)
+{
+	TuplestoreRelation   *newnode = makeNode(TuplestoreRelation);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyPlanFields((const Plan *) from, (Plan *) newnode);
+
+	return newnode;
+}
 
 /*
  * CopyScanFields
@@ -4001,6 +4016,9 @@ copyObject(const void *from)
 			break;
 		case T_BitmapOr:
 			retval = _copyBitmapOr(from);
+			break;
+		case T_TuplestoreRelation:
+			retval = _copyTuplestoreRelation(from);
 			break;
 		case T_Scan:
 			retval = _copyScan(from);

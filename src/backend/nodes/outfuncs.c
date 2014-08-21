@@ -1570,6 +1570,14 @@ _outBitmapOrPath(StringInfo str, const BitmapOrPath *node)
 }
 
 static void
+_outTuplestoreRelation(StringInfo str, const TuplestoreRelation *node)
+{
+	WRITE_NODE_TYPE("TUPLESTORERELATION");
+
+	_outPathInfo(str, (const Path *) node);
+}
+
+static void
 _outTidPath(StringInfo str, const TidPath *node)
 {
 	WRITE_NODE_TYPE("TIDPATH");
@@ -3073,6 +3081,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_BitmapOrPath:
 				_outBitmapOrPath(str, obj);
+				break;
+			case T_TuplestoreRelation:
+				_outTuplestoreRelation(str, obj);
 				break;
 			case T_TidPath:
 				_outTidPath(str, obj);
