@@ -594,7 +594,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		tsr->tstate = trigdata->tg_newtable;
 		tsr->tupdesc = trigdata->tg_relation->rd_att;
 		tsr->relid = trigdata->tg_relation->rd_id;
-		estate.tuplestores = lappend(estate.tuplestores, tsr);
+		SPI_register_tuplestore(tsr);
 	}
 	if (trigdata->tg_oldtable)
 	{
@@ -604,7 +604,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		tsr->tstate = trigdata->tg_oldtable;
 		tsr->tupdesc = trigdata->tg_relation->rd_att;
 		tsr->relid = trigdata->tg_relation->rd_id;
-		estate.tuplestores = lappend(estate.tuplestores, tsr);
+		SPI_register_tuplestore(tsr);
 	}
 
 	/*
@@ -3169,8 +3169,6 @@ plpgsql_estate_setup(PLpgSQL_execstate *estate,
 	estate->ndatums = func->ndatums;
 	estate->datums = palloc(sizeof(PLpgSQL_datum *) * estate->ndatums);
 	/* caller is expected to fill the datums array */
-
-	estate->tuplestores = NIL;
 
 	/* set up for use of appropriate simple-expression EState */
 	if (simple_eval_estate)

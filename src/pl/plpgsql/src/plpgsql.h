@@ -782,9 +782,6 @@ typedef struct PLpgSQL_execstate
 	int			ndatums;
 	PLpgSQL_datum **datums;
 
-	/* the tuplestores relations which the queries can reference by name */
-	List	   *tuplestores;
-
 	/* EState to use for "simple" expression evaluation */
 	EState	   *simple_eval_estate;
 
