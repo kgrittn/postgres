@@ -43,6 +43,8 @@ typedef struct _SPI_plan *SPIPlanPtr;
 #define SPI_ERROR_NOATTRIBUTE	(-9)
 #define SPI_ERROR_NOOUTFUNC		(-10)
 #define SPI_ERROR_TYPUNKNOWN	(-11)
+#define SPI_ERROR_TSR_DUPLICATE	(-12)
+#define SPI_ERROR_TSR_NOT_FOUND	(-13)
 
 #define SPI_OK_CONNECT			1
 #define SPI_OK_FINISH			2
@@ -58,6 +60,8 @@ typedef struct _SPI_plan *SPIPlanPtr;
 #define SPI_OK_DELETE_RETURNING 12
 #define SPI_OK_UPDATE_RETURNING 13
 #define SPI_OK_REWRITTEN		14
+#define SPI_OK_TSR_REGISTER		15
+#define SPI_OK_TSR_UNREGISTER	16
 
 extern PGDLLIMPORT uint32 SPI_processed;
 extern PGDLLIMPORT Oid SPI_lastoid;
@@ -142,6 +146,10 @@ extern void SPI_cursor_move(Portal portal, bool forward, long count);
 extern void SPI_scroll_cursor_fetch(Portal, FetchDirection direction, long count);
 extern void SPI_scroll_cursor_move(Portal, FetchDirection direction, long count);
 extern void SPI_cursor_close(Portal portal);
+
+extern int SPI_register_tuplestore(Tsr tsr);
+extern int SPI_unregister_tuplestore(const char *name);
+extern Tsr SPI_get_caller_tuplestore(const char *name);
 
 extern void AtEOXact_SPI(bool isCommit);
 extern void AtEOSubXact_SPI(bool isCommit, SubTransactionId mySubid);

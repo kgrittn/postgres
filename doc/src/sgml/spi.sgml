@@ -2741,6 +2741,285 @@ SPIPlanPtr SPI_saveplan(SPIPlanPtr <parameter>plan</parameter>)
  </refsect1>
 </refentry>
 
+<!-- *********************************************** -->
+
+<refentry id="spi-spi-register-tuplestore">
+ <indexterm><primary>SPI_register_tuplestore</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SPI_register_tuplestore</refentrytitle>
+  <manvolnum>3</manvolnum>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SPI_register_tuplestore</refname>
+  <refpurpose>make a tuplestore available by name in SPI queries</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+int SPI_register_tuplestore(Tsr <parameter>tsr</parameter>)
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <function>SPI_register_tuplestore</function> makes a tuplestore, with
+   associated information, available to queries planned and executed through
+   the current SPI connection.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Arguments</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>Tsr <parameter>tsr</parameter></literal></term>
+    <listitem>
+     <para>
+      the tuplestore registry entry
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Return Value</title>
+
+  <para>
+   If the execution of the command was successful then the following
+   (nonnegative) value will be returned:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_OK_TSR_REGISTER</symbol></term>
+     <listitem>
+      <para>
+       if the tuplestore has been successfully registered by name
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+
+  <para>
+   On error, one of the following negative values is returned:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_ERROR_ARGUMENT</symbol></term>
+     <listitem>
+      <para>
+       if <parameter>tsr</parameter> is <symbol>NULL</symbol> or its
+       <varname>name</varname> field is <symbol>NULL</symbol>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_UNCONNECTED</symbol></term>
+     <listitem>
+      <para>
+       if called from an unconnected procedure
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_TSR_DUPLICATE</symbol></term>
+     <listitem>
+      <para>
+       if the name specified in the <varname>name</varname> field of
+       <parameter>tsr</parameter> is already registered for this connection
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+ </refsect1>
+</refentry>
+
+<!-- *********************************************** -->
+
+<refentry id="spi-spi-unregister-tuplestore">
+ <indexterm><primary>SPI_unregister_tuplestore</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SPI_unregister_tuplestore</refentrytitle>
+  <manvolnum>3</manvolnum>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SPI_unregister_tuplestore</refname>
+  <refpurpose>remove a tuplestore from the registry</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+int SPI_unregister_tuplestore(const char * <parameter>name</parameter>)
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <function>SPI_unregister_tuplestore</function> removes a tuplestore from
+   the registry for the current connection.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Arguments</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>const char * <parameter>name</parameter></literal></term>
+    <listitem>
+     <para>
+      the tuplestore registry entry name
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Return Value</title>
+
+  <para>
+   If the execution of the command was successful then the following
+   (nonnegative) value will be returned:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_OK_TSR_UNREGISTER</symbol></term>
+     <listitem>
+      <para>
+       if the tuplestore has been successfully removed from the registry
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+
+  <para>
+   On error, one of the following negative values is returned:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_ERROR_ARGUMENT</symbol></term>
+     <listitem>
+      <para>
+       if <parameter>name</parameter> is <symbol>NULL</symbol>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_UNCONNECTED</symbol></term>
+     <listitem>
+      <para>
+       if called from an unconnected procedure
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_TSR_NOT_FOUND</symbol></term>
+     <listitem>
+      <para>
+       if <parameter>name</parameter> is not found in the registry for the
+       current connection
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+ </refsect1>
+</refentry>
+
+<!-- *********************************************** -->
+
+<refentry id="spi-spi-get-caller-tuplestore">
+ <indexterm><primary>SPI_get_caller_tuplestore</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SPI_get_caller_tuplestore</refentrytitle>
+  <manvolnum>3</manvolnum>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SPI_get_caller_tuplestore</refname>
+  <refpurpose>return a tuplestore from the registry</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+int SPI_get_caller_tuplestore(const char * <parameter>name</parameter>)
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <function>SPI_get_caller_tuplestore</function> returns a tuplestore from
+   the registry for the current connection.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Arguments</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>const char * <parameter>name</parameter></literal></term>
+    <listitem>
+     <para>
+      the tuplestore registry entry name
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Return Value</title>
+
+  <para>
+   Pointer to the tuplestore registry entry; or <symbol>NULL</symbol> if
+   unsuccessful.  On error, <varname>SPI_result</varname> is set thus:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_ERROR_ARGUMENT</symbol></term>
+     <listitem>
+      <para>
+       if <parameter>name</parameter> is <symbol>NULL</symbol>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_UNCONNECTED</symbol></term>
+     <listitem>
+      <para>
+       if called from an unconnected procedure
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+ </refsect1>
+</refentry>
+
+<!-- *********************************************** -->
+
 </sect1>
 
 <sect1 id="spi-interface-support">

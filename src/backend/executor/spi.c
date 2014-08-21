@@ -130,6 +130,7 @@ SPI_connect(void)
 	_SPI_current->procCxt = NULL;		/* in case we fail to create 'em */
 	_SPI_current->execCxt = NULL;
 	_SPI_current->connectSubid = GetCurrentSubTransactionId();
+	_SPI_current->tuplestores = NIL;
 
 	/*
 	 * Create memory contexts for this procedure
@@ -1591,6 +1592,10 @@ SPI_result_code_string(int code)
 			return "SPI_ERROR_NOOUTFUNC";
 		case SPI_ERROR_TYPUNKNOWN:
 			return "SPI_ERROR_TYPUNKNOWN";
+		case SPI_ERROR_TSR_DUPLICATE:
+			return "SPI_ERROR_TSR_DUPLICATE";
+		case SPI_ERROR_TSR_NOT_FOUND:
+			return "SPI_ERROR_TSR_NOT_FOUND";
 		case SPI_OK_CONNECT:
 			return "SPI_OK_CONNECT";
 		case SPI_OK_FINISH:
@@ -1619,6 +1624,10 @@ SPI_result_code_string(int code)
 			return "SPI_OK_UPDATE_RETURNING";
 		case SPI_OK_REWRITTEN:
 			return "SPI_OK_REWRITTEN";
+		case SPI_OK_TSR_REGISTER:
+			return "SPI_OK_TSR_REGISTER";
+		case SPI_OK_TSR_UNREGISTER:
+			return "SPI_OK_TSR_UNREGISTER";
 	}
 	/* Unrecognized code ... return something useful ... */
 	sprintf(buf, "Unrecognized SPI code %d", code);
@@ -2693,4 +2702,137 @@ _SPI_save_plan(SPIPlanPtr plan)
 	}
 
 	return newplan;
+}
+
+/*
+ * Internal lookup of Tsr by name.
+ */
+static Tsr
+_SPI_find_tsr_by_name(const char *name)
+{
+	Tsr			match = NULL;
+	ListCell   *lc;
+
+	/* internal static function; any error is bug in SPI itself */
+	Assert(name != NULL);
+	Assert(_SPI_curid >= 0);
+	Assert(_SPI_curid == _SPI_connected);
+	Assert(_SPI_current == &(_SPI_stack[_SPI_curid]));
+
+	foreach(lc, _SPI_current->tuplestores)
+	{
+		Tsr tsr = (Tsr) lfirst(lc);
+
+		if (strcmp(tsr->name, name) == 0)
+		{
+			match = tsr;
+			break;
+		}
+	}
+
+	return match;
+}
+
+/*
+ * Register a named tuplestore for use by the planner and executor on
+ * subsequent calls using this SPI connection.
+ */
+int
+SPI_register_tuplestore(Tsr tsr)
+{
+	Tsr			match;
+	int			res;
+
+	if (tsr == NULL || tsr->name == NULL)
+		return SPI_ERROR_ARGUMENT;
+
+	res = _SPI_begin_call(false);	/* keep current memory context */
+	if (res < 0)
+		return res;
+
+	match = _SPI_find_tsr_by_name(tsr->name);
+	if (match)
+		res = SPI_ERROR_TSR_DUPLICATE;
+	else
+	{
+		_SPI_current->tuplestores = lappend(_SPI_current->tuplestores, tsr);
+		res = SPI_OK_TSR_REGISTER;
+	}
+
+	_SPI_end_call(false);
+
+	return res;
+}
+
+/*
+ * Unregister a named tuplestore by name.  This will probably be a rarely used
+ * function, since SPI_finish will clear it automatically.
+ */
+int
+SPI_unregister_tuplestore(const char *name)
+{
+	Tsr			match;
+	int			res;
+
+	if (name == NULL)
+		return SPI_ERROR_ARGUMENT;
+
+	res = _SPI_begin_call(false);	/* keep current memory context */
+	if (res < 0)
+		return res;
+
+	match = _SPI_find_tsr_by_name(name);
+	if (match)
+	{
+		_SPI_current->tuplestores = list_delete(_SPI_current->tuplestores,
+												match);
+		res = SPI_OK_TSR_UNREGISTER;
+	}
+	else
+		res = SPI_ERROR_TSR_NOT_FOUND;
+
+	_SPI_end_call(false);
+
+	return res;
+}
+
+/*
+ * This returns a Tsr if there is a name match at the caller level.  It must
+ * quietly return NULL if there is no SPI caller or if no match is found.
+ *
+ * Normally a tuplestore is expected to be used on a specific depth of SPI
+ * connection, but we tolerate a call if the next level has been opened in
+ * case someone wants to pass through the Tsr.
+ */
+Tsr
+SPI_get_caller_tuplestore(const char *name)
+{
+	Tsr			match;
+	ListCell   *lc;
+
+	if (name == NULL)
+	{
+		SPI_result = SPI_ERROR_ARGUMENT;
+		return NULL;
+	}
+
+	if (_SPI_curid < 0)
+	{
+		SPI_result = SPI_ERROR_UNCONNECTED;
+		return NULL;
+	}
+
+	match = NULL;
+	foreach(lc, _SPI_stack[_SPI_curid].tuplestores)
+	{
+		Tsr tsr = (Tsr) lfirst(lc);
+
+		if (strcmp(tsr->name, name) == 0)
+		{
+			match = tsr;
+			break;
+		}
+	}
+
+	return match;
 }
