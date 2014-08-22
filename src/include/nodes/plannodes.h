@@ -456,6 +456,7 @@ typedef struct CteScan
 typedef struct TuplestoreScan
 {
 	Scan		scan;
+	char	   *tsrname;
 } TuplestoreScan;
 
 /* ----------------

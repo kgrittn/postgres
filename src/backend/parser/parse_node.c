@@ -55,8 +55,6 @@ make_parsestate(ParseState *parentParseState)
 	if (parentParseState)
 	{
 		pstate->p_sourcetext = parentParseState->p_sourcetext;
-		/* tuplestores visible in parent */
-		pstate->p_tuplestores = parentParseState->p_tuplestores;
 		/* all hooks are copied from parent */
 		pstate->p_pre_columnref_hook = parentParseState->p_pre_columnref_hook;
 		pstate->p_post_columnref_hook = parentParseState->p_post_columnref_hook;

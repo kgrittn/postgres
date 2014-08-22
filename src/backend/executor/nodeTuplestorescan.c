@@ -17,6 +17,7 @@
 
 #include "executor/execdebug.h"
 #include "executor/nodeTuplestorescan.h"
+#include "executor/spi.h"
 #include "miscadmin.h"
 
 static TupleTableSlot *TuplestoreScanNext(TuplestoreScanState *node);
@@ -79,15 +80,10 @@ TuplestoreScanState *
 ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 {
 	TuplestoreScanState *scanstate;
+	Tsr		tsr;
 
 	/* check for unsupported flags */
-	Assert(!(eflags & EXEC_FLAG_MARK));
-
-	/*
-	 * Protect the tuplestore against accidental discard of leading rows by
-	 * flagging it as being capable of rewind.
-	 */
-	eflags |= EXEC_FLAG_REWIND;
+	Assert(!(eflags & (EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK)));
 
 	/*
 	 * TuplestoreScan should not have any children.
@@ -101,15 +97,15 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 	scanstate = makeNode(TuplestoreScanState);
 	scanstate->ss.ps.plan = (Plan *) node;
 	scanstate->ss.ps.state = estate;
-	scanstate->eflags = eflags;
 
-	scanstate->table = tuplestore_begin_heap(true, false, work_mem);
-	tuplestore_set_eflags(scanstate->table, scanstate->eflags);
-	scanstate->readptr = 0;
-
+	tsr = SPI_get_caller_tuplestore(node->tsrname);
+	if (!tsr)
+		elog(ERROR, "executor could not find named tuplestore \"%s\"",
+			 node->tsrname);
+	scanstate->table = tsr->tstate;
+	scanstate->tupdesc = tsr->tupdesc;
 	scanstate->readptr =
-		tuplestore_alloc_read_pointer(scanstate->table,
-									  scanstate->eflags);
+		tuplestore_alloc_read_pointer(scanstate->table, 0);
 
 	/*
 	 * Miscellaneous initialization
@@ -131,6 +127,7 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 	/*
 	 * tuple table initialization
 	 */
+	ExecInitResultTupleSlot(estate, &scanstate->ss.ps);
 	ExecInitScanTupleSlot(estate, &scanstate->ss);
 
 	/*

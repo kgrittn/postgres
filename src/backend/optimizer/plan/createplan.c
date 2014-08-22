@@ -123,7 +123,7 @@ static ValuesScan *make_valuesscan(List *qptlist, List *qpqual,
 static CteScan *make_ctescan(List *qptlist, List *qpqual,
 			 Index scanrelid, int ctePlanId, int cteParam);
 static TuplestoreScan *make_tuplestorescan(List *qptlist, List *qpqual,
-			 Index scanrelid);
+			 Index scanrelid, char *tsrname);
 static WorkTableScan *make_worktablescan(List *qptlist, List *qpqual,
 				   Index scanrelid, int wtParam);
 static BitmapAnd *make_bitmap_and(List *bitmapplans);
@@ -553,6 +553,7 @@ disuse_physical_tlist(PlannerInfo *root, Plan *plan, Path *path)
 		case T_FunctionScan:
 		case T_ValuesScan:
 		case T_CteScan:
+		case T_TuplestoreScan:
 		case T_WorkTableScan:
 		case T_ForeignScan:
 			plan->targetlist = build_path_tlist(root, path);
@@ -1915,7 +1916,8 @@ create_tuplestorescan_plan(PlannerInfo *root, Path *best_path,
 			replace_nestloop_params(root, (Node *) scan_clauses);
 	}
 
-	scan_plan = make_tuplestorescan(tlist, scan_clauses, scan_relid);
+	scan_plan = make_tuplestorescan(tlist, scan_clauses, scan_relid,
+									rte->tsrname);
 
 	copy_path_costsize(&scan_plan->scan.plan, best_path);
 
@@ -3491,7 +3493,8 @@ make_ctescan(List *qptlist,
 static TuplestoreScan *
 make_tuplestorescan(List *qptlist,
 					List *qpqual,
-					Index scanrelid)
+					Index scanrelid,
+					char *tsrname)
 {
 	TuplestoreScan *node = makeNode(TuplestoreScan);
 	Plan	   *plan = &node->scan.plan;
@@ -3502,6 +3505,7 @@ make_tuplestorescan(List *qptlist,
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
+	node->tsrname = tsrname;
 
 	return node;
 }

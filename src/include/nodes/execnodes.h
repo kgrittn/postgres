@@ -1489,7 +1489,6 @@ typedef struct CteScanState
 typedef struct TuplestoreScanState
 {
 	ScanState	ss;				/* its first field is NodeTag */
-	int			eflags;			/* capability flags to pass to tuplestore */
 	int			readptr;		/* index of my tuplestore read pointer */
 	TupleDesc	tupdesc;		/* format of the tuples in the tuplestore */
 	Tuplestorestate *table;		/* the rows */

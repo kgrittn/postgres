@@ -547,6 +547,8 @@ _outTuplestoreScan(StringInfo str, const TuplestoreScan *node)
 	WRITE_NODE_TYPE("TUPLESTORESCAN");
 
 	_outScanInfo(str, (const Scan *) node);
+
+	WRITE_STRING_FIELD(tsrname);
 }
 
 static void
@@ -1575,6 +1577,8 @@ _outTuplestoreRelation(StringInfo str, const TuplestoreRelation *node)
 	WRITE_NODE_TYPE("TUPLESTORERELATION");
 
 	_outPathInfo(str, (const Path *) node);
+
+	WRITE_STRING_FIELD(name);
 }
 
 static void

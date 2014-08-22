@@ -807,9 +807,10 @@ typedef struct RangeTblEntry
 	/*
 	 * Needed for tuplestore RTE...
 	 *
-	 * ... are the cte* List fields from CTE and relid.  We could duplicate
-	 * them here with slightly different names, but why?
+	 * ... include the cte* List fields from CTE and relid.  We could
+	 * duplicate them here with slightly different names, but why?
 	 */
+	char	   *tsrname;		/* name of tuplestore in registry */
 
 	/*
 	 * Fields valid in all RTEs:

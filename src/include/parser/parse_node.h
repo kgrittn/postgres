@@ -156,7 +156,6 @@ struct ParseState
 	bool		p_locked_from_parent;
 	Relation	p_target_relation;
 	RangeTblEntry *p_target_rangetblentry;
-	List	   *p_tuplestores;	/* named tuplestores which can be referenced */
 
 	/*
 	 * Optional hook functions for parser callbacks.  These are null unless

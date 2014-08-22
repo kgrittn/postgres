@@ -317,6 +317,11 @@ _copyTuplestoreRelation(const TuplestoreRelation *from)
 	 */
 	CopyPlanFields((const Plan *) from, (Plan *) newnode);
 
+	/*
+	 * copy remainder of node
+	 */
+	COPY_STRING_FIELD(name);
+
 	return newnode;
 }
 
@@ -580,6 +585,11 @@ _copyTuplestoreScan(const TuplestoreScan *from)
 	 * copy node superclass fields
 	 */
 	CopyScanFields((const Scan *) from, (Scan *) newnode);
+
+	/*
+	 * copy remainder of node
+	 */
+	COPY_STRING_FIELD(tsrname);
 
 	return newnode;
 }
@@ -2021,6 +2031,7 @@ _copyRangeTblEntry(const RangeTblEntry *from)
 	COPY_NODE_FIELD(ctecoltypes);
 	COPY_NODE_FIELD(ctecoltypmods);
 	COPY_NODE_FIELD(ctecolcollations);
+	COPY_STRING_FIELD(tsrname);
 	COPY_NODE_FIELD(alias);
 	COPY_NODE_FIELD(eref);
 	COPY_SCALAR_FIELD(lateral);

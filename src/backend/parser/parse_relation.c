@@ -26,12 +26,12 @@
 #include "nodes/nodeFuncs.h"
 #include "parser/parsetree.h"
 #include "parser/parse_relation.h"
+#include "parser/parse_tuplestore.h"
 #include "parser/parse_type.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
-#include "utils/tuplestore.h"
 
 
 static RangeTblEntry *scanNameSpaceForRefname(ParseState *pstate,
@@ -286,18 +286,11 @@ isFutureCTE(ParseState *pstate, const char *refname)
 TuplestoreRelation *
 scanNameSpaceForTsr(ParseState *pstate, const char *refname)
 {
-	ListCell   *l;
-
-	foreach(l, pstate->p_tuplestores)
+	if (name_matches_visible_tuplestore(refname))
 	{
-		Tsr tsr = (Tsr) lfirst(l);
-
-		if (strcmp(tsr->name, refname) == 0)
-		{
-			TuplestoreRelation *node = makeNode(TuplestoreRelation);
-			node->name = tsr->name;
-			return node;
-		}
+		TuplestoreRelation *node = makeNode(TuplestoreRelation);
+		node->name = (char *) refname;
+		return node;
 	}
 
 	return NULL;
@@ -324,6 +317,7 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	const char *refname = relation->relname;
 	Oid			relId = InvalidOid;
 	CommonTableExpr *cte = NULL;
+	TuplestoreRelation *tsr = NULL;
 	Index		ctelevelsup = 0;
 	Index		levelsup;
 
@@ -342,13 +336,14 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	if (!relation->schemaname)
 	{
 		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
-		/* FIXME: check for tuplestores here, too. */
+		if (!cte)
+			tsr = scanNameSpaceForTsr(pstate, refname);
 	}
 
-	if (!cte)
+	if (!cte && !tsr)
 		relId = RangeVarGetRelid(relation, NoLock, true);
 
-	/* Now look for RTEs matching either the relation/CTE or the alias */
+	/* Now look for RTEs matching either the relation/CTE/Tsr or the alias */
 	for (levelsup = 0;
 		 pstate != NULL;
 		 pstate = pstate->parentParseState, levelsup++)
@@ -367,6 +362,10 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 				cte != NULL &&
 				rte->ctelevelsup + levelsup == ctelevelsup &&
 				strcmp(rte->ctename, refname) == 0)
+				return rte;
+			if (rte->rtekind == RTE_TUPLESTORE &&
+				tsr != NULL &&
+				strcmp(tsr->name, refname) == 0)
 				return rte;
 			if (strcmp(rte->eref->aliasname, refname) == 0)
 				return rte;
@@ -1733,7 +1732,11 @@ addRangeTableEntryForTsr(ParseState *pstate,
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
 	Alias	   *alias = rv->alias;
 	char	   *refname = alias ? alias->aliasname : tsrNode->name;
-	ListCell   *lc;
+	Tsr			tsr = get_visible_tuplestore(tsrNode->name);
+	TupleDesc	tupdesc;
+	int			attno;
+
+	Assert(tsr != NULL);
 
 	rte->rtekind = RTE_TUPLESTORE;
 
@@ -1741,32 +1744,26 @@ addRangeTableEntryForTsr(ParseState *pstate,
 	 * Build the list of effective column names using user-supplied aliases
 	 * and/or actual column names.  Also build the cannibalized fields.
 	 */
+	tupdesc = tsr->tupdesc;
 	rte->eref = makeAlias(refname, NIL);
-	foreach(lc, pstate->p_tuplestores)
+	buildRelationAliases(tupdesc, alias, rte->eref);
+	rte->relid = tsr->relid;
+	rte->tsrname = tsr->name;
+
+	rte->ctecoltypes = NIL;
+	rte->ctecoltypmods = NIL;
+	rte->ctecolcollations = NIL;
+	for (attno = 1; attno <= tupdesc->natts; ++attno)
 	{
-		Tsr tsr = (Tsr) lfirst(lc);
-
-		if (tsr->name == tsrNode->name)
-		{
-			TupleDesc tupdesc = tsr->tupdesc;
-			int		attno;
-
-			buildRelationAliases(tupdesc, alias, rte->eref);
-			rte->relid = tsr->relid;
-
-			rte->ctecoltypes = NIL;
-			rte->ctecoltypmods = NIL;
-			rte->ctecolcollations = NIL;
-			for (attno = 1; attno <= tupdesc->natts; ++attno)
-			{
-				rte->ctecoltypes = lappend_oid(rte->ctecoltypes,
-											   tupdesc->attrs[attno - 1]->atttypid);
-				rte->ctecoltypmods = lappend_int(rte->ctecoltypmods,
-												 tupdesc->attrs[attno - 1]->atttypmod);
-				rte->ctecolcollations = lappend_oid(rte->ctecolcollations,
-													tupdesc->attrs[attno - 1]->attcollation);
-			}
-		}
+		rte->ctecoltypes =
+			lappend_oid(rte->ctecoltypes,
+						tupdesc->attrs[attno - 1]->atttypid);
+		rte->ctecoltypmods =
+			lappend_int(rte->ctecoltypmods,
+						tupdesc->attrs[attno - 1]->atttypmod);
+		rte->ctecolcollations =
+			lappend_oid(rte->ctecolcollations,
+						tupdesc->attrs[attno - 1]->attcollation);
 	}
 
 	/*
