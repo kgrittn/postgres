@@ -3949,9 +3949,11 @@ set_tuplestore_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 	rte = planner_rt_fetch(rel->relid, root);
 	Assert(rte->rtekind == RTE_TUPLESTORE);
 
-	
-	// FIXME: Check numbers in the Tuplestorestate
-	
+	/*
+	 * bogus default estimate for now; maybe we can arrange to get better from
+	 * the tuplestore some day
+	 */
+	rel->tuples = 1000;
 
 	/* Now estimate number of output rows, etc */
 	set_baserel_size_estimates(root, rel);
