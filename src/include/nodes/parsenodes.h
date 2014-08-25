@@ -1344,6 +1344,8 @@ typedef enum AlterTableType
 	AT_ChangeOwner,				/* change owner */
 	AT_ClusterOn,				/* CLUSTER ON */
 	AT_DropCluster,				/* SET WITHOUT CLUSTER */
+	AT_SetLogged,				/* SET LOGGED */
+	AT_SetUnLogged,				/* SET UNLOGGED */
 	AT_AddOids,					/* SET WITH OIDS */
 	AT_AddOidsRecurse,			/* internal to commands/tablecmds.c */
 	AT_DropOids,				/* SET WITHOUT OIDS */
