@@ -2018,6 +2018,7 @@ typedef struct CreateSeqStmt
 	RangeVar   *sequence;		/* the sequence to create */
 	List	   *options;
 	Oid			ownerId;		/* ID of owner, or InvalidOid for default */
+	bool		if_not_exists;	/* just do nothing if it already exists? */
 } CreateSeqStmt;
 
 typedef struct AlterSeqStmt
