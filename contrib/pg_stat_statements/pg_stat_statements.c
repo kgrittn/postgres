@@ -2250,6 +2250,9 @@ JumbleRangeTable(pgssJumbleState *jstate, List *rtable)
 				APP_JUMB_STRING(rte->ctename);
 				APP_JUMB(rte->ctelevelsup);
 				break;
+			case RTE_TUPLESTORE:
+				APP_JUMB_STRING(rte->tsrname);
+				break;
 			default:
 				elog(ERROR, "unrecognized RTE kind: %d", (int) rte->rtekind);
 				break;
@@ -2636,6 +2639,13 @@ JumbleExpr(pgssJumbleState *jstate, Node *node)
 				/* we store the string name because RTE_CTE RTEs need it */
 				APP_JUMB_STRING(cte->ctename);
 				JumbleQuery(jstate, (Query *) cte->ctequery);
+			}
+			break;
+		case T_TuplestoreRelation:
+			{
+				TuplestoreRelation *tsr = (TuplestoreRelation *) node;
+
+				APP_JUMB_STRING(tsr->name);
 			}
 			break;
 		case T_SetOperationStmt:

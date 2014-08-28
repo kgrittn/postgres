@@ -2180,6 +2180,7 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 			}
 			break;
 		case RTE_CTE:
+		case RTE_TUPLESTORE:
 			{
 				ListCell   *aliasp_item = list_head(rte->eref->colnames);
 				ListCell   *lct;
@@ -2653,6 +2654,16 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 		case RTE_CTE:
 			/* Subselect, Values, CTE RTEs never have dropped columns */
 			result = false;
+			break;
+		case RTE_TUPLESTORE:
+			{
+				Tsr		tsr;
+
+				Assert(rte->tsrname);
+				tsr = get_visible_tuplestore(rte->tsrname);
+				Assert(tsr);
+				result = tsr->tupdesc->attrs[attnum - 1]->attisdropped;
+			}
 			break;
 		case RTE_JOIN:
 			{

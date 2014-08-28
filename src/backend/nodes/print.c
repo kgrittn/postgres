@@ -287,6 +287,10 @@ print_rt(const List *rtable)
 				printf("%d\t%s\t[cte]",
 					   i, rte->eref->aliasname);
 				break;
+			case RTE_TUPLESTORE:
+				printf("%d\t%s\t[tuplestore]",
+					   i, rte->eref->aliasname);
+				break;
 			default:
 				printf("%d\t%s\t[unknown rtekind]",
 					   i, rte->eref->aliasname);
