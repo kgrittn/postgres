@@ -32,6 +32,7 @@
 #define TUPLESTORE_H
 
 #include "executor/tuptable.h"
+#include "utils/tsrmd.h"
 
 
 /* Tuplestorestate is an opaque type whose details are not known outside
@@ -45,10 +46,8 @@ typedef struct Tuplestorestate Tuplestorestate;
  */
 typedef struct TsrData
 {
-	char			   *name;		/* name used to identify the tuplestore */
+	TsrmdData	md;
 	Tuplestorestate	   *tstate;		/* data (or tids) */
-	TupleDesc			tupdesc;	/* description of result rows */
-	Oid					relid;		/* rel to use for statistics, if any */
 } TsrData;
 
 typedef TsrData *Tsr;

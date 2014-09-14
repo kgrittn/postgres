@@ -15,8 +15,9 @@
 #define PARSE_TUPLESTORE_H
 
 #include "nodes/parsenodes.h"
+#include "utils/tsrmd.h"
 
 extern bool name_matches_visible_tuplestore(const char *refname);
-extern Tsr get_visible_tuplestore(const char *refname);
+extern Tsrmd get_visible_tuplestore(const char *refname);
 
 #endif   /* PARSE_TUPLESTORE_H */

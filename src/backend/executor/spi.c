@@ -2723,7 +2723,7 @@ _SPI_find_tsr_by_name(const char *name)
 	{
 		Tsr tsr = (Tsr) lfirst(lc);
 
-		if (strcmp(tsr->name, name) == 0)
+		if (strcmp(tsr->md.name, name) == 0)
 		{
 			match = tsr;
 			break;
@@ -2743,14 +2743,14 @@ SPI_register_tuplestore(Tsr tsr)
 	Tsr			match;
 	int			res;
 
-	if (tsr == NULL || tsr->name == NULL)
+	if (tsr == NULL || tsr->md.name == NULL)
 		return SPI_ERROR_ARGUMENT;
 
 	res = _SPI_begin_call(false);	/* keep current memory context */
 	if (res < 0)
 		return res;
 
-	match = _SPI_find_tsr_by_name(tsr->name);
+	match = _SPI_find_tsr_by_name(tsr->md.name);
 	if (match)
 		res = SPI_ERROR_TSR_DUPLICATE;
 	else
@@ -2827,7 +2827,7 @@ SPI_get_caller_tuplestore(const char *name)
 	{
 		Tsr tsr = (Tsr) lfirst(lc);
 
-		if (strcmp(tsr->name, name) == 0)
+		if (strcmp(tsr->md.name, name) == 0)
 		{
 			match = tsr;
 			break;

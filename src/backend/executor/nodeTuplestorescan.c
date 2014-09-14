@@ -103,7 +103,7 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 		elog(ERROR, "executor could not find named tuplestore \"%s\"",
 			 node->tsrname);
 	scanstate->table = tsr->tstate;
-	scanstate->tupdesc = tsr->tupdesc;
+	scanstate->tupdesc = tsr->md.tupdesc;
 	scanstate->readptr =
 		tuplestore_alloc_read_pointer(scanstate->table, 0);
 

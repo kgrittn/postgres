@@ -20,7 +20,7 @@
 
 #include "executor/spi.h"
 #include "parser/parse_tuplestore.h"
-#include "utils/tuplestore.h"
+#include "utils/tsrmd.h"
 
 bool
 name_matches_visible_tuplestore(const char *refname)
@@ -28,8 +28,8 @@ name_matches_visible_tuplestore(const char *refname)
 	return (SPI_get_caller_tuplestore(refname) != NULL);
 }
 
-Tsr
+Tsrmd
 get_visible_tuplestore(const char *refname)
 {
-	return SPI_get_caller_tuplestore(refname);
+	return &(SPI_get_caller_tuplestore(refname)->md);
 }

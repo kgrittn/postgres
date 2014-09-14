@@ -1732,11 +1732,11 @@ addRangeTableEntryForTsr(ParseState *pstate,
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
 	Alias	   *alias = rv->alias;
 	char	   *refname = alias ? alias->aliasname : tsrel->refname;
-	Tsr			tsr = get_visible_tuplestore(tsrel->refname);
+	Tsrmd		tsrmd = get_visible_tuplestore(tsrel->refname);
 	TupleDesc	tupdesc;
 	int			attno;
 
-	Assert(tsr != NULL);
+	Assert(tsrmd != NULL);
 
 	rte->rtekind = RTE_TUPLESTORE;
 
@@ -1744,11 +1744,10 @@ addRangeTableEntryForTsr(ParseState *pstate,
 	 * Build the list of effective column names using user-supplied aliases
 	 * and/or actual column names.  Also build the cannibalized fields.
 	 */
-	tupdesc = tsr->tupdesc;
+	tupdesc = tsrmd->tupdesc;
 	rte->eref = makeAlias(refname, NIL);
 	buildRelationAliases(tupdesc, alias, rte->eref);
-	rte->relid = tsr->relid;
-	rte->tsrname = tsr->name;
+	rte->tsrname = tsrmd->name;
 
 	rte->ctecoltypes = NIL;
 	rte->ctecoltypmods = NIL;
@@ -2657,12 +2656,12 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 			break;
 		case RTE_TUPLESTORE:
 			{
-				Tsr		tsr;
+				Tsrmd	tsrmd;
 
 				Assert(rte->tsrname);
-				tsr = get_visible_tuplestore(rte->tsrname);
-				Assert(tsr);
-				result = tsr->tupdesc->attrs[attnum - 1]->attisdropped;
+				tsrmd = get_visible_tuplestore(rte->tsrname);
+				Assert(tsrmd);
+				result = tsrmd->tupdesc->attrs[attnum - 1]->attisdropped;
 			}
 			break;
 		case RTE_JOIN:

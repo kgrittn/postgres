@@ -590,20 +590,18 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	{
 		Tsr tsr = palloc(sizeof(TsrData));
 
-		tsr->name = trigdata->tg_trigger->tgnewtable;
+		tsr->md.name = trigdata->tg_trigger->tgnewtable;
+		tsr->md.tupdesc = trigdata->tg_relation->rd_att;
 		tsr->tstate = trigdata->tg_newtable;
-		tsr->tupdesc = trigdata->tg_relation->rd_att;
-		tsr->relid = trigdata->tg_relation->rd_id;
 		SPI_register_tuplestore(tsr);
 	}
 	if (trigdata->tg_oldtable)
 	{
 		Tsr tsr = palloc(sizeof(TsrData));
 
-		tsr->name = trigdata->tg_trigger->tgoldtable;
+		tsr->md.name = trigdata->tg_trigger->tgoldtable;
+		tsr->md.tupdesc = trigdata->tg_relation->rd_att;
 		tsr->tstate = trigdata->tg_oldtable;
-		tsr->tupdesc = trigdata->tg_relation->rd_att;
-		tsr->relid = trigdata->tg_relation->rd_id;
 		SPI_register_tuplestore(tsr);
 	}
 
