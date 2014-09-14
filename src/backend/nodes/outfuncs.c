@@ -1578,7 +1578,7 @@ _outTuplestoreRelation(StringInfo str, const TuplestoreRelation *node)
 
 	_outPathInfo(str, (const Path *) node);
 
-	WRITE_STRING_FIELD(name);
+	WRITE_STRING_FIELD(refname);
 }
 
 static void

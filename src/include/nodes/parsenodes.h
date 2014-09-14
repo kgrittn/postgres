@@ -1060,7 +1060,7 @@ typedef struct TriggerTransition
 typedef struct TuplestoreRelation
 {
 	NodeTag		type;
-	char	   *name;
+	char	   *refname;
 } TuplestoreRelation;
 
 /*****************************************************************************

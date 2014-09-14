@@ -320,7 +320,7 @@ _copyTuplestoreRelation(const TuplestoreRelation *from)
 	/*
 	 * copy remainder of node
 	 */
-	COPY_STRING_FIELD(name);
+	COPY_STRING_FIELD(refname);
 
 	return newnode;
 }

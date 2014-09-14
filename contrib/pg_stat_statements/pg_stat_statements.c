@@ -2645,7 +2645,7 @@ JumbleExpr(pgssJumbleState *jstate, Node *node)
 			{
 				TuplestoreRelation *tsr = (TuplestoreRelation *) node;
 
-				APP_JUMB_STRING(tsr->name);
+				APP_JUMB_STRING(tsr->refname);
 			}
 			break;
 		case T_SetOperationStmt:

@@ -36,7 +36,6 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
-#include "utils/tuplestore.h"
 
 
 /* Convenience macro for the most common makeNamespaceItem() case */
@@ -450,11 +449,11 @@ transformCTEReference(ParseState *pstate, RangeVar *r,
  */
 static RangeTblEntry *
 transformTsrReference(ParseState *pstate, RangeVar *r,
-					  TuplestoreRelation *tsr)
+					  TuplestoreRelation *tsrel)
 {
 	RangeTblEntry *rte;
 
-	rte = addRangeTableEntryForTsr(pstate, tsr, r, true);
+	rte = addRangeTableEntryForTsr(pstate, tsrel, r, true);
 
 	return rte;
 }
@@ -769,11 +768,11 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 				rte = transformCTEReference(pstate, rv, cte, levelsup);
 			else
 			{
-				TuplestoreRelation *tsr;
+				TuplestoreRelation *tsrel;
 
-				tsr = scanNameSpaceForTsr(pstate, rv->relname);
-				if (tsr)
-					rte = transformTsrReference(pstate, rv, tsr);
+				tsrel = scanNameSpaceForTsr(pstate, rv->relname);
+				if (tsrel)
+					rte = transformTsrReference(pstate, rv, tsrel);
 			}
 		}
 

@@ -288,9 +288,9 @@ scanNameSpaceForTsr(ParseState *pstate, const char *refname)
 {
 	if (name_matches_visible_tuplestore(refname))
 	{
-		TuplestoreRelation *node = makeNode(TuplestoreRelation);
-		node->name = (char *) refname;
-		return node;
+		TuplestoreRelation *tsrel = makeNode(TuplestoreRelation);
+		tsrel->refname = (char *) refname;
+		return tsrel;
 	}
 
 	return NULL;
@@ -317,7 +317,7 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	const char *refname = relation->relname;
 	Oid			relId = InvalidOid;
 	CommonTableExpr *cte = NULL;
-	TuplestoreRelation *tsr = NULL;
+	TuplestoreRelation *tsrel = NULL;
 	Index		ctelevelsup = 0;
 	Index		levelsup;
 
@@ -337,10 +337,10 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	{
 		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
 		if (!cte)
-			tsr = scanNameSpaceForTsr(pstate, refname);
+			tsrel = scanNameSpaceForTsr(pstate, refname);
 	}
 
-	if (!cte && !tsr)
+	if (!cte && !tsrel)
 		relId = RangeVarGetRelid(relation, NoLock, true);
 
 	/* Now look for RTEs matching either the relation/CTE/Tsr or the alias */
@@ -364,8 +364,8 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 				strcmp(rte->ctename, refname) == 0)
 				return rte;
 			if (rte->rtekind == RTE_TUPLESTORE &&
-				tsr != NULL &&
-				strcmp(tsr->name, refname) == 0)
+				tsrel != NULL &&
+				strcmp(tsrel->refname, refname) == 0)
 				return rte;
 			if (strcmp(rte->eref->aliasname, refname) == 0)
 				return rte;
@@ -1725,14 +1725,14 @@ addRangeTableEntryForCTE(ParseState *pstate,
  */
 RangeTblEntry *
 addRangeTableEntryForTsr(ParseState *pstate,
-						 TuplestoreRelation *tsrNode,
+						 TuplestoreRelation *tsrel,
 						 RangeVar *rv,
 						 bool inFromCl)
 {
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
 	Alias	   *alias = rv->alias;
-	char	   *refname = alias ? alias->aliasname : tsrNode->name;
-	Tsr			tsr = get_visible_tuplestore(tsrNode->name);
+	char	   *refname = alias ? alias->aliasname : tsrel->refname;
+	Tsr			tsr = get_visible_tuplestore(tsrel->refname);
 	TupleDesc	tupdesc;
 	int			attno;
 
