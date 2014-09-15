@@ -405,7 +405,7 @@ DefineView(ViewStmt *stmt, const char *queryString)
 	 * this ensures we don't corrupt a prepared statement, for example.
 	 */
 	viewParse = parse_analyze((Node *) copyObject(stmt->query),
-							  queryString, NULL, 0);
+							  queryString, NULL, 0, NULL);
 
 	/*
 	 * The grammar should ensure that the result is a single SELECT Query.

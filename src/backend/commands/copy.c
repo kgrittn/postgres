@@ -1308,7 +1308,7 @@ BeginCopy(bool is_from,
 		 * DECLARE CURSOR and PREPARE.)  XXX FIXME someday.
 		 */
 		rewritten = pg_analyze_and_rewrite((Node *) copyObject(raw_query),
-										   queryString, NULL, 0);
+										   queryString, NULL, 0, NULL);
 
 		/* We don't expect more or less than one result query */
 		if (list_length(rewritten) != 1)

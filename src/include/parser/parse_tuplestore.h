@@ -14,10 +14,11 @@
 #ifndef PARSE_TUPLESTORE_H
 #define PARSE_TUPLESTORE_H
 
-#include "nodes/parsenodes.h"
-#include "utils/tsrmd.h"
+#include "parser/parse_node.h"
 
-extern bool name_matches_visible_tuplestore(const char *refname);
-extern Tsrmd get_visible_tuplestore(const char *refname);
+extern bool name_matches_visible_tuplestore(ParseState *pstate,
+											const char *refname);
+extern Tsrmd get_visible_tuplestore(ParseState *pstate,
+									const char *refname);
 
 #endif   /* PARSE_TUPLESTORE_H */

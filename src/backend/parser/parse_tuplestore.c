@@ -18,18 +18,17 @@
  */
 #include "postgres.h"
 
-#include "executor/spi.h"
 #include "parser/parse_tuplestore.h"
-#include "utils/tsrmd.h"
 
 bool
-name_matches_visible_tuplestore(const char *refname)
+name_matches_visible_tuplestore(ParseState *pstate, const char *refname)
 {
-	return (SPI_get_caller_tuplestore(refname) != NULL);
+	return (get_visible_tuplestore_metadata(pstate->p_tsrcache,
+											refname) != NULL);
 }
 
 Tsrmd
-get_visible_tuplestore(const char *refname)
+get_visible_tuplestore(ParseState *pstate, const char *refname)
 {
-	return &(SPI_get_caller_tuplestore(refname)->md);
+	return get_visible_tuplestore_metadata(pstate->p_tsrcache, refname);
 }

@@ -286,7 +286,7 @@ isFutureCTE(ParseState *pstate, const char *refname)
 TuplestoreRelation *
 scanNameSpaceForTsr(ParseState *pstate, const char *refname)
 {
-	if (name_matches_visible_tuplestore(refname))
+	if (name_matches_visible_tuplestore(pstate, refname))
 	{
 		TuplestoreRelation *tsrel = makeNode(TuplestoreRelation);
 		tsrel->refname = (char *) refname;
@@ -1732,7 +1732,7 @@ addRangeTableEntryForTsr(ParseState *pstate,
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
 	Alias	   *alias = rv->alias;
 	char	   *refname = alias ? alias->aliasname : tsrel->refname;
-	Tsrmd		tsrmd = get_visible_tuplestore(tsrel->refname);
+	Tsrmd		tsrmd = get_visible_tuplestore(pstate, tsrel->refname);
 	TupleDesc	tupdesc;
 	int			attno;
 
@@ -1754,6 +1754,10 @@ addRangeTableEntryForTsr(ParseState *pstate,
 	rte->ctecolcollations = NIL;
 	for (attno = 1; attno <= tupdesc->natts; ++attno)
 	{
+		if (tupdesc->attrs[attno - 1]->atttypid == InvalidOid &&
+			!(tupdesc->attrs[attno - 1]->attisdropped))
+			elog(ERROR, "atttypid was invalid for column which has not been dropped from \"%s\"",
+				 tsrel->refname);
 		rte->ctecoltypes =
 			lappend_oid(rte->ctecoltypes,
 						tupdesc->attrs[attno - 1]->atttypid);
@@ -2659,9 +2663,13 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 				Tsrmd	tsrmd;
 
 				Assert(rte->tsrname);
-				tsrmd = get_visible_tuplestore(rte->tsrname);
-				Assert(tsrmd);
-				result = tsrmd->tupdesc->attrs[attnum - 1]->attisdropped;
+
+				/*
+				 * We checked when we loaded ctecoltypes that InvalidOid was
+				 * only used for dropped columns.
+				 */
+				result =
+					(list_nth(rte->ctecoltypes, attnum - 1) != InvalidOid);
 			}
 			break;
 		case RTE_JOIN:

@@ -1858,14 +1858,16 @@ _SPI_prepare_plan(const char *src, SPIPlanPtr plan)
 			stmt_list = pg_analyze_and_rewrite_params(parsetree,
 													  src,
 													  plan->parserSetup,
-													  plan->parserSetupArg);
+													  plan->parserSetupArg,
+													  _SPI_current->tuplestores);
 		}
 		else
 		{
 			stmt_list = pg_analyze_and_rewrite(parsetree,
 											   src,
 											   plan->argtypes,
-											   plan->nargs);
+											   plan->nargs,
+											   _SPI_current->tuplestores);
 		}
 
 		/* Finish filling in the CachedPlanSource */
@@ -2052,14 +2054,16 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 				stmt_list = pg_analyze_and_rewrite_params(parsetree,
 														  src,
 														  plan->parserSetup,
-													   plan->parserSetupArg);
+													   plan->parserSetupArg,
+													  _SPI_current->tuplestores);
 			}
 			else
 			{
 				stmt_list = pg_analyze_and_rewrite(parsetree,
 												   src,
 												   plan->argtypes,
-												   plan->nargs);
+												   plan->nargs,
+												   _SPI_current->tuplestores);
 			}
 
 			/* Finish filling in the CachedPlanSource */

@@ -43,8 +43,10 @@ get_visible_tuplestore_metadata(Tsrcache *tsrcache, const char *refname)
 {
 	Tsr		tsr;
 
-	Assert(tsrcache != NULL);
 	Assert(refname != NULL);
+
+	if (tsrcache == NULL)
+		return NULL;
 
 	tsr = get_tsr(tsrcache, refname);
 
@@ -92,8 +94,10 @@ get_tsr(Tsrcache *tsrcache, const char *name)
 {
 	ListCell   *lc;
 
-	Assert(tsrcache != NULL);
 	Assert(name != NULL);
+
+	if (tsrcache == NULL)
+		return NULL;
 
 	foreach(lc, tsrcache->tsrlist)
 	{
