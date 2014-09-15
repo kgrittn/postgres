@@ -130,7 +130,7 @@ SPI_connect(void)
 	_SPI_current->procCxt = NULL;		/* in case we fail to create 'em */
 	_SPI_current->execCxt = NULL;
 	_SPI_current->connectSubid = GetCurrentSubTransactionId();
-	_SPI_current->tuplestores = NIL;
+	_SPI_current->tuplestores = NULL;
 
 	/*
 	 * Create memory contexts for this procedure
@@ -2710,27 +2710,17 @@ _SPI_save_plan(SPIPlanPtr plan)
 static Tsr
 _SPI_find_tsr_by_name(const char *name)
 {
-	Tsr			match = NULL;
-	ListCell   *lc;
-
 	/* internal static function; any error is bug in SPI itself */
 	Assert(name != NULL);
 	Assert(_SPI_curid >= 0);
 	Assert(_SPI_curid == _SPI_connected);
 	Assert(_SPI_current == &(_SPI_stack[_SPI_curid]));
 
-	foreach(lc, _SPI_current->tuplestores)
-	{
-		Tsr tsr = (Tsr) lfirst(lc);
+	/* fast exit if no tuplestores have been added */
+	if (_SPI_current->tuplestores == NULL)
+		return NULL;
 
-		if (strcmp(tsr->md.name, name) == 0)
-		{
-			match = tsr;
-			break;
-		}
-	}
-
-	return match;
+	return get_tsr(_SPI_current->tuplestores, name);
 }
 
 /*
@@ -2755,7 +2745,10 @@ SPI_register_tuplestore(Tsr tsr)
 		res = SPI_ERROR_TSR_DUPLICATE;
 	else
 	{
-		_SPI_current->tuplestores = lappend(_SPI_current->tuplestores, tsr);
+		if (_SPI_current->tuplestores == NULL)
+			_SPI_current->tuplestores = create_tsrcache();
+
+		register_tsr(_SPI_current->tuplestores, tsr);
 		res = SPI_OK_TSR_REGISTER;
 	}
 
@@ -2784,8 +2777,7 @@ SPI_unregister_tuplestore(const char *name)
 	match = _SPI_find_tsr_by_name(name);
 	if (match)
 	{
-		_SPI_current->tuplestores = list_delete(_SPI_current->tuplestores,
-												match);
+		unregister_tsr(_SPI_current->tuplestores, match->md.name);
 		res = SPI_OK_TSR_UNREGISTER;
 	}
 	else
@@ -2807,9 +2799,6 @@ SPI_unregister_tuplestore(const char *name)
 Tsr
 SPI_get_caller_tuplestore(const char *name)
 {
-	Tsr			match;
-	ListCell   *lc;
-
 	if (name == NULL)
 	{
 		SPI_result = SPI_ERROR_ARGUMENT;
@@ -2822,17 +2811,5 @@ SPI_get_caller_tuplestore(const char *name)
 		return NULL;
 	}
 
-	match = NULL;
-	foreach(lc, _SPI_stack[_SPI_curid].tuplestores)
-	{
-		Tsr tsr = (Tsr) lfirst(lc);
-
-		if (strcmp(tsr->md.name, name) == 0)
-		{
-			match = tsr;
-			break;
-		}
-	}
-
-	return match;
+	return _SPI_find_tsr_by_name(name);
 }
