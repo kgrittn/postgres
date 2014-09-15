@@ -21,6 +21,7 @@
 #include "nodes/plannodes.h"
 #include "utils/reltrigger.h"
 #include "utils/sortsupport.h"
+#include "utils/tsrcache.h"
 #include "utils/tuplestore.h"
 
 
@@ -367,6 +368,9 @@ typedef struct EState
 	/* Parameter info: */
 	ParamListInfo es_param_list_info;	/* values of external params */
 	ParamExecData *es_param_exec_vals;	/* values of internal params */
+
+	/* Named tuplestores */
+	Tsrcache   *es_tsrcache;	/* for TuplestoreScan nodes */
 
 	/* Other working state: */
 	MemoryContext es_query_cxt; /* per-query context in which EState lives */

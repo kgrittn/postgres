@@ -22,6 +22,7 @@
 #include "commands/event_trigger.h"
 #include "commands/trigger.h"
 #include "executor/spi.h"
+#include "utils/tsrcache.h"
 
 /**********************************************************************
  * Definitions
@@ -781,6 +782,9 @@ typedef struct PLpgSQL_execstate
 	int			found_varno;
 	int			ndatums;
 	PLpgSQL_datum **datums;
+
+	/* the named tuplestores to use */
+	Tsrcache	*tsrcache;
 
 	/* EState to use for "simple" expression evaluation */
 	EState	   *simple_eval_estate;

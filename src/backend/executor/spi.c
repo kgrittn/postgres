@@ -2167,7 +2167,8 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 										plansource->query_string,
 										snap, crosscheck_snapshot,
 										dest,
-										paramLI, 0);
+										paramLI, _SPI_current->tuplestores,
+										0);
 				res = _SPI_pquery(qdesc, fire_triggers,
 								  canSetTag ? tcount : 0);
 				FreeQueryDesc(qdesc);
@@ -2180,6 +2181,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 							   plansource->query_string,
 							   PROCESS_UTILITY_QUERY,
 							   paramLI,
+							   _SPI_current->tuplestores,
 							   dest,
 							   completionTag);
 

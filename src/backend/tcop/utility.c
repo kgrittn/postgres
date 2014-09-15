@@ -63,6 +63,7 @@
 #include "utils/acl.h"
 #include "utils/guc.h"
 #include "utils/syscache.h"
+#include "utils/tsrcache.h"
 
 
 /* Hook for plugins to get control in ProcessUtility() */
@@ -73,6 +74,7 @@ static void ProcessUtilitySlow(Node *parsetree,
 				   const char *queryString,
 				   ProcessUtilityContext context,
 				   ParamListInfo params,
+				   Tsrcache *tsrcache,
 				   DestReceiver *dest,
 				   char *completionTag);
 static void ExecDropStmt(DropStmt *stmt, bool isTopLevel);
@@ -293,6 +295,7 @@ ProcessUtility(Node *parsetree,
 			   const char *queryString,
 			   ProcessUtilityContext context,
 			   ParamListInfo params,
+			   Tsrcache *tsrcache,
 			   DestReceiver *dest,
 			   char *completionTag)
 {
@@ -305,11 +308,11 @@ ProcessUtility(Node *parsetree,
 	 */
 	if (ProcessUtility_hook)
 		(*ProcessUtility_hook) (parsetree, queryString,
-								context, params,
+								context, params, tsrcache,
 								dest, completionTag);
 	else
 		standard_ProcessUtility(parsetree, queryString,
-								context, params,
+								context, params, tsrcache,
 								dest, completionTag);
 }
 
@@ -329,6 +332,7 @@ standard_ProcessUtility(Node *parsetree,
 						const char *queryString,
 						ProcessUtilityContext context,
 						ParamListInfo params,
+						Tsrcache *tsrcache,
 						DestReceiver *dest,
 						char *completionTag)
 {
@@ -643,7 +647,8 @@ standard_ProcessUtility(Node *parsetree,
 			break;
 
 		case T_ExplainStmt:
-			ExplainQuery((ExplainStmt *) parsetree, queryString, params, dest);
+			ExplainQuery((ExplainStmt *) parsetree, queryString, params,
+						 tsrcache, dest);
 			break;
 
 		case T_AlterSystemStmt:
@@ -786,7 +791,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->removeType))
 					ProcessUtilitySlow(parsetree, queryString,
-									   context, params,
+									   context, params, tsrcache,
 									   dest, completionTag);
 				else
 					ExecDropStmt(stmt, isTopLevel);
@@ -799,7 +804,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->renameType))
 					ProcessUtilitySlow(parsetree, queryString,
-									   context, params,
+									   context, params, tsrcache,
 									   dest, completionTag);
 				else
 					ExecRenameStmt(stmt);
@@ -812,7 +817,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(parsetree, queryString,
-									   context, params,
+									   context, params, tsrcache,
 									   dest, completionTag);
 				else
 					ExecAlterObjectSchemaStmt(stmt);
@@ -825,7 +830,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(parsetree, queryString,
-									   context, params,
+									   context, params, tsrcache,
 									   dest, completionTag);
 				else
 					ExecAlterOwnerStmt(stmt);
@@ -835,7 +840,7 @@ standard_ProcessUtility(Node *parsetree,
 		default:
 			/* All other statement types have event trigger support */
 			ProcessUtilitySlow(parsetree, queryString,
-							   context, params,
+							   context, params, tsrcache,
 							   dest, completionTag);
 			break;
 	}
@@ -851,6 +856,7 @@ ProcessUtilitySlow(Node *parsetree,
 				   const char *queryString,
 				   ProcessUtilityContext context,
 				   ParamListInfo params,
+				   Tsrcache *tsrcache,
 				   DestReceiver *dest,
 				   char *completionTag)
 {
@@ -941,6 +947,7 @@ ProcessUtilitySlow(Node *parsetree,
 										   queryString,
 										   PROCESS_UTILITY_SUBCOMMAND,
 										   params,
+										   NULL,
 										   None_Receiver,
 										   NULL);
 						}
@@ -993,6 +1000,7 @@ ProcessUtilitySlow(Node *parsetree,
 											   queryString,
 											   PROCESS_UTILITY_SUBCOMMAND,
 											   params,
+											   NULL,
 											   None_Receiver,
 											   NULL);
 							}
@@ -1242,7 +1250,7 @@ ProcessUtilitySlow(Node *parsetree,
 
 			case T_CreateTableAsStmt:
 				ExecCreateTableAs((CreateTableAsStmt *) parsetree,
-								  queryString, params, completionTag);
+								  queryString, params, tsrcache, completionTag);
 				break;
 
 			case T_RefreshMatViewStmt:

@@ -586,23 +586,29 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	 * Capture the NEW and OLD transition TABLE tuplestores (if specified for
 	 * this trigger).
 	 */
-	if (trigdata->tg_newtable)
+	if (trigdata->tg_newtable || trigdata->tg_oldtable)
 	{
-		Tsr tsr = palloc(sizeof(TsrData));
+		estate.tsrcache = create_tsrcache();
+		if (trigdata->tg_newtable)
+		{
+			Tsr tsr = palloc(sizeof(TsrData));
 
-		tsr->md.name = trigdata->tg_trigger->tgnewtable;
-		tsr->md.tupdesc = trigdata->tg_relation->rd_att;
-		tsr->tstate = trigdata->tg_newtable;
-		SPI_register_tuplestore(tsr);
-	}
-	if (trigdata->tg_oldtable)
-	{
-		Tsr tsr = palloc(sizeof(TsrData));
+			tsr->md.name = trigdata->tg_trigger->tgnewtable;
+			tsr->md.tupdesc = trigdata->tg_relation->rd_att;
+			tsr->tstate = trigdata->tg_newtable;
+			register_tsr(estate.tsrcache, tsr);
+			SPI_register_tuplestore(tsr);
+		}
+		if (trigdata->tg_oldtable)
+		{
+			Tsr tsr = palloc(sizeof(TsrData));
 
-		tsr->md.name = trigdata->tg_trigger->tgoldtable;
-		tsr->md.tupdesc = trigdata->tg_relation->rd_att;
-		tsr->tstate = trigdata->tg_oldtable;
-		SPI_register_tuplestore(tsr);
+			tsr->md.name = trigdata->tg_trigger->tgoldtable;
+			tsr->md.tupdesc = trigdata->tg_relation->rd_att;
+			tsr->tstate = trigdata->tg_oldtable;
+			register_tsr(estate.tsrcache, tsr);
+			SPI_register_tuplestore(tsr);
+		}
 	}
 
 	/*
@@ -3161,6 +3167,9 @@ plpgsql_estate_setup(PLpgSQL_execstate *estate,
 	estate->ndatums = func->ndatums;
 	estate->datums = palloc(sizeof(PLpgSQL_datum *) * estate->ndatums);
 	/* caller is expected to fill the datums array */
+
+	/* default tuplestore cache to "none" */
+	estate->tsrcache = NULL;
 
 	/* set up for use of appropriate simple-expression EState */
 	if (simple_eval_estate)
@@ -6536,6 +6545,9 @@ exec_dynquery_with_params(PLpgSQL_execstate *estate,
 		elog(ERROR, "could not open implicit cursor for query \"%s\": %s",
 			 querystr, SPI_result_code_string(SPI_result));
 	pfree(querystr);
+
+	/* Make sure the portal knows about any named tuplestores. */
+	portal->tsrcache = estate->tsrcache;
 
 	return portal;
 }

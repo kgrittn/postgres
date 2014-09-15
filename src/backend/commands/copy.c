@@ -1344,7 +1344,7 @@ BeginCopy(bool is_from,
 		cstate->queryDesc = CreateQueryDesc(plan, queryString,
 											GetActiveSnapshot(),
 											InvalidSnapshot,
-											dest, NULL, 0);
+											dest, NULL, NULL, 0);
 
 		/*
 		 * Call ExecutorStart to prepare the plan for execution.

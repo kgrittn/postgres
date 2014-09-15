@@ -734,7 +734,7 @@ execute_sql_string(const char *sql, const char *filename)
 				qdesc = CreateQueryDesc((PlannedStmt *) stmt,
 										sql,
 										GetActiveSnapshot(), NULL,
-										dest, NULL, 0);
+										dest, NULL, NULL, 0);
 
 				ExecutorStart(qdesc, 0);
 				ExecutorRun(qdesc, ForwardScanDirection, 0);
@@ -748,6 +748,7 @@ execute_sql_string(const char *sql, const char *filename)
 				ProcessUtility(stmt,
 							   sql,
 							   PROCESS_UTILITY_QUERY,
+							   NULL,
 							   NULL,
 							   dest,
 							   NULL);

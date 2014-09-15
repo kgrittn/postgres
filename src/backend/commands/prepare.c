@@ -620,7 +620,8 @@ DropAllPreparedStatements(void)
  */
 void
 ExplainExecuteQuery(ExecuteStmt *execstmt, IntoClause *into, ExplainState *es,
-					const char *queryString, ParamListInfo params)
+					const char *queryString,
+					ParamListInfo params, Tsrcache *tsrcache)
 {
 	PreparedStatement *entry;
 	const char *query_string;
@@ -665,9 +666,9 @@ ExplainExecuteQuery(ExecuteStmt *execstmt, IntoClause *into, ExplainState *es,
 		PlannedStmt *pstmt = (PlannedStmt *) lfirst(p);
 
 		if (IsA(pstmt, PlannedStmt))
-			ExplainOnePlan(pstmt, into, es, query_string, paramLI, NULL);
+			ExplainOnePlan(pstmt, into, es, query_string, paramLI, tsrcache, NULL);
 		else
-			ExplainOneUtility((Node *) pstmt, into, es, query_string, paramLI);
+			ExplainOneUtility((Node *) pstmt, into, es, query_string, paramLI, tsrcache);
 
 		/* No need for CommandCounterIncrement, as ExplainOnePlan did it */
 

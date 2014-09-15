@@ -796,7 +796,9 @@ postquel_start(execution_state *es, SQLFunctionCachePtr fcache)
 								 GetActiveSnapshot(),
 								 InvalidSnapshot,
 								 dest,
-								 fcache->paramLI, 0);
+								 fcache->paramLI,
+								 es->qd ? es->qd->tsrcache : NULL,
+								 0);
 	else
 		es->qd = CreateUtilityQueryDesc(es->stmt,
 										fcache->src,
@@ -842,6 +844,7 @@ postquel_getnext(execution_state *es, SQLFunctionCachePtr fcache)
 					   fcache->src,
 					   PROCESS_UTILITY_QUERY,
 					   es->qd->params,
+					   es->qd->tsrcache,
 					   es->qd->dest,
 					   NULL);
 		result = true;			/* never stops early */
