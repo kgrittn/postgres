@@ -39,6 +39,7 @@
 #include "commands/extension.h"
 #include "commands/matview.h"
 #include "commands/lockcmds.h"
+#include "commands/policy.h"
 #include "commands/portalcmds.h"
 #include "commands/prepare.h"
 #include "commands/proclang.h"
@@ -1328,6 +1329,14 @@ ProcessUtilitySlow(Node *parsetree,
 				ExecAlterDefaultPrivilegesStmt((AlterDefaultPrivilegesStmt *) parsetree);
 				break;
 
+			case T_CreatePolicyStmt:	/* CREATE POLICY */
+				CreatePolicy((CreatePolicyStmt *) parsetree);
+				break;
+
+			case T_AlterPolicyStmt:		/* ALTER POLICY */
+				AlterPolicy((AlterPolicyStmt *) parsetree);
+				break;
+
 			default:
 				elog(ERROR, "unrecognized node type: %d",
 					 (int) nodeTag(parsetree));
@@ -1630,6 +1639,9 @@ AlterObjectTypeCommandTag(ObjectType objtype)
 			break;
 		case OBJECT_OPFAMILY:
 			tag = "ALTER OPERATOR FAMILY";
+			break;
+		case OBJECT_POLICY:
+			tag = "ALTER POLICY";
 			break;
 		case OBJECT_ROLE:
 			tag = "ALTER ROLE";
@@ -1951,6 +1963,9 @@ CreateCommandTag(Node *parsetree)
 					break;
 				case OBJECT_OPFAMILY:
 					tag = "DROP OPERATOR FAMILY";
+					break;
+				case OBJECT_POLICY:
+					tag = "DROP POLICY";
 					break;
 				default:
 					tag = "???";
@@ -2293,6 +2308,14 @@ CreateCommandTag(Node *parsetree)
 
 		case T_AlterTSConfigurationStmt:
 			tag = "ALTER TEXT SEARCH CONFIGURATION";
+			break;
+
+		case T_CreatePolicyStmt:
+			tag = "CREATE POLICY";
+			break;
+
+		case T_AlterPolicyStmt:
+			tag = "ALTER POLICY";
 			break;
 
 		case T_PrepareStmt:
@@ -2836,6 +2859,14 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_AlterOpFamilyStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_CreatePolicyStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_AlterPolicyStmt:
 			lev = LOGSTMT_DDL;
 			break;
 
