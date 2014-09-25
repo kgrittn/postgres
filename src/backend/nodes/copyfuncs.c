@@ -305,27 +305,6 @@ _copyBitmapOr(const BitmapOr *from)
 }
 
 /*
- * _copyTuplestoreRelation
- */
-static TuplestoreRelation *
-_copyTuplestoreRelation(const TuplestoreRelation *from)
-{
-	TuplestoreRelation   *newnode = makeNode(TuplestoreRelation);
-
-	/*
-	 * copy node superclass fields
-	 */
-	CopyPlanFields((const Plan *) from, (Plan *) newnode);
-
-	/*
-	 * copy remainder of node
-	 */
-	COPY_STRING_FIELD(refname);
-
-	return newnode;
-}
-
-/*
  * CopyScanFields
  *
  *		This function copies the fields of the Scan node.  It is used by
@@ -2146,6 +2125,19 @@ _copyCommonTableExpr(const CommonTableExpr *from)
 	COPY_NODE_FIELD(ctecoltypes);
 	COPY_NODE_FIELD(ctecoltypmods);
 	COPY_NODE_FIELD(ctecolcollations);
+
+	return newnode;
+}
+
+/*
+ * _copyTuplestoreRelation
+ */
+static TuplestoreRelation *
+_copyTuplestoreRelation(const TuplestoreRelation *from)
+{
+	TuplestoreRelation *newnode = makeNode(TuplestoreRelation);
+
+	COPY_STRING_FIELD(refname);
 
 	return newnode;
 }

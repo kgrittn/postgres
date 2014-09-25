@@ -1572,16 +1572,6 @@ _outBitmapOrPath(StringInfo str, const BitmapOrPath *node)
 }
 
 static void
-_outTuplestoreRelation(StringInfo str, const TuplestoreRelation *node)
-{
-	WRITE_NODE_TYPE("TUPLESTORERELATION");
-
-	_outPathInfo(str, (const Path *) node);
-
-	WRITE_STRING_FIELD(refname);
-}
-
-static void
 _outTidPath(StringInfo str, const TidPath *node)
 {
 	WRITE_NODE_TYPE("TIDPATH");
@@ -2386,6 +2376,14 @@ _outCommonTableExpr(StringInfo str, const CommonTableExpr *node)
 	WRITE_NODE_FIELD(ctecoltypes);
 	WRITE_NODE_FIELD(ctecoltypmods);
 	WRITE_NODE_FIELD(ctecolcollations);
+}
+
+static void
+_outTuplestoreRelation(StringInfo str, const TuplestoreRelation *node)
+{
+	WRITE_NODE_TYPE("TUPLESTORERELATION");
+
+	WRITE_STRING_FIELD(refname);
 }
 
 static void
