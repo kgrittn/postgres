@@ -1157,7 +1157,7 @@ cost_tuplestorescan(Path *path, PlannerInfo *root,
 	Cost		cpu_per_tuple;
 
 	/* Should only be applied to base relations that are Tuplestores */
- 	Assert(baserel->relid > 0);
+	Assert(baserel->relid > 0);
 	Assert(baserel->rtekind == RTE_TUPLESTORE);
 
 	/* Mark the path with the correct row estimate */
