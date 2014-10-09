@@ -2643,13 +2643,6 @@ JumbleExpr(pgssJumbleState *jstate, Node *node)
 				JumbleQuery(jstate, (Query *) cte->ctequery);
 			}
 			break;
-		case T_TuplestoreRelation:
-			{
-				TuplestoreRelation *tsr = (TuplestoreRelation *) node;
-
-				APP_JUMB_STRING(tsr->refname);
-			}
-			break;
 		case T_SetOperationStmt:
 			{
 				SetOperationStmt *setop = (SetOperationStmt *) node;

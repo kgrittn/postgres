@@ -448,12 +448,11 @@ transformCTEReference(ParseState *pstate, RangeVar *r,
  * relation
  */
 static RangeTblEntry *
-transformTsrReference(ParseState *pstate, RangeVar *r,
-					  TuplestoreRelation *tsrel)
+transformTsrReference(ParseState *pstate, RangeVar *r)
 {
 	RangeTblEntry *rte;
 
-	rte = addRangeTableEntryForTsr(pstate, tsrel, r, true);
+	rte = addRangeTableEntryForTsr(pstate, r, true);
 
 	return rte;
 }
@@ -768,11 +767,8 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 				rte = transformCTEReference(pstate, rv, cte, levelsup);
 			else
 			{
-				TuplestoreRelation *tsrel;
-
-				tsrel = scanNameSpaceForTsr(pstate, rv->relname);
-				if (tsrel)
-					rte = transformTsrReference(pstate, rv, tsrel);
+				if (scanNameSpaceForTsr(pstate, rv->relname))
+					rte = transformTsrReference(pstate, rv);
 			}
 		}
 

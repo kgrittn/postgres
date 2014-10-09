@@ -281,19 +281,12 @@ isFutureCTE(ParseState *pstate, const char *refname)
 
 /*
  * Search the query's tuplestore namespace for a tuplestore matching the given
- * unqualified refname.  Return a synthetic TuplestoreRelation node if found.
+ * unqualified refname.
  */
-TuplestoreRelation *
+bool
 scanNameSpaceForTsr(ParseState *pstate, const char *refname)
 {
-	if (name_matches_visible_tuplestore(pstate, refname))
-	{
-		TuplestoreRelation *tsrel = makeNode(TuplestoreRelation);
-		tsrel->refname = (char *) refname;
-		return tsrel;
-	}
-
-	return NULL;
+	return name_matches_visible_tuplestore(pstate, refname);
 }
 
 /*
@@ -317,7 +310,7 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	const char *refname = relation->relname;
 	Oid			relId = InvalidOid;
 	CommonTableExpr *cte = NULL;
-	TuplestoreRelation *tsrel = NULL;
+	bool		istsr = false;
 	Index		ctelevelsup = 0;
 	Index		levelsup;
 
@@ -337,10 +330,10 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	{
 		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
 		if (!cte)
-			tsrel = scanNameSpaceForTsr(pstate, refname);
+			istsr = scanNameSpaceForTsr(pstate, refname);
 	}
 
-	if (!cte && !tsrel)
+	if (!cte && !istsr)
 		relId = RangeVarGetRelid(relation, NoLock, true);
 
 	/* Now look for RTEs matching either the relation/CTE/Tsr or the alias */
@@ -364,8 +357,8 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 				strcmp(rte->ctename, refname) == 0)
 				return rte;
 			if (rte->rtekind == RTE_TUPLESTORE &&
-				tsrel != NULL &&
-				strcmp(tsrel->refname, refname) == 0)
+				istsr &&
+				strcmp(rte->tsrname, refname) == 0)
 				return rte;
 			if (strcmp(rte->eref->aliasname, refname) == 0)
 				return rte;
@@ -1725,14 +1718,13 @@ addRangeTableEntryForCTE(ParseState *pstate,
  */
 RangeTblEntry *
 addRangeTableEntryForTsr(ParseState *pstate,
-						 TuplestoreRelation *tsrel,
 						 RangeVar *rv,
 						 bool inFromCl)
 {
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
 	Alias	   *alias = rv->alias;
-	char	   *refname = alias ? alias->aliasname : tsrel->refname;
-	Tsrmd		tsrmd = get_visible_tuplestore(pstate, tsrel->refname);
+	char	   *refname = alias ? alias->aliasname : rv->relname;
+	Tsrmd		tsrmd = get_visible_tuplestore(pstate, rv->relname);
 	TupleDesc	tupdesc;
 	int			attno;
 
@@ -1757,7 +1749,7 @@ addRangeTableEntryForTsr(ParseState *pstate,
 		if (tupdesc->attrs[attno - 1]->atttypid == InvalidOid &&
 			!(tupdesc->attrs[attno - 1]->attisdropped))
 			elog(ERROR, "atttypid was invalid for column which has not been dropped from \"%s\"",
-				 tsrel->refname);
+				 rv->relname);
 		rte->ctecoltypes =
 			lappend_oid(rte->ctecoltypes,
 						tupdesc->attrs[attno - 1]->atttypid);

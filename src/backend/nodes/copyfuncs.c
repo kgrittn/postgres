@@ -2129,19 +2129,6 @@ _copyCommonTableExpr(const CommonTableExpr *from)
 	return newnode;
 }
 
-/*
- * _copyTuplestoreRelation
- */
-static TuplestoreRelation *
-_copyTuplestoreRelation(const TuplestoreRelation *from)
-{
-	TuplestoreRelation *newnode = makeNode(TuplestoreRelation);
-
-	COPY_STRING_FIELD(refname);
-
-	return newnode;
-}
-
 static A_Expr *
 _copyAExpr(const A_Expr *from)
 {
@@ -4049,9 +4036,6 @@ copyObject(const void *from)
 			break;
 		case T_BitmapOr:
 			retval = _copyBitmapOr(from);
-			break;
-		case T_TuplestoreRelation:
-			retval = _copyTuplestoreRelation(from);
 			break;
 		case T_Scan:
 			retval = _copyScan(from);

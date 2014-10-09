@@ -413,7 +413,6 @@ typedef enum NodeTag
 	T_WithClause,
 	T_CommonTableExpr,
 	T_TriggerTransition,
-	T_TuplestoreRelation,
 
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)

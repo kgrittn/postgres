@@ -1052,19 +1052,6 @@ typedef struct TriggerTransition
 	bool		isTable;
 } TriggerTransition;
 
-/*
- * TuplestoreRelation -
- *	   synthetic node for tuplestore passed in to the query by name
- *
- * This is initially added to support trigger transition tables, but may find
- * other uses, so we try to keep it generic.
- */
-typedef struct TuplestoreRelation
-{
-	NodeTag		type;
-	char	   *refname;
-} TuplestoreRelation;
-
 /*****************************************************************************
  *		Optimizable Statements
  *****************************************************************************/
