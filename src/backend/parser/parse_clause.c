@@ -765,11 +765,8 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 			cte = scanNameSpaceForCTE(pstate, rv->relname, &levelsup);
 			if (cte)
 				rte = transformCTEReference(pstate, rv, cte, levelsup);
-			else
-			{
-				if (scanNameSpaceForTsr(pstate, rv->relname))
-					rte = transformTsrReference(pstate, rv);
-			}
+			else if (scanNameSpaceForTsr(pstate, rv->relname))
+				rte = transformTsrReference(pstate, rv);
 		}
 
 		/* if not found above, must be a table reference */
