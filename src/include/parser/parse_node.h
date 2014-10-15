@@ -79,7 +79,6 @@ typedef Node *(*ParseParamRefHook) (ParseState *pstate, ParamRef *pref);
 typedef Node *(*CoerceParamHook) (ParseState *pstate, Param *param,
 									   Oid targetTypeId, int32 targetTypeMod,
 											  int location);
-typedef RangeTblEntry *(*ParseRelationRefHook) (ParseState *pstate, RangeVar *rv);
 
 
 /*
@@ -168,7 +167,6 @@ struct ParseState
 	PostParseColumnRefHook p_post_columnref_hook;
 	ParseParamRefHook p_paramref_hook;
 	CoerceParamHook p_coerce_param_hook;
-	ParseRelationRefHook p_relref_hook;
 	void	   *p_ref_hook_state;		/* common passthrough link for above */
 };
 
