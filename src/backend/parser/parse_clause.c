@@ -769,6 +769,10 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 				rte = transformTsrReference(pstate, rv);
 		}
 
+		/* check for a relation supplied by a parser hook */
+		if (!rte && pstate->p_relref_hook)
+			rte = (pstate->p_relref_hook) (pstate, rv);
+
 		/* if not found above, must be a table reference */
 		if (!rte)
 			rte = transformTableEntry(pstate, rv);
