@@ -275,7 +275,7 @@ main(int argc, char **argv)
 	int			compressLevel = -1;
 	int			plainText = 0;
 	ArchiveFormat archiveFormat = archUnknown;
-	ArchiveMode	archiveMode;
+	ArchiveMode archiveMode;
 
 	DumpOptions *dopt = NewDumpOptions();
 
@@ -2156,7 +2156,8 @@ dumpDatabase(Archive *fout, DumpOptions *dopt)
 			   *collate,
 			   *ctype,
 			   *tablespace;
-	uint32		frozenxid, minmxid;
+	uint32		frozenxid,
+				minmxid;
 
 	datname = PQdb(conn);
 
@@ -2186,7 +2187,7 @@ dumpDatabase(Archive *fout, DumpOptions *dopt)
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
-						  "datcollate, datctype, datfrozenxid, 0 AS datminmxid, "
+					  "datcollate, datctype, datfrozenxid, 0 AS datminmxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
 					  "shobj_description(oid, 'pg_database') AS description "
 
@@ -2200,7 +2201,7 @@ dumpDatabase(Archive *fout, DumpOptions *dopt)
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
-					   "NULL AS datcollate, NULL AS datctype, datfrozenxid, 0 AS datminmxid, "
+						  "NULL AS datcollate, NULL AS datctype, datfrozenxid, 0 AS datminmxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
 					  "shobj_description(oid, 'pg_database') AS description "
 
@@ -2214,7 +2215,7 @@ dumpDatabase(Archive *fout, DumpOptions *dopt)
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
 						  "(%s datdba) AS dba, "
 						  "pg_encoding_to_char(encoding) AS encoding, "
-					   "NULL AS datcollate, NULL AS datctype, datfrozenxid, 0 AS datminmxid, "
+						  "NULL AS datcollate, NULL AS datctype, datfrozenxid, 0 AS datminmxid, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace "
 						  "FROM pg_database "
 						  "WHERE datname = ",
@@ -2338,7 +2339,8 @@ dumpDatabase(Archive *fout, DumpOptions *dopt)
 		PGresult   *lo_res;
 		PQExpBuffer loFrozenQry = createPQExpBuffer();
 		PQExpBuffer loOutQry = createPQExpBuffer();
-		int			i_relfrozenxid, i_relminmxid;
+		int			i_relfrozenxid,
+					i_relminmxid;
 
 		/*
 		 * pg_largeobject
@@ -2383,16 +2385,16 @@ dumpDatabase(Archive *fout, DumpOptions *dopt)
 			resetPQExpBuffer(loFrozenQry);
 			resetPQExpBuffer(loOutQry);
 
-		if (fout->remoteVersion >= 90300)
-			appendPQExpBuffer(loFrozenQry, "SELECT relfrozenxid, relminmxid\n"
-							  "FROM pg_catalog.pg_class\n"
-							  "WHERE oid = %u;\n",
-							  LargeObjectMetadataRelationId);
-		else
-			appendPQExpBuffer(loFrozenQry, "SELECT relfrozenxid, 0 AS relminmxid\n"
-							  "FROM pg_catalog.pg_class\n"
-							  "WHERE oid = %u;\n",
-							  LargeObjectMetadataRelationId);
+			if (fout->remoteVersion >= 90300)
+				appendPQExpBuffer(loFrozenQry, "SELECT relfrozenxid, relminmxid\n"
+								  "FROM pg_catalog.pg_class\n"
+								  "WHERE oid = %u;\n",
+								  LargeObjectMetadataRelationId);
+			else
+				appendPQExpBuffer(loFrozenQry, "SELECT relfrozenxid, 0 AS relminmxid\n"
+								  "FROM pg_catalog.pg_class\n"
+								  "WHERE oid = %u;\n",
+								  LargeObjectMetadataRelationId);
 
 			lo_res = ExecuteSqlQueryForSingleRow(fout, loFrozenQry->data);
 
@@ -2747,22 +2749,24 @@ dumpBlobs(Archive *fout, DumpOptions *dopt, void *arg)
 
 /*
  * getRowSecurity
- *    get information about every row-security policy on a dumpable table.
+ *	  get information about every row-security policy on a dumpable table.
  */
 void
 getRowSecurity(Archive *fout, TableInfo tblinfo[], int numTables)
 {
-	PQExpBuffer		query;
-	PGresult	   *res;
+	PQExpBuffer query;
+	PGresult   *res;
 	RowSecurityInfo *rsinfo;
-	int				i_oid;
-	int				i_tableoid;
-	int				i_rsecpolname;
-	int				i_rseccmd;
-	int				i_rsecroles;
-	int				i_rsecqual;
-	int				i_rsecwithcheck;
-	int				i, j, ntups;
+	int			i_oid;
+	int			i_tableoid;
+	int			i_rsecpolname;
+	int			i_rseccmd;
+	int			i_rsecroles;
+	int			i_rsecqual;
+	int			i_rsecwithcheck;
+	int			i,
+				j,
+				ntups;
 
 	if (fout->remoteVersion < 90500)
 		return;
@@ -2771,7 +2775,7 @@ getRowSecurity(Archive *fout, TableInfo tblinfo[], int numTables)
 
 	for (i = 0; i < numTables; i++)
 	{
-		TableInfo *tbinfo = &tblinfo[i];
+		TableInfo  *tbinfo = &tblinfo[i];
 
 		/* Ignore row-security on tables not to be dumped */
 		if (!tbinfo->dobj.dump)
@@ -2783,9 +2787,9 @@ getRowSecurity(Archive *fout, TableInfo tblinfo[], int numTables)
 					  tbinfo->dobj.name);
 
 		/*
-		 * Get row-security enabled information for the table.
-		 * We represent RLS enabled on a table by creating RowSecurityInfo
-		 * object with an empty policy.
+		 * Get row-security enabled information for the table. We represent
+		 * RLS enabled on a table by creating RowSecurityInfo object with an
+		 * empty policy.
 		 */
 		if (tbinfo->rowsec)
 		{
@@ -2826,7 +2830,7 @@ getRowSecurity(Archive *fout, TableInfo tblinfo[], int numTables)
 						  "CASE WHEN s.rsecroles = '{0}' THEN 'PUBLIC' ELSE "
 						  "   array_to_string(ARRAY(SELECT rolname from pg_roles WHERE oid = ANY(s.rsecroles)), ', ') END AS rsecroles, "
 						  "pg_get_expr(s.rsecqual, s.rsecrelid) AS rsecqual, "
-						  "pg_get_expr(s.rsecwithcheck, s.rsecrelid) AS rsecwithcheck "
+				"pg_get_expr(s.rsecwithcheck, s.rsecrelid) AS rsecwithcheck "
 						  "FROM pg_catalog.pg_rowsecurity s "
 						  "WHERE rsecrelid = '%u'",
 						  tbinfo->dobj.catId.oid);
@@ -2894,7 +2898,7 @@ getRowSecurity(Archive *fout, TableInfo tblinfo[], int numTables)
 
 /*
  * dumpRowSecurity
- *    dump the definition of the given row-security policy
+ *	  dump the definition of the given row-security policy
  */
 static void
 dumpRowSecurity(Archive *fout, DumpOptions *dopt, RowSecurityInfo *rsinfo)
@@ -2909,8 +2913,8 @@ dumpRowSecurity(Archive *fout, DumpOptions *dopt, RowSecurityInfo *rsinfo)
 
 	/*
 	 * If rsecpolname is NULL, then this record is just indicating that ROW
-	 * LEVEL SECURITY is enabled for the table.
-	 * Dump as ALTER TABLE <table> ENABLE ROW LEVEL SECURITY.
+	 * LEVEL SECURITY is enabled for the table. Dump as ALTER TABLE <table>
+	 * ENABLE ROW LEVEL SECURITY.
 	 */
 	if (rsinfo->rsecpolname == NULL)
 	{
@@ -2939,7 +2943,7 @@ dumpRowSecurity(Archive *fout, DumpOptions *dopt, RowSecurityInfo *rsinfo)
 		cmd = "SELECT";
 	else if (strcmp(rsinfo->rseccmd, "a") == 0)
 		cmd = "INSERT";
-	else if (strcmp(rsinfo->rseccmd, "u") == 0)
+	else if (strcmp(rsinfo->rseccmd, "w") == 0)
 		cmd = "UPDATE";
 	else if (strcmp(rsinfo->rseccmd, "d") == 0)
 		cmd = "DELETE";
@@ -6622,8 +6626,8 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 		 */
 		if (g_verbose)
 			write_msg(NULL, "finding the columns and types of table \"%s\".\"%s\"\n",
-						  tbinfo->dobj.namespace->dobj.name,
-						  tbinfo->dobj.name);
+					  tbinfo->dobj.namespace->dobj.name,
+					  tbinfo->dobj.name);
 
 		resetPQExpBuffer(q);
 
@@ -6835,8 +6839,8 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 
 			if (g_verbose)
 				write_msg(NULL, "finding default expressions of table \"%s\".\"%s\"\n",
-							  tbinfo->dobj.namespace->dobj.name,
-							  tbinfo->dobj.name);
+						  tbinfo->dobj.namespace->dobj.name,
+						  tbinfo->dobj.name);
 
 			resetPQExpBuffer(q);
 			if (fout->remoteVersion >= 70300)
@@ -9269,7 +9273,6 @@ dumpCompositeType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo)
 	int			i_attalign;
 	int			i_attisdropped;
 	int			i_attcollation;
-	int			i_typrelid;
 	int			i;
 	int			actual_atts;
 
@@ -9290,8 +9293,7 @@ dumpCompositeType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo)
 			"pg_catalog.format_type(a.atttypid, a.atttypmod) AS atttypdefn, "
 						  "a.attlen, a.attalign, a.attisdropped, "
 						  "CASE WHEN a.attcollation <> at.typcollation "
-						  "THEN a.attcollation ELSE 0 END AS attcollation, "
-						  "ct.typrelid "
+						  "THEN a.attcollation ELSE 0 END AS attcollation "
 						  "FROM pg_catalog.pg_type ct "
 				"JOIN pg_catalog.pg_attribute a ON a.attrelid = ct.typrelid "
 					"LEFT JOIN pg_catalog.pg_type at ON at.oid = a.atttypid "
@@ -9309,8 +9311,7 @@ dumpCompositeType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo)
 		appendPQExpBuffer(query, "SELECT a.attname, "
 			"pg_catalog.format_type(a.atttypid, a.atttypmod) AS atttypdefn, "
 						  "a.attlen, a.attalign, a.attisdropped, "
-						  "0 AS attcollation, "
-						  "ct.typrelid "
+						  "0 AS attcollation "
 					 "FROM pg_catalog.pg_type ct, pg_catalog.pg_attribute a "
 						  "WHERE ct.oid = '%u'::pg_catalog.oid "
 						  "AND a.attrelid = ct.typrelid "
@@ -9328,15 +9329,12 @@ dumpCompositeType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo)
 	i_attalign = PQfnumber(res, "attalign");
 	i_attisdropped = PQfnumber(res, "attisdropped");
 	i_attcollation = PQfnumber(res, "attcollation");
-	i_typrelid = PQfnumber(res, "typrelid");
 
 	if (dopt->binary_upgrade)
 	{
-		Oid			typrelid = atooid(PQgetvalue(res, 0, i_typrelid));
-
 		binary_upgrade_set_type_oids_by_type_oid(fout, q,
 												 tyinfo->dobj.catId.oid);
-		binary_upgrade_set_pg_class_oids(fout, q, typrelid, false);
+		binary_upgrade_set_pg_class_oids(fout, q, tyinfo->typrelid, false);
 	}
 
 	qtypname = pg_strdup(fmtId(tyinfo->dobj.name));
@@ -13772,7 +13770,7 @@ dumpTableSchema(Archive *fout, DumpOptions *dopt, TableInfo *tbinfo)
 		 * Analogously, we set up typed tables using ALTER TABLE / OF here.
 		 */
 		if (dopt->binary_upgrade && (tbinfo->relkind == RELKIND_RELATION ||
-							   tbinfo->relkind == RELKIND_FOREIGN_TABLE))
+								   tbinfo->relkind == RELKIND_FOREIGN_TABLE))
 		{
 			for (j = 0; j < tbinfo->numatts; j++)
 			{
@@ -13874,7 +13872,7 @@ dumpTableSchema(Archive *fout, DumpOptions *dopt, TableInfo *tbinfo)
 				/* We preserve the toast oids, so we can use it during restore */
 				appendPQExpBufferStr(q, "\n-- For binary upgrade, set toast's relfrozenxid and relminmxid\n");
 				appendPQExpBuffer(q, "UPDATE pg_catalog.pg_class\n"
-								  "SET relfrozenxid = '%u', relminmxid = '%u'\n"
+							   "SET relfrozenxid = '%u', relminmxid = '%u'\n"
 								  "WHERE oid = '%u';\n",
 								  tbinfo->toast_frozenxid,
 								  tbinfo->toast_minmxid, tbinfo->toast_oid);
