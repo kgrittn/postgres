@@ -1,7 +1,7 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2015, PostgreSQL Global Development Group
  *
  * src/bin/psql/command.c
  */
@@ -62,8 +62,8 @@ static bool do_edit(const char *filename_arg, PQExpBuffer query_buf,
 static bool do_connect(char *dbname, char *user, char *host, char *port);
 static bool do_shell(const char *command);
 static bool do_watch(PQExpBuffer query_buf, long sleep);
-static bool lookup_function_oid(PGconn *conn, const char *desc, Oid *foid);
-static bool get_create_function_cmd(PGconn *conn, Oid oid, PQExpBuffer buf);
+static bool lookup_function_oid(const char *desc, Oid *foid);
+static bool get_create_function_cmd(Oid oid, PQExpBuffer buf);
 static int	strip_lineno_from_funcdesc(char *func);
 static void minimal_error_message(PGresult *res);
 
@@ -302,14 +302,33 @@ exec_command(const char *cmd,
 	else if (strcmp(cmd, "conninfo") == 0)
 	{
 		char	   *db = PQdb(pset.db);
-		char	   *host = (PQhostaddr(pset.db) != NULL) ? PQhostaddr(pset.db) : PQhost(pset.db);
 
 		if (db == NULL)
 			printf(_("You are currently not connected to a database.\n"));
 		else
 		{
+			char	   *host;
+			PQconninfoOption *connOptions;
+			PQconninfoOption *option;
+
+			host = PQhost(pset.db);
 			if (host == NULL)
 				host = DEFAULT_PGSOCKET_DIR;
+			/* A usable "hostaddr" overrides the basic sense of host. */
+			connOptions = PQconninfo(pset.db);
+			if (connOptions == NULL)
+			{
+				psql_error("out of memory\n");
+				exit(EXIT_FAILURE);
+			}
+			for (option = connOptions; option && option->keyword; option++)
+				if (strcmp(option->keyword, "hostaddr") == 0)
+				{
+					if (option->val != NULL && option->val[0] != '\0')
+						host = option->val;
+					break;
+				}
+
 			/* If the host is an absolute path, the connection is via socket */
 			if (is_absolute_path(host))
 				printf(_("You are connected to database \"%s\" as user \"%s\" via socket in \"%s\" at port \"%s\".\n"),
@@ -318,6 +337,8 @@ exec_command(const char *cmd,
 				printf(_("You are connected to database \"%s\" as user \"%s\" on host \"%s\" at port \"%s\".\n"),
 					   db, PQuser(pset.db), host, PQport(pset.db));
 			printSSLInfo();
+
+			PQconninfoFree(connOptions);
 		}
 	}
 
@@ -611,12 +632,12 @@ exec_command(const char *cmd,
 								  "AS $function$\n"
 								  "\n$function$\n");
 			}
-			else if (!lookup_function_oid(pset.db, func, &foid))
+			else if (!lookup_function_oid(func, &foid))
 			{
 				/* error already reported */
 				status = PSQL_CMD_ERROR;
 			}
-			else if (!get_create_function_cmd(pset.db, foid, query_buf))
+			else if (!get_create_function_cmd(foid, query_buf))
 			{
 				/* error already reported */
 				status = PSQL_CMD_ERROR;
@@ -1133,12 +1154,7 @@ exec_command(const char *cmd,
 			while ((opt = psql_scan_slash_option(scan_state,
 												 OT_NORMAL, NULL, false)))
 			{
-				newval = realloc(newval, strlen(newval) + strlen(opt) + 1);
-				if (!newval)
-				{
-					psql_error("out of memory\n");
-					exit(EXIT_FAILURE);
-				}
+				newval = pg_realloc(newval, strlen(newval) + strlen(opt) + 1);
 				strcat(newval, opt);
 				free(opt);
 			}
@@ -1220,12 +1236,12 @@ exec_command(const char *cmd,
 			psql_error("function name is required\n");
 			status = PSQL_CMD_ERROR;
 		}
-		else if (!lookup_function_oid(pset.db, func, &foid))
+		else if (!lookup_function_oid(func, &foid))
 		{
 			/* error already reported */
 			status = PSQL_CMD_ERROR;
 		}
-		else if (!get_create_function_cmd(pset.db, foid, func_buf))
+		else if (!get_create_function_cmd(foid, func_buf))
 		{
 			/* error already reported */
 			status = PSQL_CMD_ERROR;
@@ -1346,7 +1362,7 @@ exec_command(const char *cmd,
 												 OT_NORMAL, NULL, false);
 
 		if (opt)
-			pset.timing = ParseVariableBool(opt);
+			pset.timing = ParseVariableBool(opt, "\\timing");
 		else
 			pset.timing = !pset.timing;
 		if (!pset.quiet)
@@ -2396,12 +2412,14 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 	}
 
 	/* set expanded/vertical mode */
-	else if (strcmp(param, "x") == 0 || strcmp(param, "expanded") == 0 || strcmp(param, "vertical") == 0)
+	else if (strcmp(param, "x") == 0 ||
+			 strcmp(param, "expanded") == 0 ||
+			 strcmp(param, "vertical") == 0)
 	{
 		if (value && pg_strcasecmp(value, "auto") == 0)
 			popt->topt.expanded = 2;
 		else if (value)
-			popt->topt.expanded = ParseVariableBool(value);
+			popt->topt.expanded = ParseVariableBool(value, param);
 		else
 			popt->topt.expanded = !popt->topt.expanded;
 	}
@@ -2410,7 +2428,7 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 	else if (strcmp(param, "numericlocale") == 0)
 	{
 		if (value)
-			popt->topt.numericLocale = ParseVariableBool(value);
+			popt->topt.numericLocale = ParseVariableBool(value, param);
 		else
 			popt->topt.numericLocale = !popt->topt.numericLocale;
 	}
@@ -2465,7 +2483,7 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 	else if (strcmp(param, "t") == 0 || strcmp(param, "tuples_only") == 0)
 	{
 		if (value)
-			popt->topt.tuples_only = ParseVariableBool(value);
+			popt->topt.tuples_only = ParseVariableBool(value, param);
 		else
 			popt->topt.tuples_only = !popt->topt.tuples_only;
 	}
@@ -2496,10 +2514,12 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 		if (value && pg_strcasecmp(value, "always") == 0)
 			popt->topt.pager = 2;
 		else if (value)
-			if (ParseVariableBool(value))
+		{
+			if (ParseVariableBool(value, param))
 				popt->topt.pager = 1;
 			else
 				popt->topt.pager = 0;
+		}
 		else if (popt->topt.pager == 1)
 			popt->topt.pager = 0;
 		else
@@ -2510,7 +2530,7 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 	else if (strcmp(param, "footer") == 0)
 	{
 		if (value)
-			popt->topt.default_footer = ParseVariableBool(value);
+			popt->topt.default_footer = ParseVariableBool(value, param);
 		else
 			popt->topt.default_footer = !popt->topt.default_footer;
 	}
@@ -2711,7 +2731,7 @@ pset_bool_string(bool val)
 static char *
 pset_quoted_string(const char *str)
 {
-	char	   *ret = pg_malloc(strlen(str) * 2 + 2);
+	char	   *ret = pg_malloc(strlen(str) * 2 + 3);
 	char	   *r = ret;
 
 	*r++ = '\'';
@@ -2873,7 +2893,6 @@ do_watch(PQExpBuffer query_buf, long sleep)
 	 * Set up rendering options, in particular, disable the pager, because
 	 * nobody wants to be prompted while watching the output of 'watch'.
 	 */
-	myopt.nullPrint = NULL;
 	myopt.topt.pager = 0;
 
 	for (;;)
@@ -2930,6 +2949,34 @@ do_watch(PQExpBuffer query_buf, long sleep)
 }
 
 /*
+ * a little code borrowed from PSQLexec() to manage ECHO_HIDDEN output.
+ * returns true unless we have ECHO_HIDDEN_NOEXEC.
+ */
+static bool
+lookup_function_echo_hidden(char * query)
+{
+	if (pset.echo_hidden != PSQL_ECHO_HIDDEN_OFF)
+	{
+		printf(_("********* QUERY **********\n"
+				 "%s\n"
+				 "**************************\n\n"), query);
+		fflush(stdout);
+		if (pset.logfile)
+		{
+			fprintf(pset.logfile,
+					_("********* QUERY **********\n"
+					  "%s\n"
+					  "**************************\n\n"), query);
+			fflush(pset.logfile);
+		}
+
+		if (pset.echo_hidden == PSQL_ECHO_HIDDEN_NOEXEC)
+			return false;
+	}
+	return true;
+}
+
+/*
  * This function takes a function description, e.g. "x" or "x(int)", and
  * issues a query on the given connection to retrieve the function's OID
  * using a cast to regproc or regprocedure (as appropriate). The result,
@@ -2939,7 +2986,7 @@ do_watch(PQExpBuffer query_buf, long sleep)
  * unfortunately it can be hard to tell the difference.
  */
 static bool
-lookup_function_oid(PGconn *conn, const char *desc, Oid *foid)
+lookup_function_oid(const char *desc, Oid *foid)
 {
 	bool		result = true;
 	PQExpBuffer query;
@@ -2947,11 +2994,15 @@ lookup_function_oid(PGconn *conn, const char *desc, Oid *foid)
 
 	query = createPQExpBuffer();
 	appendPQExpBufferStr(query, "SELECT ");
-	appendStringLiteralConn(query, desc, conn);
+	appendStringLiteralConn(query, desc, pset.db);
 	appendPQExpBuffer(query, "::pg_catalog.%s::pg_catalog.oid",
 					  strchr(desc, '(') ? "regprocedure" : "regproc");
-
-	res = PQexec(conn, query->data);
+	if (!lookup_function_echo_hidden(query->data))
+	{
+		destroyPQExpBuffer(query);
+		return false;
+	}
+	res = PQexec(pset.db, query->data);
 	if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) == 1)
 		*foid = atooid(PQgetvalue(res, 0, 0));
 	else
@@ -2971,7 +3022,7 @@ lookup_function_oid(PGconn *conn, const char *desc, Oid *foid)
  * function with the given OID.  If successful, the result is stored in buf.
  */
 static bool
-get_create_function_cmd(PGconn *conn, Oid oid, PQExpBuffer buf)
+get_create_function_cmd(Oid oid, PQExpBuffer buf)
 {
 	bool		result = true;
 	PQExpBuffer query;
@@ -2980,7 +3031,12 @@ get_create_function_cmd(PGconn *conn, Oid oid, PQExpBuffer buf)
 	query = createPQExpBuffer();
 	printfPQExpBuffer(query, "SELECT pg_catalog.pg_get_functiondef(%u)", oid);
 
-	res = PQexec(conn, query->data);
+	if (!lookup_function_echo_hidden(query->data))
+	{
+		destroyPQExpBuffer(query);
+		return false;
+	}
+	res = PQexec(pset.db, query->data);
 	if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) == 1)
 	{
 		resetPQExpBuffer(buf);

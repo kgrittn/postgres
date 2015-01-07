@@ -178,13 +178,13 @@ main(int argc, char *argv[])
 	close(fd);
 
 	/* Check the CRC. */
-	INIT_CRC32(crc);
-	COMP_CRC32(crc,
-			   (char *) &ControlFile,
-			   offsetof(ControlFileData, crc));
-	FIN_CRC32(crc);
+	INIT_CRC32C(crc);
+	COMP_CRC32C(crc,
+				(char *) &ControlFile,
+				offsetof(ControlFileData, crc));
+	FIN_CRC32C(crc);
 
-	if (!EQ_CRC32(crc, ControlFile.crc))
+	if (!EQ_CRC32C(crc, ControlFile.crc))
 		printf(_("WARNING: Calculated CRC checksum does not match value stored in file.\n"
 				 "Either the file is corrupt, or it has a different layout than this program\n"
 				 "is expecting.  The results below are untrustworthy.\n\n"));
@@ -270,6 +270,8 @@ main(int argc, char *argv[])
 		   ControlFile.checkPointCopy.oldestMulti);
 	printf(_("Latest checkpoint's oldestMulti's DB: %u\n"),
 		   ControlFile.checkPointCopy.oldestMultiDB);
+	printf(_("Latest checkpoint's oldestCommitTs:   %u\n"),
+		   ControlFile.checkPointCopy.oldestCommitTs);
 	printf(_("Time of latest checkpoint:            %s\n"),
 		   ckpttime_str);
 	printf(_("Fake LSN counter for unlogged rels:   %X/%X\n"),
@@ -300,6 +302,8 @@ main(int argc, char *argv[])
 		   ControlFile.max_prepared_xacts);
 	printf(_("Current max_locks_per_xact setting:   %d\n"),
 		   ControlFile.max_locks_per_xact);
+	printf(_("Current track_commit_timestamp setting: %s\n"),
+		   ControlFile.track_commit_timestamp ? _("on") : _("off"));
 	printf(_("Maximum data alignment:               %u\n"),
 		   ControlFile.maxAlign);
 	/* we don't print floatFormat since can't say much useful about it */

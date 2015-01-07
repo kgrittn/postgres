@@ -6,7 +6,7 @@
  * gram.y
  *	  POSTGRESQL BISON rules/actions
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -354,7 +354,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				opt_column_list columnList opt_name_list
 				sort_clause opt_sort_clause sortby_list index_params
 				name_list role_list from_clause from_list opt_array_bounds
-				qualified_name_list any_name any_name_list
+				qualified_name_list any_name any_name_list type_name_list
 				any_operator expr_list attrs
 				target_list opt_target_list insert_column_list set_target_list
 				set_clause_list set_clause multiple_set_clause
@@ -408,7 +408,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <boolean> copy_from opt_program
 
 %type <ival>	opt_column event cursor_options opt_hold opt_set_data
-%type <objtype>	reindex_type drop_type comment_type security_label_type
+%type <objtype>	drop_type comment_type security_label_type
 
 %type <node>	fetch_args limit_clause select_limit_value
 				offset_clause select_offset_value
@@ -3405,9 +3405,23 @@ CreateAsStmt:
 					ctas->into = $4;
 					ctas->relkind = OBJECT_TABLE;
 					ctas->is_select_into = false;
+					ctas->if_not_exists = false;
 					/* cram additional flags into the IntoClause */
 					$4->rel->relpersistence = $2;
 					$4->skipData = !($7);
+					$$ = (Node *) ctas;
+				}
+		| CREATE OptTemp TABLE IF_P NOT EXISTS create_as_target AS SelectStmt opt_with_data
+				{
+					CreateTableAsStmt *ctas = makeNode(CreateTableAsStmt);
+					ctas->query = $9;
+					ctas->into = $7;
+					ctas->relkind = OBJECT_TABLE;
+					ctas->is_select_into = false;
+					ctas->if_not_exists = true;
+					/* cram additional flags into the IntoClause */
+					$7->rel->relpersistence = $2;
+					$7->skipData = !($10);
 					$$ = (Node *) ctas;
 				}
 		;
@@ -3448,9 +3462,23 @@ CreateMatViewStmt:
 					ctas->into = $5;
 					ctas->relkind = OBJECT_MATVIEW;
 					ctas->is_select_into = false;
+					ctas->if_not_exists = false;
 					/* cram additional flags into the IntoClause */
 					$5->rel->relpersistence = $2;
 					$5->skipData = !($8);
+					$$ = (Node *) ctas;
+				}
+		| CREATE OptNoLog MATERIALIZED VIEW IF_P NOT EXISTS create_mv_target AS SelectStmt opt_with_data
+				{
+					CreateTableAsStmt *ctas = makeNode(CreateTableAsStmt);
+					ctas->query = $10;
+					ctas->into = $8;
+					ctas->relkind = OBJECT_MATVIEW;
+					ctas->is_select_into = false;
+					ctas->if_not_exists = true;
+					/* cram additional flags into the IntoClause */
+					$8->rel->relpersistence = $2;
+					$8->skipData = !($11);
 					$$ = (Node *) ctas;
 				}
 		;
@@ -5492,6 +5520,46 @@ DropStmt:	DROP drop_type IF_P EXISTS any_name_list opt_drop_behavior
 					n->concurrent = false;
 					$$ = (Node *)n;
 				}
+			| DROP TYPE_P type_name_list opt_drop_behavior
+				{
+					DropStmt *n = makeNode(DropStmt);
+					n->removeType = OBJECT_TYPE;
+					n->missing_ok = FALSE;
+					n->objects = $3;
+					n->behavior = $4;
+					n->concurrent = false;
+					$$ = (Node *) n;
+				}
+			| DROP TYPE_P IF_P EXISTS type_name_list opt_drop_behavior
+				{
+					DropStmt *n = makeNode(DropStmt);
+					n->removeType = OBJECT_TYPE;
+					n->missing_ok = TRUE;
+					n->objects = $5;
+					n->behavior = $6;
+					n->concurrent = false;
+					$$ = (Node *) n;
+				}
+			| DROP DOMAIN_P type_name_list opt_drop_behavior
+				{
+					DropStmt *n = makeNode(DropStmt);
+					n->removeType = OBJECT_DOMAIN;
+					n->missing_ok = FALSE;
+					n->objects = $3;
+					n->behavior = $4;
+					n->concurrent = false;
+					$$ = (Node *) n;
+				}
+			| DROP DOMAIN_P IF_P EXISTS type_name_list opt_drop_behavior
+				{
+					DropStmt *n = makeNode(DropStmt);
+					n->removeType = OBJECT_DOMAIN;
+					n->missing_ok = TRUE;
+					n->objects = $5;
+					n->behavior = $6;
+					n->concurrent = false;
+					$$ = (Node *) n;
+				}
 			| DROP INDEX CONCURRENTLY any_name_list opt_drop_behavior
 				{
 					DropStmt *n = makeNode(DropStmt);
@@ -5524,8 +5592,6 @@ drop_type:	TABLE									{ $$ = OBJECT_TABLE; }
 			| INDEX									{ $$ = OBJECT_INDEX; }
 			| FOREIGN TABLE							{ $$ = OBJECT_FOREIGN_TABLE; }
 			| EVENT TRIGGER 						{ $$ = OBJECT_EVENT_TRIGGER; }
-			| TYPE_P								{ $$ = OBJECT_TYPE; }
-			| DOMAIN_P								{ $$ = OBJECT_DOMAIN; }
 			| COLLATION								{ $$ = OBJECT_COLLATION; }
 			| CONVERSION_P							{ $$ = OBJECT_CONVERSION; }
 			| SCHEMA								{ $$ = OBJECT_SCHEMA; }
@@ -5551,6 +5617,9 @@ attrs:		'.' attr_name
 					{ $$ = lappend($1, makeString($3)); }
 		;
 
+type_name_list:
+			Typename								{ $$ = list_make1(list_make1($1)); }
+			| type_name_list ',' Typename			{ $$ = lappend($1, list_make1($3)); }
 
 /*****************************************************************************
  *
@@ -5584,7 +5653,7 @@ opt_restart_seqs:
  *	COMMENT ON [ [ CONVERSION | COLLATION | DATABASE | DOMAIN |
  *                 EXTENSION | EVENT TRIGGER | FOREIGN DATA WRAPPER |
  *                 FOREIGN TABLE | INDEX | [PROCEDURAL] LANGUAGE |
- *                 MATERIALIZED VIEW | ROLE | SCHEMA | SEQUENCE |
+ *                 MATERIALIZED VIEW | POLICY | ROLE | SCHEMA | SEQUENCE |
  *                 SERVER | TABLE | TABLESPACE |
  *                 TEXT SEARCH CONFIGURATION | TEXT SEARCH DICTIONARY |
  *                 TEXT SEARCH PARSER | TEXT SEARCH TEMPLATE | TYPE |
@@ -5593,6 +5662,7 @@ opt_restart_seqs:
  *				 CAST (<src type> AS <dst type>) |
  *				 COLUMN <relname>.<colname> |
  *				 CONSTRAINT <constraintname> ON <relname> |
+ *				 CONSTRAINT <constraintname> ON DOMAIN <domainname> |
  *				 FUNCTION <funcname> (arg1, arg2, ...) |
  *				 LARGE OBJECT <oid> |
  *				 OPERATOR <op> (leftoperand_typ, rightoperand_typ) |
@@ -5610,6 +5680,24 @@ CommentStmt:
 					CommentStmt *n = makeNode(CommentStmt);
 					n->objtype = $3;
 					n->objname = $4;
+					n->objargs = NIL;
+					n->comment = $6;
+					$$ = (Node *) n;
+				}
+			| COMMENT ON TYPE_P Typename IS comment_text
+				{
+					CommentStmt *n = makeNode(CommentStmt);
+					n->objtype = OBJECT_TYPE;
+					n->objname = list_make1($4);
+					n->objargs = NIL;
+					n->comment = $6;
+					$$ = (Node *) n;
+				}
+			| COMMENT ON DOMAIN_P Typename IS comment_text
+				{
+					CommentStmt *n = makeNode(CommentStmt);
+					n->objtype = OBJECT_DOMAIN;
+					n->objname = list_make1($4);
 					n->objargs = NIL;
 					n->comment = $6;
 					$$ = (Node *) n;
@@ -5644,7 +5732,30 @@ CommentStmt:
 			| COMMENT ON CONSTRAINT name ON any_name IS comment_text
 				{
 					CommentStmt *n = makeNode(CommentStmt);
-					n->objtype = OBJECT_CONSTRAINT;
+					n->objtype = OBJECT_TABCONSTRAINT;
+					n->objname = lappend($6, makeString($4));
+					n->objargs = NIL;
+					n->comment = $8;
+					$$ = (Node *) n;
+				}
+			| COMMENT ON CONSTRAINT name ON DOMAIN_P any_name IS comment_text
+				{
+					CommentStmt *n = makeNode(CommentStmt);
+					n->objtype = OBJECT_DOMCONSTRAINT;
+					/*
+					 * should use Typename not any_name in the production, but
+					 * there's a shift/reduce conflict if we do that, so fix it
+					 * up here.
+					 */
+					n->objname = list_make1(makeTypeNameFromNameList($7));
+					n->objargs = list_make1(makeString($4));
+					n->comment = $9;
+					$$ = (Node *) n;
+				}
+			| COMMENT ON POLICY name ON any_name IS comment_text
+				{
+					CommentStmt *n = makeNode(CommentStmt);
+					n->objtype = OBJECT_POLICY;
 					n->objname = lappend($6, makeString($4));
 					n->objargs = NIL;
 					n->comment = $8;
@@ -5732,8 +5843,6 @@ comment_type:
 			| INDEX								{ $$ = OBJECT_INDEX; }
 			| SEQUENCE							{ $$ = OBJECT_SEQUENCE; }
 			| TABLE								{ $$ = OBJECT_TABLE; }
-			| DOMAIN_P							{ $$ = OBJECT_DOMAIN; }
-			| TYPE_P							{ $$ = OBJECT_TYPE; }
 			| VIEW								{ $$ = OBJECT_VIEW; }
 			| MATERIALIZED VIEW					{ $$ = OBJECT_MATVIEW; }
 			| COLLATION							{ $$ = OBJECT_COLLATION; }
@@ -5774,6 +5883,28 @@ SecLabelStmt:
 					n->provider = $3;
 					n->objtype = $5;
 					n->objname = $6;
+					n->objargs = NIL;
+					n->label = $8;
+					$$ = (Node *) n;
+				}
+			| SECURITY LABEL opt_provider ON TYPE_P Typename
+			  IS security_label
+				{
+					SecLabelStmt *n = makeNode(SecLabelStmt);
+					n->provider = $3;
+					n->objtype = OBJECT_TYPE;
+					n->objname = list_make1($6);
+					n->objargs = NIL;
+					n->label = $8;
+					$$ = (Node *) n;
+				}
+			| SECURITY LABEL opt_provider ON DOMAIN_P Typename
+			  IS security_label
+				{
+					SecLabelStmt *n = makeNode(SecLabelStmt);
+					n->provider = $3;
+					n->objtype = OBJECT_TYPE;
+					n->objname = list_make1($6);
 					n->objargs = NIL;
 					n->label = $8;
 					$$ = (Node *) n;
@@ -5836,10 +5967,8 @@ security_label_type:
 			| SCHEMA							{ $$ = OBJECT_SCHEMA; }
 			| SEQUENCE							{ $$ = OBJECT_SEQUENCE; }
 			| TABLE								{ $$ = OBJECT_TABLE; }
-			| DOMAIN_P							{ $$ = OBJECT_TYPE; }
 			| ROLE								{ $$ = OBJECT_ROLE; }
 			| TABLESPACE						{ $$ = OBJECT_TABLESPACE; }
-			| TYPE_P							{ $$ = OBJECT_TYPE; }
 			| VIEW								{ $$ = OBJECT_VIEW; }
 			| MATERIALIZED VIEW					{ $$ = OBJECT_MATVIEW; }
 		;
@@ -6483,6 +6612,32 @@ IndexStmt:	CREATE opt_unique INDEX opt_concurrently opt_index_name
 					n->isconstraint = false;
 					n->deferrable = false;
 					n->initdeferred = false;
+					n->if_not_exists = false;
+					$$ = (Node *)n;
+				}
+			| CREATE opt_unique INDEX opt_concurrently IF_P NOT EXISTS index_name
+			ON qualified_name access_method_clause '(' index_params ')'
+			opt_reloptions OptTableSpace where_clause
+				{
+					IndexStmt *n = makeNode(IndexStmt);
+					n->unique = $2;
+					n->concurrent = $4;
+					n->idxname = $8;
+					n->relation = $10;
+					n->accessMethod = $11;
+					n->indexParams = $13;
+					n->options = $15;
+					n->tableSpace = $16;
+					n->whereClause = $17;
+					n->excludeOpNames = NIL;
+					n->idxcomment = NULL;
+					n->indexOid = InvalidOid;
+					n->oldNode = InvalidOid;
+					n->primary = false;
+					n->isconstraint = false;
+					n->deferrable = false;
+					n->initdeferred = false;
+					n->if_not_exists = true;
 					$$ = (Node *)n;
 				}
 		;
@@ -7212,39 +7367,46 @@ opt_if_exists: IF_P EXISTS						{ $$ = TRUE; }
  *****************************************************************************/
 
 ReindexStmt:
-			REINDEX reindex_type qualified_name opt_force
+			REINDEX INDEX qualified_name opt_force
 				{
 					ReindexStmt *n = makeNode(ReindexStmt);
-					n->kind = $2;
+					n->kind = REINDEX_OBJECT_INDEX;
 					n->relation = $3;
 					n->name = NULL;
+					$$ = (Node *)n;
+				}
+			| REINDEX TABLE qualified_name opt_force
+				{
+					ReindexStmt *n = makeNode(ReindexStmt);
+					n->kind = REINDEX_OBJECT_TABLE;
+					n->relation = $3;
+					n->name = NULL;
+					$$ = (Node *)n;
+				}
+			| REINDEX SCHEMA name opt_force
+				{
+					ReindexStmt *n = makeNode(ReindexStmt);
+					n->kind = REINDEX_OBJECT_SCHEMA;
+					n->name = $3;
+					n->relation = NULL;
 					$$ = (Node *)n;
 				}
 			| REINDEX SYSTEM_P name opt_force
 				{
 					ReindexStmt *n = makeNode(ReindexStmt);
-					n->kind = OBJECT_DATABASE;
+					n->kind = REINDEX_OBJECT_SYSTEM;
 					n->name = $3;
 					n->relation = NULL;
-					n->do_system = true;
-					n->do_user = false;
 					$$ = (Node *)n;
 				}
 			| REINDEX DATABASE name opt_force
 				{
 					ReindexStmt *n = makeNode(ReindexStmt);
-					n->kind = OBJECT_DATABASE;
+					n->kind = REINDEX_OBJECT_DATABASE;
 					n->name = $3;
 					n->relation = NULL;
-					n->do_system = true;
-					n->do_user = true;
 					$$ = (Node *)n;
 				}
-		;
-
-reindex_type:
-			INDEX									{ $$ = OBJECT_INDEX; }
-			| TABLE									{ $$ = OBJECT_TABLE; }
 		;
 
 opt_force:	FORCE									{  $$ = TRUE; }
@@ -7334,8 +7496,7 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 			| ALTER DOMAIN_P any_name RENAME CONSTRAINT name TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
-					n->renameType = OBJECT_CONSTRAINT;
-					n->relationType = OBJECT_DOMAIN;
+					n->renameType = OBJECT_DOMCONSTRAINT;
 					n->object = $3;
 					n->subname = $6;
 					n->newname = $8;
@@ -7603,8 +7764,7 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 			| ALTER TABLE relation_expr RENAME CONSTRAINT name TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
-					n->renameType = OBJECT_CONSTRAINT;
-					n->relationType = OBJECT_TABLE;
+					n->renameType = OBJECT_TABCONSTRAINT;
 					n->relation = $3;
 					n->subname = $6;
 					n->newname = $8;

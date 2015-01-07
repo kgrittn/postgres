@@ -3,7 +3,7 @@
  * tsgistidx.c
  *	  GiST support functions for tsvector_ops
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -201,9 +201,9 @@ gtsvector_compress(PG_FUNCTION_ARGS)
 		{
 			pg_crc32	c;
 
-			INIT_CRC32(c);
-			COMP_CRC32(c, words + ptr->pos, ptr->len);
-			FIN_CRC32(c);
+			INIT_LEGACY_CRC32(c);
+			COMP_LEGACY_CRC32(c, words + ptr->pos, ptr->len);
+			FIN_LEGACY_CRC32(c);
 
 			*arr = *(int32 *) &c;
 			arr++;

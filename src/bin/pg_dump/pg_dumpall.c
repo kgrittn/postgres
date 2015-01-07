@@ -2,7 +2,7 @@
  *
  * pg_dumpall.c
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * pg_dumpall forces all pg_dump output to be text, since it also outputs
@@ -48,7 +48,7 @@ static void makeAlterConfigCommand(PGconn *conn, const char *arrayitem,
 					   const char *type, const char *name, const char *type2,
 					   const char *name2);
 static void dumpDatabases(PGconn *conn);
-static void dumpTimestamp(char *msg);
+static void dumpTimestamp(const char *msg);
 static void doShellQuoting(PQExpBuffer buf, const char *str);
 static void doConnStrQuoting(PQExpBuffer buf, const char *str);
 
@@ -714,7 +714,7 @@ dumpRoles(PGconn *conn)
 						  "ORDER BY 2");
 	else
 		printfPQExpBuffer(buf,
-						  "SELECT 0, usename as rolname, "
+						  "SELECT 0 as oid, usename as rolname, "
 						  "usesuper as rolsuper, "
 						  "true as rolinherit, "
 						  "usesuper as rolcreaterole, "
@@ -724,11 +724,12 @@ dumpRoles(PGconn *conn)
 						  "passwd as rolpassword, "
 						  "valuntil as rolvaliduntil, "
 						  "false as rolreplication, "
+						  "false as rolbypassrls, "
 						  "null as rolcomment, "
 						  "usename = current_user AS is_current_user "
 						  "FROM pg_shadow "
 						  "UNION ALL "
-						  "SELECT 0, groname as rolname, "
+						  "SELECT 0 as oid, groname as rolname, "
 						  "false as rolsuper, "
 						  "true as rolinherit, "
 						  "false as rolcreaterole, "
@@ -739,7 +740,8 @@ dumpRoles(PGconn *conn)
 						  "null::abstime as rolvaliduntil, "
 						  "false as rolreplication, "
 						  "false as rolbypassrls, "
-						  "null as rolcomment, false "
+						  "null as rolcomment, "
+						  "false AS is_current_user "
 						  "FROM pg_group "
 						  "WHERE NOT EXISTS (SELECT 1 FROM pg_shadow "
 						  " WHERE usename = groname) "
@@ -2058,12 +2060,12 @@ executeCommand(PGconn *conn, const char *query)
  * dumpTimestamp
  */
 static void
-dumpTimestamp(char *msg)
+dumpTimestamp(const char *msg)
 {
 	char		buf[64];
 	time_t		now = time(NULL);
 
-	if (strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S %z", localtime(&now)) != 0)
+	if (strftime(buf, sizeof(buf), PGDUMP_STRFTIME_FMT, localtime(&now)) != 0)
 		fprintf(OPF, "-- %s %s\n\n", msg, buf);
 }
 

@@ -1047,14 +1047,16 @@ PrintTOCSummary(Archive *AHX, RestoreOptions *ropt)
 	teSection	curSection;
 	OutputContext sav;
 	const char *fmtName;
-	struct tm  *tm = localtime(&AH->createDate);
 	char		stamp_str[64];
 
 	sav = SaveOutput(AH);
 	if (ropt->filename)
 		SetOutput(AH, ropt->filename, 0 /* no compression */ );
 
-	strftime(stamp_str, sizeof(stamp_str), "%Y-%m-%d %H:%M:%S %z", tm);
+	if (strftime(stamp_str, sizeof(stamp_str), PGDUMP_STRFTIME_FMT,
+				 localtime(&AH->createDate)) == 0)
+		strcpy(stamp_str, "[unknown]");
+
 	ahprintf(AH, ";\n; Archive created at %s\n", stamp_str);
 	ahprintf(AH, ";     dbname: %s\n;     TOC Entries: %d\n;     Compression: %d\n",
 			 AH->archdbname, AH->tocCount, AH->compression);
@@ -3326,6 +3328,7 @@ _printTocEntry(ArchiveHandle *AH, TocEntry *te, RestoreOptions *ropt, bool isDat
 				 strcmp(te->desc, "RULE") == 0 ||
 				 strcmp(te->desc, "TRIGGER") == 0 ||
 				 strcmp(te->desc, "ROW SECURITY") == 0 ||
+				 strcmp(te->desc, "POLICY") == 0 ||
 				 strcmp(te->desc, "USER MAPPING") == 0)
 		{
 			/* these object types don't have separate owners */
@@ -3544,7 +3547,7 @@ dumpTimestamp(ArchiveHandle *AH, const char *msg, time_t tim)
 {
 	char		buf[64];
 
-	if (strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S %z", localtime(&tim)) != 0)
+	if (strftime(buf, sizeof(buf), PGDUMP_STRFTIME_FMT, localtime(&tim)) != 0)
 		ahprintf(AH, "-- %s %s\n\n", msg, buf);
 }
 

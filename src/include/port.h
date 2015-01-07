@@ -3,7 +3,7 @@
  * port.h
  *	  Header for src/port/ compatibility functions.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/port.h
@@ -328,6 +328,8 @@ extern FILE *pgwin32_popen(const char *command, const char *type);
 #ifndef HAVE_GETTIMEOFDAY
 /* Last parameter not used */
 extern int	gettimeofday(struct timeval * tp, struct timezone * tzp);
+/* On windows we need to call some backend start setup for accurate timing */
+extern void init_win32_gettimeofday(void);
 #endif
 #else							/* !WIN32 */
 

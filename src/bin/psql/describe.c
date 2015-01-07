@@ -6,7 +6,7 @@
  * with servers of versions 7.4 and up.  It's okay to omit irrelevant
  * information for an old server, but not to fail outright.
  *
- * Copyright (c) 2000-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2015, PostgreSQL Global Development Group
  *
  * src/bin/psql/describe.c
  */
@@ -783,31 +783,31 @@ permissionsList(const char *pattern)
 	if (pset.sversion >= 90500)
 		appendPQExpBuffer(&buf,
 						  ",\n  pg_catalog.array_to_string(ARRAY(\n"
-						  "    SELECT rsecpolname\n"
-						  "    || CASE WHEN rseccmd IS NOT NULL THEN\n"
-						  "           E' (' || rseccmd || E')'\n"
+						  "    SELECT polname\n"
+						  "    || CASE WHEN polcmd IS NOT NULL THEN\n"
+						  "           E' (' || polcmd || E')'\n"
 						  "       ELSE E':' \n"
 						  "       END\n"
-						  "    || CASE WHEN rs.rsecqual IS NOT NULL THEN\n"
-						  "           E'\\n  (u): ' || pg_catalog.pg_get_expr(rsecqual, rsecrelid)\n"
+						  "    || CASE WHEN polqual IS NOT NULL THEN\n"
+						  "           E'\\n  (u): ' || pg_catalog.pg_get_expr(polqual, polrelid)\n"
 						  "       ELSE E''\n"
 						  "       END\n"
-						  "    || CASE WHEN rsecwithcheck IS NOT NULL THEN\n"
-						  "           E'\\n  (c): ' || pg_catalog.pg_get_expr(rsecwithcheck, rsecrelid)\n"
+						  "    || CASE WHEN polwithcheck IS NOT NULL THEN\n"
+						  "           E'\\n  (c): ' || pg_catalog.pg_get_expr(polwithcheck, polrelid)\n"
 						  "       ELSE E''\n"
 						  "       END"
-						  "    || CASE WHEN rs.rsecroles <> '{0}' THEN\n"
+						  "    || CASE WHEN polroles <> '{0}' THEN\n"
 						  "           E'\\n  to: ' || pg_catalog.array_to_string(\n"
 						  "               ARRAY(\n"
 						  "                   SELECT rolname\n"
 						  "                   FROM pg_catalog.pg_roles\n"
-						  "                   WHERE oid = ANY (rs.rsecroles)\n"
+						  "                   WHERE oid = ANY (polroles)\n"
 						  "                   ORDER BY 1\n"
 						  "               ), E', ')\n"
 						  "       ELSE E''\n"
 						  "       END\n"
-						  "    FROM pg_catalog.pg_rowsecurity rs\n"
-						  "    WHERE rsecrelid = c.oid), E'\\n')\n"
+						  "    FROM pg_catalog.pg_policy pol\n"
+						  "    WHERE polrelid = c.oid), E'\\n')\n"
 						  "    AS \"%s\"",
 						  gettext_noop("Policies"));
 
@@ -952,7 +952,7 @@ objectDescription(const char *pattern, bool showSystem)
 					  gettext_noop("Object"),
 					  gettext_noop("Description"));
 
-	/* Constraint descriptions */
+	/* Table constraint descriptions */
 	appendPQExpBuffer(&buf,
 					  "  SELECT pgc.oid as oid, pgc.tableoid AS tableoid,\n"
 					  "  n.nspname as nspname,\n"
@@ -963,7 +963,7 @@ objectDescription(const char *pattern, bool showSystem)
 					  "ON c.oid = pgc.conrelid\n"
 					  "    LEFT JOIN pg_catalog.pg_namespace n "
 					  "    ON n.oid = c.relnamespace\n",
-					  gettext_noop("constraint"));
+					  gettext_noop("table constraint"));
 
 	if (!showSystem && !pattern)
 		appendPQExpBufferStr(&buf, "WHERE n.nspname <> 'pg_catalog'\n"
@@ -972,6 +972,29 @@ objectDescription(const char *pattern, bool showSystem)
 	processSQLNamePattern(pset.db, &buf, pattern, !showSystem && !pattern,
 						  false, "n.nspname", "pgc.conname", NULL,
 						  "pg_catalog.pg_table_is_visible(c.oid)");
+
+	/* Domain constraint descriptions */
+	appendPQExpBuffer(&buf,
+					  "UNION ALL\n"
+					  "  SELECT pgc.oid as oid, pgc.tableoid AS tableoid,\n"
+					  "  n.nspname as nspname,\n"
+					  "  CAST(pgc.conname AS pg_catalog.text) as name,"
+					  "  CAST('%s' AS pg_catalog.text) as object\n"
+					  "  FROM pg_catalog.pg_constraint pgc\n"
+					  "    JOIN pg_catalog.pg_type t "
+					  "ON t.oid = pgc.contypid\n"
+					  "    LEFT JOIN pg_catalog.pg_namespace n "
+					  "    ON n.oid = t.typnamespace\n",
+					  gettext_noop("domain constraint"));
+
+	if (!showSystem && !pattern)
+		appendPQExpBufferStr(&buf, "WHERE n.nspname <> 'pg_catalog'\n"
+							 "      AND n.nspname <> 'information_schema'\n");
+
+	processSQLNamePattern(pset.db, &buf, pattern, !showSystem && !pattern,
+						  false, "n.nspname", "pgc.conname", NULL,
+						  "pg_catalog.pg_type_is_visible(t.oid)");
+
 
 	/*
 	 * pg_opclass.opcmethod only available in 8.3+
@@ -2001,27 +2024,19 @@ describeOneTableDetails(const char *schemaname,
 		/* print any row-level policies */
 		if (pset.sversion >= 90500)
 		{
-			appendPQExpBuffer(&buf,
-				",\n pg_catalog.pg_get_expr(rs.rsecqual, c.oid) as \"%s\"",
-				gettext_noop("Row-security"));
-
-			if (verbose)
-				appendPQExpBuffer(&buf,
-					"\n     LEFT JOIN pg_rowsecurity rs ON rs.rsecrelid = c.oid");
-
 			printfPQExpBuffer(&buf,
-						   "SELECT rs.rsecpolname,\n"
-						   "CASE WHEN rs.rsecroles = '{0}' THEN NULL ELSE array_to_string(array(select rolname from pg_roles where oid = any (rs.rsecroles) order by 1),',') END,\n"
-						   "pg_catalog.pg_get_expr(rs.rsecqual, rs.rsecrelid),\n"
-						   "pg_catalog.pg_get_expr(rs.rsecwithcheck, rs.rsecrelid),\n"
-						   "CASE rs.rseccmd \n"
+						   "SELECT pol.polname,\n"
+						   "CASE WHEN pol.polroles = '{0}' THEN NULL ELSE array_to_string(array(select rolname from pg_roles where oid = any (pol.polroles) order by 1),',') END,\n"
+						   "pg_catalog.pg_get_expr(pol.polqual, pol.polrelid),\n"
+						   "pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid),\n"
+						   "CASE pol.polcmd \n"
 						   "WHEN 'r' THEN 'SELECT'\n"
 						   "WHEN 'u' THEN 'UPDATE'\n"
 						   "WHEN 'a' THEN 'INSERT'\n"
 						   "WHEN 'd' THEN 'DELETE'\n"
 						   "END AS cmd\n"
-							  "FROM pg_catalog.pg_rowsecurity rs\n"
-				  "WHERE rs.rsecrelid = '%s' ORDER BY 1;",
+							  "FROM pg_catalog.pg_policy pol\n"
+				  "WHERE pol.polrelid = '%s' ORDER BY 1;",
 							  oid);
 
 			result = PSQLexec(buf.data);

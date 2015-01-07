@@ -8,7 +8,7 @@
  * stepping on each others' toes.  Formerly we used table-level locks
  * on pg_database, but that's too coarse-grained.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -28,6 +28,7 @@
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
+#include "access/xloginsert.h"
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
@@ -618,19 +619,17 @@ createdb(const CreatedbStmt *stmt)
 			/* Record the filesystem change in XLOG */
 			{
 				xl_dbase_create_rec xlrec;
-				XLogRecData rdata[1];
 
 				xlrec.db_id = dboid;
 				xlrec.tablespace_id = dsttablespace;
 				xlrec.src_db_id = src_dboid;
 				xlrec.src_tablespace_id = srctablespace;
 
-				rdata[0].data = (char *) &xlrec;
-				rdata[0].len = sizeof(xl_dbase_create_rec);
-				rdata[0].buffer = InvalidBuffer;
-				rdata[0].next = NULL;
+				XLogBeginInsert();
+				XLogRegisterData((char *) &xlrec, sizeof(xl_dbase_create_rec));
 
-				(void) XLogInsert(RM_DBASE_ID, XLOG_DBASE_CREATE, rdata);
+				(void) XLogInsert(RM_DBASE_ID,
+								  XLOG_DBASE_CREATE | XLR_SPECIAL_REL_UPDATE);
 			}
 		}
 		heap_endscan(scan);
@@ -1154,6 +1153,23 @@ movedb(const char *dbname, const char *tblspcname)
 					  | CHECKPOINT_FLUSH_ALL);
 
 	/*
+	 * Now drop all buffers holding data of the target database; they should
+	 * no longer be dirty so DropDatabaseBuffers is safe.
+	 *
+	 * It might seem that we could just let these buffers age out of shared
+	 * buffers naturally, since they should not get referenced anymore.  The
+	 * problem with that is that if the user later moves the database back to
+	 * its original tablespace, any still-surviving buffers would appear to
+	 * contain valid data again --- but they'd be missing any changes made in
+	 * the database while it was in the new tablespace.  In any case, freeing
+	 * buffers that should never be used again seems worth the cycles.
+	 *
+	 * Note: it'd be sufficient to get rid of buffers matching db_id and
+	 * src_tblspcoid, but bufmgr.c presently provides no API for that.
+	 */
+	DropDatabaseBuffers(db_id);
+
+	/*
 	 * Check for existence of files in the target directory, i.e., objects of
 	 * this database that are already in the target tablespace.  We can't
 	 * allow the move in such a case, because we would need to change those
@@ -1208,19 +1224,17 @@ movedb(const char *dbname, const char *tblspcname)
 		 */
 		{
 			xl_dbase_create_rec xlrec;
-			XLogRecData rdata[1];
 
 			xlrec.db_id = db_id;
 			xlrec.tablespace_id = dst_tblspcoid;
 			xlrec.src_db_id = db_id;
 			xlrec.src_tablespace_id = src_tblspcoid;
 
-			rdata[0].data = (char *) &xlrec;
-			rdata[0].len = sizeof(xl_dbase_create_rec);
-			rdata[0].buffer = InvalidBuffer;
-			rdata[0].next = NULL;
+			XLogBeginInsert();
+			XLogRegisterData((char *) &xlrec, sizeof(xl_dbase_create_rec));
 
-			(void) XLogInsert(RM_DBASE_ID, XLOG_DBASE_CREATE, rdata);
+			(void) XLogInsert(RM_DBASE_ID,
+							  XLOG_DBASE_CREATE | XLR_SPECIAL_REL_UPDATE);
 		}
 
 		/*
@@ -1312,17 +1326,15 @@ movedb(const char *dbname, const char *tblspcname)
 	 */
 	{
 		xl_dbase_drop_rec xlrec;
-		XLogRecData rdata[1];
 
 		xlrec.db_id = db_id;
 		xlrec.tablespace_id = src_tblspcoid;
 
-		rdata[0].data = (char *) &xlrec;
-		rdata[0].len = sizeof(xl_dbase_drop_rec);
-		rdata[0].buffer = InvalidBuffer;
-		rdata[0].next = NULL;
+		XLogBeginInsert();
+		XLogRegisterData((char *) &xlrec, sizeof(xl_dbase_drop_rec));
 
-		(void) XLogInsert(RM_DBASE_ID, XLOG_DBASE_DROP, rdata);
+		(void) XLogInsert(RM_DBASE_ID,
+						  XLOG_DBASE_DROP | XLR_SPECIAL_REL_UPDATE);
 	}
 
 	/* Now it's safe to release the database lock */
@@ -1852,17 +1864,15 @@ remove_dbtablespaces(Oid db_id)
 		/* Record the filesystem change in XLOG */
 		{
 			xl_dbase_drop_rec xlrec;
-			XLogRecData rdata[1];
 
 			xlrec.db_id = db_id;
 			xlrec.tablespace_id = dsttablespace;
 
-			rdata[0].data = (char *) &xlrec;
-			rdata[0].len = sizeof(xl_dbase_drop_rec);
-			rdata[0].buffer = InvalidBuffer;
-			rdata[0].next = NULL;
+			XLogBeginInsert();
+			XLogRegisterData((char *) &xlrec, sizeof(xl_dbase_drop_rec));
 
-			(void) XLogInsert(RM_DBASE_ID, XLOG_DBASE_DROP, rdata);
+			(void) XLogInsert(RM_DBASE_ID,
+							  XLOG_DBASE_DROP | XLR_SPECIAL_REL_UPDATE);
 		}
 
 		pfree(dstpath);
@@ -2025,12 +2035,12 @@ get_database_name(Oid dbid)
  * DATABASE resource manager's routines
  */
 void
-dbase_redo(XLogRecPtr lsn, XLogRecord *record)
+dbase_redo(XLogReaderState *record)
 {
-	uint8		info = record->xl_info & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
 
 	/* Backup blocks are not used in dbase records */
-	Assert(!(record->xl_info & XLR_BKP_BLOCK_MASK));
+	Assert(!XLogRecHasAnyBlockRefs(record));
 
 	if (info == XLOG_DBASE_CREATE)
 	{
