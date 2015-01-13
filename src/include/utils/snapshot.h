@@ -14,6 +14,7 @@
 #define SNAPSHOT_H
 
 #include "access/htup.h"
+#include "access/xlogdefs.h"
 #include "storage/buf.h"
 
 
@@ -92,6 +93,8 @@ typedef struct SnapshotData
 	CommandId	curcid;			/* in my xact, CID < curcid are visible */
 	uint32		active_count;	/* refcount on ActiveSnapshot stack */
 	uint32		regd_count;		/* refcount on RegisteredSnapshotList */
+
+	XLogRecPtr	lsn;			/* position in the WAL stream */
 } SnapshotData;
 
 /*

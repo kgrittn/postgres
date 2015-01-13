@@ -97,7 +97,18 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 		RelationIsAccessibleInLogicalDecoding(relation))
 		OldestXmin = RecentGlobalXmin;
 	else
-		OldestXmin = RecentGlobalDataXmin;
+	{
+		TransactionId	xlimit;
+
+		xlimit = ShmemVariableCache->latestCompletedXid;  /* XXX: Need LW lock? */
+		Assert(TransactionIdIsNormal(xlimit));
+		xlimit -= 2000000;  /* FIXME: Find a sane way to set this number. */
+		TransactionIdRetreat(xlimit);
+		if (TransactionIdFollows(xlimit, RecentGlobalDataXmin))
+			OldestXmin = xlimit;
+		else
+			OldestXmin = RecentGlobalDataXmin;
+	}
 
 	Assert(TransactionIdIsValid(OldestXmin));
 
