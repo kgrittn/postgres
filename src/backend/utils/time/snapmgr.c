@@ -60,6 +60,12 @@
 
 
 /*
+ * GUC parameters
+ */
+int			old_snapshot_threshold;
+
+
+/*
  * CurrentSnapshot points to the only snapshot taken in transaction-snapshot
  * mode, and to the latest one taken in a read-committed transaction.
  * SecondarySnapshot is a snapshot that's always up-to-date as of the current

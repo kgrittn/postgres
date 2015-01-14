@@ -18,6 +18,10 @@
 #include "utils/snapshot.h"
 
 
+/* GUC variables */
+extern int	old_snapshot_threshold;
+
+
 extern bool FirstSnapshotSet;
 
 extern TransactionId TransactionXmin;

@@ -100,14 +100,19 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 	{
 		TransactionId	xlimit;
 
-		xlimit = ShmemVariableCache->latestCompletedXid;  /* XXX: Need LW lock? */
-		Assert(TransactionIdIsNormal(xlimit));
-		xlimit -= 2000000;  /* FIXME: Find a sane way to set this number. */
-		TransactionIdRetreat(xlimit);
-		if (TransactionIdFollows(xlimit, RecentGlobalDataXmin))
-			OldestXmin = xlimit;
-		else
+		if (old_snapshot_threshold < 0)
 			OldestXmin = RecentGlobalDataXmin;
+		else
+		{
+			xlimit = ShmemVariableCache->latestCompletedXid;  /* XXX: Need LW lock? */
+			Assert(TransactionIdIsNormal(xlimit));
+			xlimit -= old_snapshot_threshold;
+			TransactionIdRetreat(xlimit);
+			if (TransactionIdFollows(xlimit, RecentGlobalDataXmin))
+				OldestXmin = xlimit;
+			else
+				OldestXmin = RecentGlobalDataXmin;
+		}
 	}
 
 	Assert(TransactionIdIsValid(OldestXmin));

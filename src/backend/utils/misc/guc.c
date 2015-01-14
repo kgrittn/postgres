@@ -2456,6 +2456,16 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"old_snapshot_threshold", PGC_POSTMASTER, RESOURCES_ASYNCHRONOUS,
+			gettext_noop("The number of transaction IDs which must be consumed before a snapshot can be considered too old."),
+			gettext_noop("A value of -1 disables this feature.")
+		},
+		&old_snapshot_threshold,
+		-1, -1, 2000000000,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"tcp_keepalives_idle", PGC_USERSET, CLIENT_CONN_OTHER,
 			gettext_noop("Time between issuing TCP keepalives."),
 			gettext_noop("A value of 0 uses the system default."),
