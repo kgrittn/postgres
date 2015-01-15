@@ -98,13 +98,13 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 		OldestXmin = RecentGlobalXmin;
 	else
 	{
-		TransactionId	xlimit;
-
 		if (old_snapshot_threshold < 0)
 			OldestXmin = RecentGlobalDataXmin;
 		else
 		{
-			xlimit = ShmemVariableCache->latestCompletedXid;  /* XXX: Need LW lock? */
+			TransactionId	xlimit;
+
+			xlimit = ShmemVariableCache->latestCompletedXid;
 			Assert(TransactionIdIsNormal(xlimit));
 			xlimit -= old_snapshot_threshold;
 			TransactionIdRetreat(xlimit);
@@ -153,6 +153,13 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 		 * page's free space, and recheck the heuristic about whether to
 		 * prune. (We needn't recheck PageIsPrunable, since no one else could
 		 * have pruned while we hold pin.)
+		 *
+		 * Even when checking for old snapshots We do not want to re-read
+		 * latestCompletedXid here because the important thing is that what we
+		 * use here must not be later than what is used for visibility checks.
+		 * We cannot have acquired the buffer cleanup lock while a visibility
+		 * check was in progress, so using a value from before acquiring the
+		 * lock provides sufficient interlocking to be safe.
 		 */
 		if (PageIsFull(page) || PageGetHeapFreeSpace(page) < minfree)
 		{
