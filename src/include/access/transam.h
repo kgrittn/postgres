@@ -68,6 +68,20 @@
 	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
 	(int32) ((id1) - (id2)) > 0)
 
+#define TestForOldSnapshot(snapshot, relation, page) \
+	do { \
+		if (old_snapshot_threshold >= 0 \
+		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
+		 && PageGetLSN(page) > (snapshot)->lsn \
+		 && !IsCatalogRelation(relation) \
+		 && !RelationIsAccessibleInLogicalDecoding(relation) \
+		 && RelationNeedsWAL(relation) \
+		 && TransactionIdPrecedes(TransactionIdLimitedForOldSnapshots((snapshot)->xmin), (snapshot)->xmin)) \
+			ereport(ERROR, \
+					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
+					 errmsg("snapshot too old"))); \
+	} while (0)
+
 /* ----------
  *		Object ID (OID) zero is InvalidOid.
  *
