@@ -97,23 +97,8 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 		RelationIsAccessibleInLogicalDecoding(relation))
 		OldestXmin = RecentGlobalXmin;
 	else
-	{
-		if (old_snapshot_threshold < 0)
-			OldestXmin = RecentGlobalDataXmin;
-		else
-		{
-			TransactionId	xlimit;
-
-			xlimit = ShmemVariableCache->latestCompletedXid;
-			Assert(TransactionIdIsNormal(xlimit));
-			xlimit -= old_snapshot_threshold;
-			TransactionIdRetreat(xlimit);
-			if (TransactionIdFollows(xlimit, RecentGlobalDataXmin))
-				OldestXmin = xlimit;
-			else
-				OldestXmin = RecentGlobalDataXmin;
-		}
-	}
+		OldestXmin =
+				TransactionIdLimitedForOldSnapshots(RecentGlobalDataXmin);
 
 	Assert(TransactionIdIsValid(OldestXmin));
 
