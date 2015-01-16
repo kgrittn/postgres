@@ -71,12 +71,13 @@
 #define TestForOldSnapshot(snapshot, relation, page) \
 	do { \
 		if (old_snapshot_threshold >= 0 \
+		 && TransactionIdIsNormal((snapshot)->xmin) \
 		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
 		 && PageGetLSN(page) > (snapshot)->lsn \
 		 && !IsCatalogRelation(relation) \
 		 && !RelationIsAccessibleInLogicalDecoding(relation) \
 		 && RelationNeedsWAL(relation) \
-		 && TransactionIdPrecedes(TransactionIdLimitedForOldSnapshots((snapshot)->xmin), (snapshot)->xmin)) \
+		 && NormalTransactionIdFollows(TransactionIdLimitedForOldSnapshots((snapshot)->xmin), (snapshot)->xmin)) \
 			ereport(ERROR, \
 					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
 					 errmsg("snapshot too old"))); \

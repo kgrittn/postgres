@@ -364,15 +364,15 @@ TransactionIdFollowsOrEquals(TransactionId id1, TransactionId id2)
 TransactionId
 TransactionIdLimitedForOldSnapshots(TransactionId recentXmin)
 {
-	if (old_snapshot_threshold >= 0)
+	if (TransactionIdIsNormal(recentXmin) && old_snapshot_threshold >= 0)
 	{
 		TransactionId xlimit;
 
 		xlimit = ShmemVariableCache->latestCompletedXid;
 		Assert(TransactionIdIsNormal(xlimit));
 		xlimit -= old_snapshot_threshold;
-		TransactionIdRetreat(xlimit);
-		if (TransactionIdFollows(xlimit, recentXmin))
+		TransactionIdAdvance(xlimit);
+		if (NormalTransactionIdFollows(xlimit, recentXmin))
 			return xlimit;
 	}
 
