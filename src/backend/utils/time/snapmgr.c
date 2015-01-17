@@ -1029,6 +1029,28 @@ pg_export_snapshot(PG_FUNCTION_ARGS)
 
 
 /*
+ * TransactionIdLimitedForOldSnapshots -- apply old snapshot limit, if any
+ */
+TransactionId
+TransactionIdLimitedForOldSnapshots(TransactionId recentXmin)
+{
+	if (TransactionIdIsNormal(recentXmin) && old_snapshot_threshold >= 0)
+	{
+		TransactionId xlimit;
+
+		xlimit = ShmemVariableCache->latestCompletedXid;
+		Assert(TransactionIdIsNormal(xlimit));
+		xlimit -= old_snapshot_threshold;
+		TransactionIdAdvance(xlimit);
+		if (NormalTransactionIdFollows(xlimit, recentXmin))
+			return xlimit;
+	}
+
+	return recentXmin;
+}
+
+
+/*
  * Parsing subroutines for ImportSnapshot: parse a line with the given
  * prefix followed by a value, and advance *s to the next line.  The
  * filename is provided for use in error messages.

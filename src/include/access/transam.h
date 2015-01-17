@@ -68,21 +68,6 @@
 	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
 	(int32) ((id1) - (id2)) > 0)
 
-#define TestForOldSnapshot(snapshot, relation, page) \
-	do { \
-		if (old_snapshot_threshold >= 0 \
-		 && TransactionIdIsNormal((snapshot)->xmin) \
-		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
-		 && PageGetLSN(page) > (snapshot)->lsn \
-		 && !IsCatalogRelation(relation) \
-		 && !RelationIsAccessibleInLogicalDecoding(relation) \
-		 && RelationNeedsWAL(relation) \
-		 && NormalTransactionIdFollows(TransactionIdLimitedForOldSnapshots((snapshot)->xmin), (snapshot)->xmin)) \
-			ereport(ERROR, \
-					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
-					 errmsg("snapshot too old"))); \
-	} while (0)
-
 /* ----------
  *		Object ID (OID) zero is InvalidOid.
  *
@@ -179,7 +164,6 @@ extern bool TransactionIdPrecedes(TransactionId id1, TransactionId id2);
 extern bool TransactionIdPrecedesOrEquals(TransactionId id1, TransactionId id2);
 extern bool TransactionIdFollows(TransactionId id1, TransactionId id2);
 extern bool TransactionIdFollowsOrEquals(TransactionId id1, TransactionId id2);
-extern TransactionId TransactionIdLimitedForOldSnapshots(TransactionId recentXmin);
 extern TransactionId TransactionIdLatest(TransactionId mainxid,
 					int nxids, const TransactionId *xids);
 extern XLogRecPtr TransactionIdGetCommitLSN(TransactionId xid);

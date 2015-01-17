@@ -359,28 +359,6 @@ TransactionIdFollowsOrEquals(TransactionId id1, TransactionId id2)
 
 
 /*
- * TransactionIdLimitedForOldSnapshots -- apply old snapshot limit, if any
- */
-TransactionId
-TransactionIdLimitedForOldSnapshots(TransactionId recentXmin)
-{
-	if (TransactionIdIsNormal(recentXmin) && old_snapshot_threshold >= 0)
-	{
-		TransactionId xlimit;
-
-		xlimit = ShmemVariableCache->latestCompletedXid;
-		Assert(TransactionIdIsNormal(xlimit));
-		xlimit -= old_snapshot_threshold;
-		TransactionIdAdvance(xlimit);
-		if (NormalTransactionIdFollows(xlimit, recentXmin))
-			return xlimit;
-	}
-
-	return recentXmin;
-}
-
-
-/*
  * TransactionIdLatest --- get latest XID among a main xact and its children
  */
 TransactionId
