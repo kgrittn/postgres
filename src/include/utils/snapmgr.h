@@ -14,19 +14,23 @@
 #define SNAPMGR_H
 
 #include "fmgr.h"
+#include "catalog/catalog.h"
 #include "utils/resowner.h"
 #include "utils/snapshot.h"
+#include "utils/tqual.h"
 
 
 #define TestForOldSnapshot(snapshot, relation, page) \
 	do { \
 		if (old_snapshot_threshold >= 0 \
+		 && ((snapshot) != NULL) \
+		 && (snapshot)->satisfies == HeapTupleSatisfiesMVCC \
 		 && TransactionIdIsNormal((snapshot)->xmin) \
 		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
+		 && RelationNeedsWAL(relation) \
 		 && PageGetLSN(page) > (snapshot)->lsn \
 		 && !IsCatalogRelation(relation) \
 		 && !RelationIsAccessibleInLogicalDecoding(relation) \
-		 && RelationNeedsWAL(relation) \
 		 && NormalTransactionIdFollows(TransactionIdLimitedForOldSnapshots((snapshot)->xmin), (snapshot)->xmin)) \
 			ereport(ERROR, \
 					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
