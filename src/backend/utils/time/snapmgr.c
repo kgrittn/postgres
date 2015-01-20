@@ -53,6 +53,7 @@
 #include "storage/sinval.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
+#include "utils/rel.h"
 #include "utils/resowner_private.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
@@ -1032,9 +1033,14 @@ pg_export_snapshot(PG_FUNCTION_ARGS)
  * TransactionIdLimitedForOldSnapshots -- apply old snapshot limit, if any
  */
 TransactionId
-TransactionIdLimitedForOldSnapshots(TransactionId recentXmin)
+TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
+									Relation relation)
 {
-	if (TransactionIdIsNormal(recentXmin) && old_snapshot_threshold >= 0)
+	if (TransactionIdIsNormal(recentXmin)
+		&& old_snapshot_threshold >= 0
+		&& RelationNeedsWAL(relation)
+		&& !IsCatalogRelation(relation)
+		&& !RelationIsAccessibleInLogicalDecoding(relation))
 	{
 		TransactionId xlimit;
 

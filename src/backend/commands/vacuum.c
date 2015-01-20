@@ -442,7 +442,7 @@ vacuum_set_xid_limits(Relation rel,
 	 * always an independent transaction.
 	 */
 	*oldestXmin =
-		TransactionIdLimitedForOldSnapshots(GetOldestXmin(rel, true));
+		TransactionIdLimitedForOldSnapshots(GetOldestXmin(rel, true), rel);
 
 	Assert(TransactionIdIsNormal(*oldestXmin));
 

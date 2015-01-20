@@ -25,13 +25,9 @@
 		if (old_snapshot_threshold >= 0 \
 		 && ((snapshot) != NULL) \
 		 && (snapshot)->satisfies == HeapTupleSatisfiesMVCC \
-		 && TransactionIdIsNormal((snapshot)->xmin) \
 		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
-		 && RelationNeedsWAL(relation) \
 		 && PageGetLSN(page) > (snapshot)->lsn \
-		 && !IsCatalogRelation(relation) \
-		 && !RelationIsAccessibleInLogicalDecoding(relation) \
-		 && NormalTransactionIdFollows(TransactionIdLimitedForOldSnapshots((snapshot)->xmin), (snapshot)->xmin)) \
+		 && NormalTransactionIdFollows(TransactionIdLimitedForOldSnapshots((snapshot)->xmin, relation), (snapshot)->xmin)) \
 			ereport(ERROR, \
 					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
 					 errmsg("snapshot too old"))); \
@@ -78,7 +74,8 @@ extern void ImportSnapshot(const char *idstr);
 extern bool XactHasExportedSnapshots(void);
 extern void DeleteAllExportedSnapshotFiles(void);
 extern bool ThereAreNoPriorRegisteredSnapshots(void);
-extern TransactionId TransactionIdLimitedForOldSnapshots(TransactionId recentXmin);
+extern TransactionId TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
+														 Relation relation);
 
 extern char *ExportSnapshot(Snapshot snapshot);
 
