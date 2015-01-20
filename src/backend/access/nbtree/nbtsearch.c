@@ -105,7 +105,6 @@ _bt_search(Relation rel, int keysz, ScanKey scankey, bool nextkey,
 
 		/* if this is a leaf page, we're done */
 		page = BufferGetPage(*bufP);
-		TestForOldSnapshot(snapshot, rel, page);
 		opaque = (BTPageOpaque) PageGetSpecialPointer(page);
 		if (P_ISLEAF(opaque))
 			break;
