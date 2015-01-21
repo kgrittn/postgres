@@ -140,7 +140,7 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 		 * prune. (We needn't recheck PageIsPrunable, since no one else could
 		 * have pruned while we hold pin.)
 		 *
-		 * Even when checking for old snapshots We do not want to re-read
+		 * Even when checking for old snapshots we do not want to re-read
 		 * latestCompletedXid here because the important thing is that what we
 		 * use here must not be later than what is used for visibility checks.
 		 * We cannot have acquired the buffer cleanup lock while a visibility
