@@ -15,6 +15,7 @@
 
 #include "access/htup.h"
 #include "access/xlogdefs.h"
+#include "lib/pairingheap.h"
 #include "storage/buf.h"
 
 
@@ -92,7 +93,9 @@ typedef struct SnapshotData
 	 */
 	CommandId	curcid;			/* in my xact, CID < curcid are visible */
 	uint32		active_count;	/* refcount on ActiveSnapshot stack */
-	uint32		regd_count;		/* refcount on RegisteredSnapshotList */
+	uint32		regd_count;		/* refcount on RegisteredSnapshots */
+
+	pairingheap_node ph_node;	/* link in the RegisteredSnapshots heap */
 
 	XLogRecPtr	lsn;			/* position in the WAL stream */
 } SnapshotData;
