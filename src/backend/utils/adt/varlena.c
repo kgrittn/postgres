@@ -63,6 +63,7 @@ typedef struct
 	char			   *buf2;		/* 2nd string, or abbreviation strxfrm() buf */
 	int					buflen1;
 	int					buflen2;
+	bool				collate_c;
 	hyperLogLogState	abbr_card;	/* Abbreviated key cardinality state */
 	hyperLogLogState	full_card;	/* Full key cardinality state */
 #ifdef HAVE_LOCALE_T
@@ -1744,7 +1745,7 @@ static void
 btsortsupport_worker(SortSupport ssup, Oid collid)
 {
 	bool				abbreviate = ssup->abbreviate;
-	bool				locale_aware = false;
+	bool				collate_c = false;
 	TextSortSupport	   *tss;
 
 #ifdef HAVE_LOCALE_T
@@ -1769,7 +1770,10 @@ btsortsupport_worker(SortSupport ssup, Oid collid)
 	 * bttextcmp() via the fmgr trampoline.
 	 */
 	if (lc_collate_is_c(collid))
+	{
 		ssup->comparator = bttextfastcmp_c;
+		collate_c = true;
+	}
 #ifdef WIN32
 	else if (GetDatabaseEncoding() == PG_UTF8)
 		return;
@@ -1777,7 +1781,6 @@ btsortsupport_worker(SortSupport ssup, Oid collid)
 	else
 	{
 		ssup->comparator = bttextfastcmp_locale;
-		locale_aware = true;
 
 		/*
 		 * We need a collation-sensitive comparison.  To make things faster,
@@ -1798,7 +1801,7 @@ btsortsupport_worker(SortSupport ssup, Oid collid)
 						 errhint("Use the COLLATE clause to set the collation explicitly.")));
 			}
 #ifdef HAVE_LOCALE_T
-			tss->locale = pg_newlocale_from_collation(collid);
+			locale = pg_newlocale_from_collation(collid);
 #endif
 		}
 	}
@@ -1814,13 +1817,7 @@ btsortsupport_worker(SortSupport ssup, Oid collid)
 	 * keys optimization may win, and if it doesn't, the "abort abbreviation"
 	 * code may rescue us.  So, for now, we don't disable this anywhere on the
 	 * basis of performance.
-	 *
-	 * On Windows, however, strxfrm() seems to be unreliable on some machines,
-	 * so we categorically disable this optimization there.
 	 */
-#ifdef WIN32
-	abbreviate = false;
-#endif
 
 	/*
 	 * If we're using abbreviated keys, or if we're using a locale-aware
@@ -1828,7 +1825,7 @@ btsortsupport_worker(SortSupport ssup, Oid collid)
 	 * will make use of the temporary buffers we initialize here for scratch
 	 * space, and the abbreviation case requires additional state.
 	 */
-	if (abbreviate || locale_aware)
+	if (abbreviate || !collate_c)
 	{
 		tss = palloc(sizeof(TextSortSupport));
 		tss->buf1 = palloc(TEXTBUFLEN);
@@ -1838,6 +1835,7 @@ btsortsupport_worker(SortSupport ssup, Oid collid)
 #ifdef HAVE_LOCALE_T
 		tss->locale = locale;
 #endif
+		tss->collate_c = collate_c;
 		ssup->ssup_extra = tss;
 
 		/*
@@ -1994,12 +1992,12 @@ bttext_abbrev_convert(Datum original, SortSupport ssup)
 {
 	TextSortSupport	   *tss = (TextSortSupport *) ssup->ssup_extra;
 	text			   *authoritative = DatumGetTextPP(original);
+	char			   *authoritative_data = VARDATA_ANY(authoritative);
 
 	/* working state */
 	Datum				res;
 	char			   *pres;
 	int					len;
-	Size				bsize;
 	uint32				hash;
 
 	/*
@@ -2011,45 +2009,68 @@ bttext_abbrev_convert(Datum original, SortSupport ssup)
 	memset(pres, 0, sizeof(Datum));
 	len = VARSIZE_ANY_EXHDR(authoritative);
 
-	/* By convention, we use buffer 1 to store and NUL-terminate text */
-	if (len >= tss->buflen1)
-	{
-		pfree(tss->buf1);
-		tss->buflen1 = Max(len + 1, Min(tss->buflen1 * 2, MaxAllocSize));
-		tss->buf1 = palloc(tss->buflen1);
-	}
-
-	/* Just like strcoll(), strxfrm() expects a NUL-terminated string */
-	memcpy(tss->buf1, VARDATA_ANY(authoritative), len);
-	tss->buf1[len] = '\0';
-
-	/* Don't leak memory here */
-	if (PointerGetDatum(authoritative) != original)
-		pfree(authoritative);
-
-retry:
-
 	/*
-	 * There is no special handling of the C locale here, unlike with
-	 * varstr_cmp().  strxfrm() is used indifferently.
+	 * If we're using the C collation, use memcmp(), rather than strxfrm(),
+	 * to abbreviate keys.  The full comparator for the C locale is always
+	 * memcmp(), and we can't risk having this give a different answer.
+	 * Besides, this should be faster, too.
 	 */
-#ifdef HAVE_LOCALE_T
-	if (tss->locale)
-		bsize = strxfrm_l(tss->buf2, tss->buf1, tss->buflen2, tss->locale);
+	if (tss->collate_c)
+		memcpy(pres, authoritative_data, Min(len, sizeof(Datum)));
 	else
-#endif
-		bsize = strxfrm(tss->buf2, tss->buf1, tss->buflen2);
-
-	if (bsize >= tss->buflen2)
 	{
+		Size			bsize;
+
 		/*
-		 * The C standard states that the contents of the buffer is now
-		 * unspecified.  Grow buffer, and retry.
+		 * We're not using the C collation, so fall back on strxfrm.
 		 */
-		pfree(tss->buf2);
-		tss->buflen2 = Max(bsize + 1, Min(tss->buflen2 * 2, MaxAllocSize));
-		tss->buf2 = palloc(tss->buflen2);
-		goto retry;
+
+		/* By convention, we use buffer 1 to store and NUL-terminate text */
+		if (len >= tss->buflen1)
+		{
+			pfree(tss->buf1);
+			tss->buflen1 = Max(len + 1, Min(tss->buflen1 * 2, MaxAllocSize));
+			tss->buf1 = palloc(tss->buflen1);
+		}
+
+		/* Just like strcoll(), strxfrm() expects a NUL-terminated string */
+		memcpy(tss->buf1, VARDATA_ANY(authoritative), len);
+		tss->buf1[len] = '\0';
+
+		/* Don't leak memory here */
+		if (PointerGetDatum(authoritative) != original)
+			pfree(authoritative);
+
+		for (;;)
+		{
+#ifdef HAVE_LOCALE_T
+			if (tss->locale)
+				bsize = strxfrm_l(tss->buf2, tss->buf1,
+								  tss->buflen2, tss->locale);
+			else
+#endif
+				bsize = strxfrm(tss->buf2, tss->buf1, tss->buflen2);
+
+			if (bsize < tss->buflen2)
+				break;
+
+			/*
+			 * The C standard states that the contents of the buffer is now
+			 * unspecified.  Grow buffer, and retry.
+			 */
+			pfree(tss->buf2);
+			tss->buflen2 = Max(bsize + 1,
+							   Min(tss->buflen2 * 2, MaxAllocSize));
+			tss->buf2 = palloc(tss->buflen2);
+		}
+
+		/*
+		 * Every Datum byte is always compared.  This is safe because the
+		 * strxfrm() blob is itself NUL terminated, leaving no danger of
+		 * misinterpreting any NUL bytes not intended to be interpreted as
+		 * logically representing termination.
+		 */
+		memcpy(pres, tss->buf2, Min(sizeof(Datum), bsize));
 	}
 
 	/*
@@ -2061,16 +2082,15 @@ retry:
 	 *
 	 * First, Hash key proper, or a significant fraction of it.  Mix in length
 	 * in order to compensate for cases where differences are past
-	 * CACHE_LINE_SIZE bytes, so as to limit the overhead of hashing.
+	 * PG_CACHE_LINE_SIZE bytes, so as to limit the overhead of hashing.
 	 */
-	hash = hash_any((unsigned char *) tss->buf1, Min(len, PG_CACHE_LINE_SIZE));
+	hash = hash_any((unsigned char *) authoritative_data,
+					Min(len, PG_CACHE_LINE_SIZE));
 
 	if (len > PG_CACHE_LINE_SIZE)
 		hash ^= DatumGetUInt32(hash_uint32((uint32) len));
 
 	addHyperLogLog(&tss->full_card, hash);
-
-	memcpy(pres, tss->buf2, Min(sizeof(Datum), bsize));
 
 	/* Hash abbreviated key */
 #if SIZEOF_DATUM == 8
@@ -2088,12 +2108,6 @@ retry:
 
 	addHyperLogLog(&tss->abbr_card, hash);
 
-	/*
-	 * Every Datum byte is always compared.  This is safe because the strxfrm()
-	 * blob is itself NUL terminated, leaving no danger of misinterpreting any
-	 * NUL bytes not intended to be interpreted as logically representing
-	 * termination.
-	 */
 	return res;
 }
 
@@ -2916,7 +2930,7 @@ SplitIdentifierString(char *rawstring, char separator,
 			len = endp - curname;
 			downname = downcase_truncate_identifier(curname, len, false);
 			Assert(strlen(downname) <= len);
-			strncpy(curname, downname, len);
+			strncpy(curname, downname, len);	/* strncpy is required here */
 			pfree(downname);
 		}
 
