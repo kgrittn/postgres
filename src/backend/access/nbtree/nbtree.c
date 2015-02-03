@@ -451,9 +451,12 @@ btrescan(PG_FUNCTION_ARGS)
 	{
 		/* Before leaving current page, deal with any killed items */
 		if (so->numKilled > 0)
-			_bt_killitems(scan, false);
-		ReleaseBuffer(so->currPos.buf);
-		so->currPos.buf = InvalidBuffer;
+			_bt_killitems(scan);
+		if (BufferIsValid(so->currPos.buf))
+		{
+			ReleaseBuffer(so->currPos.buf);
+			so->currPos.buf = InvalidBuffer;
+		}
 	}
 
 	if (BTScanPosIsValid(so->markPos))
@@ -515,9 +518,12 @@ btendscan(PG_FUNCTION_ARGS)
 	{
 		/* Before leaving current page, deal with any killed items */
 		if (so->numKilled > 0)
-			_bt_killitems(scan, false);
-		ReleaseBuffer(so->currPos.buf);
-		so->currPos.buf = InvalidBuffer;
+			_bt_killitems(scan);
+		if (BufferIsValid(so->currPos.buf))
+		{
+			ReleaseBuffer(so->currPos.buf);
+			so->currPos.buf = InvalidBuffer;
+		}
 	}
 
 	if (BTScanPosIsValid(so->markPos))
@@ -606,9 +612,12 @@ btrestrpos(PG_FUNCTION_ARGS)
 			/* Before leaving current page, deal with any killed items */
 			if (so->numKilled > 0 &&
 				so->currPos.buf != so->markPos.buf)
-				_bt_killitems(scan, false);
-			ReleaseBuffer(so->currPos.buf);
-			so->currPos.buf = InvalidBuffer;
+				_bt_killitems(scan);
+			if (BufferIsValid(so->currPos.buf))
+			{
+				ReleaseBuffer(so->currPos.buf);
+				so->currPos.buf = InvalidBuffer;
+			}
 		}
 
 		if (BTScanPosIsValid(so->markPos))

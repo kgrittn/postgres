@@ -22,6 +22,7 @@
 #include "storage/predicate.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/tqual.h"
 
 
 static bool _bt_readpage(IndexScanDesc scan, ScanDirection dir,
@@ -31,6 +32,35 @@ static void _bt_saveitem(BTScanOpaque so, int itemIndex,
 static bool _bt_steppage(IndexScanDesc scan, ScanDirection dir);
 static Buffer _bt_walk_left(Relation rel, Buffer buf);
 static bool _bt_endpoint(IndexScanDesc scan, ScanDirection dir);
+static void _bt_drop_lock_and_maybe_pin(IndexScanDesc scan, BTScanPos sp);
+
+
+/*
+ *	_bt_drop_lock_and_maybe_pin()
+ *
+ * Unlock the buffer; and if it is safe to release the pin, do that, too.  It
+ * is safe if the scan is using an MVCC snapshot and the index is WAL-logged.
+ * This will prevent vacuum from stalling in a blocked state trying to read a
+ * page when a cursor is sitting on it -- at least in many important cases.
+ *
+ * Set the buffer to invalid if the pin is released, since the buffer may be
+ * re-used.  If we need to go back to this block (for example, to apply
+ * LP_DEAD hints) we must get a fresh reference to the buffer.  Hopefully it
+ * will remain in shared memory for as long as it takes to scan the index
+ * buffer page.
+ */
+static void
+_bt_drop_lock_and_maybe_pin(IndexScanDesc scan, BTScanPos sp)
+{
+	LockBuffer(sp->buf, BUFFER_LOCK_UNLOCK);
+
+// 	if (IsMVCCSnapshot(scan->xs_snapshot) &&
+// 		RelationNeedsWAL(scan->indexRelation))
+// 	{
+// 		ReleaseBuffer(sp->buf);
+// 		sp->buf = InvalidBuffer;
+// 	}
+}
 
 
 /*
@@ -1032,12 +1062,15 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 		 * There's no actually-matching data on this page.  Try to advance to
 		 * the next page.  Return false if there's no matching data at all.
 		 */
+		LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
 		if (!_bt_steppage(scan, dir))
 			return false;
 	}
-
-	/* Drop the lock, but not pin, on the current page */
-	LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
+	else
+	{
+		/* Drop the lock, and maybe the pin, on the current page */
+		_bt_drop_lock_and_maybe_pin(scan, &so->currPos);
+	}
 
 	/* OK, itemIndex says what to return */
 	currItem = &so->currPos.items[so->currPos.itemIndex];
@@ -1076,26 +1109,16 @@ _bt_next(IndexScanDesc scan, ScanDirection dir)
 	{
 		if (++so->currPos.itemIndex > so->currPos.lastItem)
 		{
-			/* We must acquire lock before applying _bt_steppage */
-			Assert(BufferIsValid(so->currPos.buf));
-			LockBuffer(so->currPos.buf, BT_READ);
 			if (!_bt_steppage(scan, dir))
 				return false;
-			/* Drop the lock, but not pin, on the new page */
-			LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
 		}
 	}
 	else
 	{
 		if (--so->currPos.itemIndex < so->currPos.firstItem)
 		{
-			/* We must acquire lock before applying _bt_steppage */
-			Assert(BufferIsValid(so->currPos.buf));
-			LockBuffer(so->currPos.buf, BT_READ);
 			if (!_bt_steppage(scan, dir))
 				return false;
-			/* Drop the lock, but not pin, on the new page */
-			LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
 		}
 	}
 
@@ -1142,6 +1165,19 @@ _bt_readpage(IndexScanDesc scan, ScanDirection dir, OffsetNumber offnum)
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
 	minoff = P_FIRSTDATAKEY(opaque);
 	maxoff = PageGetMaxOffsetNumber(page);
+
+	/*
+	 * We note the buffer's block number so that we can release the pin later.
+	 * This allows us to re-read the buffer if it is needed again for hinting.
+	 */
+	so->currPos.currPage = BufferGetBlockNumber(so->currPos.buf);
+
+	/*
+	 * We save the LSN of the page as we read it, so that we know whether it
+	 * safe to apply LP_DEAD hints to the page later.  This allows us to drop
+	 * the pin for MVCC scans, which allows vacuum to avoid blocking.
+	 */
+	so->currPos.lsn = PageGetLSN(page);
 
 	/*
 	 * we must save the page's right-link while scanning it; this tells us
@@ -1241,11 +1277,14 @@ _bt_saveitem(BTScanOpaque so, int itemIndex,
 /*
  *	_bt_steppage() -- Step to next page containing valid data for scan
  *
- * On entry, so->currPos.buf must be pinned and read-locked.  We'll drop
- * the lock and pin before moving to next page.
+ * On entry, if so->currPos.buf is valid the buffer is pinned but not locked;
+ * if pinned, we'll drop the pin before moving to next page.  The buffer is
+ * not locked on entry.
  *
- * On success exit, we hold pin and read-lock on the next interesting page,
- * and so->currPos is updated to contain data from that page.
+ * On success exit, so->currPos is updated to contain data from the next
+ * interesting page.  For success on a scan using a non-MVCC snapshot we hold
+ * a pin, but not a read lock, on that page.  If we do not hold the pin, we
+ * set so->currPos.buf to InvalidBuffer.  We return TRUE to indicate success.
  *
  * If there are no more matching records in the given direction, we drop all
  * locks and pins, set so->currPos.buf to InvalidBuffer, and return FALSE.
@@ -1254,16 +1293,13 @@ static bool
 _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
-	Relation	rel;
+	Relation	rel = scan->indexRelation;
 	Page		page;
 	BTPageOpaque opaque;
 
-	/* we must have the buffer pinned and locked */
-	Assert(BufferIsValid(so->currPos.buf));
-
 	/* Before leaving current page, deal with any killed items */
 	if (so->numKilled > 0)
-		_bt_killitems(scan, true);
+		_bt_killitems(scan);
 
 	/*
 	 * Before we modify currPos, make a copy of the page data if there was a
@@ -1272,6 +1308,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 	if (so->markItemIndex >= 0)
 	{
 		/* bump pin on current buffer for assignment to mark buffer */
+/* FIXME: rework mark/restore logic.
 		IncrBufferRefCount(so->currPos.buf);
 		memcpy(&so->markPos, &so->currPos,
 			   offsetof(BTScanPosData, items[1]) +
@@ -1281,9 +1318,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 				   so->currPos.nextTupleOffset);
 		so->markPos.itemIndex = so->markItemIndex;
 		so->markItemIndex = -1;
-	}
-
-	rel = scan->indexRelation;
+*/	}
 
 	if (ScanDirectionIsForward(dir))
 	{
@@ -1294,11 +1329,15 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 		/* Remember we left a page with data */
 		so->currPos.moreLeft = true;
 
+		/* release the previous buffer, if pinned */
+		if (BufferIsValid(so->currPos.buf))
+		{
+			ReleaseBuffer(so->currPos.buf);
+			so->currPos.buf = InvalidBuffer;
+		}
+
 		for (;;)
 		{
-			/* release the previous buffer */
-			_bt_relbuf(rel, so->currPos.buf);
-			so->currPos.buf = InvalidBuffer;
 			/* if we're at end of scan, give up */
 			if (blkno == P_NONE || !so->currPos.moreRight)
 				return false;
@@ -1317,14 +1356,23 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 				if (_bt_readpage(scan, dir, P_FIRSTDATAKEY(opaque)))
 					break;
 			}
+
 			/* nope, keep going */
 			blkno = opaque->btpo_next;
+			_bt_relbuf(rel, so->currPos.buf);
+			so->currPos.buf = InvalidBuffer;
 		}
 	}
 	else
 	{
 		/* Remember we left a page with data */
 		so->currPos.moreRight = true;
+
+		/* FIXME: Walking left needs to be lighter on the locking and pins. */
+		if (BufferIsValid(so->currPos.buf))
+			LockBuffer(so->currPos.buf, BUFFER_LOCK_SHARE);
+		else
+			so->currPos.buf = _bt_getbuf(rel, so->currPos.currPage, BT_READ);
 
 		/*
 		 * Walk left to the next page with data.  This is much more complex
@@ -1367,6 +1415,9 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 			}
 		}
 	}
+
+	/* Drop the lock, and maybe the pin, on the current page */
+	_bt_drop_lock_and_maybe_pin(scan, &so->currPos);
 
 	return true;
 }
@@ -1658,12 +1709,15 @@ _bt_endpoint(IndexScanDesc scan, ScanDirection dir)
 		 * There's no actually-matching data on this page.  Try to advance to
 		 * the next page.  Return false if there's no matching data at all.
 		 */
+		LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
 		if (!_bt_steppage(scan, dir))
 			return false;
 	}
-
-	/* Drop the lock, but not pin, on the current page */
-	LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
+	else
+	{
+		/* Drop the lock, and maybe the pin, on the current page */
+		_bt_drop_lock_and_maybe_pin(scan, &so->currPos);
+	}
 
 	/* OK, itemIndex says what to return */
 	currItem = &so->currPos.items[so->currPos.itemIndex];

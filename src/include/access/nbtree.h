@@ -518,6 +518,8 @@ typedef struct BTScanPosData
 {
 	Buffer		buf;			/* if valid, the buffer is pinned */
 
+	XLogRecPtr	lsn;			/* pos in the WAL stream when page was read */
+	BlockNumber currPage;		/* page we've referencd by items array */
 	BlockNumber nextPage;		/* page's right link when we scanned it */
 
 	/*
@@ -697,7 +699,7 @@ extern void _bt_preprocess_keys(IndexScanDesc scan);
 extern IndexTuple _bt_checkkeys(IndexScanDesc scan,
 			  Page page, OffsetNumber offnum,
 			  ScanDirection dir, bool *continuescan);
-extern void _bt_killitems(IndexScanDesc scan, bool haveLock);
+extern void _bt_killitems(IndexScanDesc scan);
 extern BTCycleId _bt_vacuum_cycleid(Relation rel);
 extern BTCycleId _bt_start_vacuum(Relation rel);
 extern void _bt_end_vacuum(Relation rel);

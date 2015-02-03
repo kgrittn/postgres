@@ -1724,9 +1724,9 @@ _bt_check_rowcompare(ScanKey skey, IndexTuple tuple, TupleDesc tupdesc,
  * scan->so contains information about the current page and killed tuples
  * thereon (generally, this should only be called if so->numKilled > 0).
  *
- * The caller must have pin on so->currPos.buf, but may or may not have
- * read-lock, as indicated by haveLock.  Note that we assume read-lock
- * is sufficient for setting LP_DEAD status (which is only a hint).
+ * The caller may or may not have a pin on so->currPos.buf.  Note that we
+ * assume read-lock is sufficient for setting LP_DEAD status (which is only a
+ * hint).
  *
  * We match items by heap TID before assuming they are the right ones to
  * delete.  We cope with cases where items have moved right due to insertions.
@@ -1741,7 +1741,7 @@ _bt_check_rowcompare(ScanKey skey, IndexTuple tuple, TupleDesc tupdesc,
  * recycled.)
  */
 void
-_bt_killitems(IndexScanDesc scan, bool haveLock)
+_bt_killitems(IndexScanDesc scan)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 	Page		page;
@@ -1753,10 +1753,35 @@ _bt_killitems(IndexScanDesc scan, bool haveLock)
 
 	Assert(BufferIsValid(so->currPos.buf));
 
-	if (!haveLock)
+	if (BufferIsValid(so->currPos.buf))
+	{
+		/* The buffer is still pinned, but not locked.  Lock it now. */
 		LockBuffer(so->currPos.buf, BT_READ);
+		page = BufferGetPage(so->currPos.buf);
+	}
+	else
+	{
+		Buffer		buf;
 
-	page = BufferGetPage(so->currPos.buf);
+		/* Attempt to re-read the buffer, getting pin and lock. */
+		buf = _bt_getbuf(scan->indexRelation, so->currPos.currPage, BT_READ);
+
+		/* It might not exist anymore; in which case we can't hint it. */
+		if (!BufferIsValid(buf))
+			return;
+
+		page = BufferGetPage(buf);
+		if (PageGetLSN(page) == so->currPos.lsn)
+			so->currPos.buf = buf;
+		else
+		{
+			/* Modified while not pinned means hinting is not safe. */
+			LockBuffer(buf, BUFFER_LOCK_UNLOCK);
+			ReleaseBuffer(buf);
+			return;
+		}
+	}
+
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
 	minoff = P_FIRSTDATAKEY(opaque);
 	maxoff = PageGetMaxOffsetNumber(page);
@@ -1799,8 +1824,7 @@ _bt_killitems(IndexScanDesc scan, bool haveLock)
 		MarkBufferDirtyHint(so->currPos.buf, true);
 	}
 
-	if (!haveLock)
-		LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
+	LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
 
 	/*
 	 * Always reset the scan state, so we don't look for same items on other
