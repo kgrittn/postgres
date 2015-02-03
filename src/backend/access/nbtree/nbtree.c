@@ -405,6 +405,8 @@ btbeginscan(PG_FUNCTION_ARGS)
 	/* allocate private workspace */
 	so = (BTScanOpaque) palloc(sizeof(BTScanOpaqueData));
 	so->currPos.buf = so->markPos.buf = InvalidBuffer;
+	so->currPos.currPage = so->currPos.nextPage =
+	so->markPos.currPage = so->markPos.nextPage = InvalidBlockNumber;
 	if (scan->numberOfKeys > 0)
 		so->keyData = (ScanKey) palloc(scan->numberOfKeys * sizeof(ScanKeyData));
 	else
@@ -838,7 +840,7 @@ btvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 		LockBufferForCleanup(buf);
 		_bt_checkpage(rel, buf);
 		_bt_delitems_vacuum(rel, buf, NULL, 0, vstate.lastBlockVacuumed);
-		_bt_relbuf(rel, buf);
+		_bt_relbuf(buf);
 	}
 
 	MemoryContextDelete(vstate.pagedelcontext);
@@ -906,7 +908,7 @@ restart:
 			!P_ISLEAF(opaque) ||
 			opaque->btpo_cycleid != vstate->cycleid)
 		{
-			_bt_relbuf(rel, buf);
+			_bt_relbuf(buf);
 			return;
 		}
 	}
@@ -1094,7 +1096,7 @@ restart:
 		/* pagedel released buffer, so we shouldn't */
 	}
 	else
-		_bt_relbuf(rel, buf);
+		_bt_relbuf(buf);
 
 	/*
 	 * This is really tail recursion, but if the compiler is too stupid to

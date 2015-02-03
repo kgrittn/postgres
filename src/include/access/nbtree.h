@@ -553,7 +553,27 @@ typedef struct BTScanPosData
 
 typedef BTScanPosData *BTScanPos;
 
+#define BTScanPosIsPinned(scanpos) BufferIsValid((scanpos).buf)
+#define BTScanPosUnpin(scanpos) \
+	do { \
+		ReleaseBuffer((scanpos).buf); \
+		(scanpos).buf = InvalidBuffer; \
+	} while (0)
+#define BTScanPosUnpinIfPinned(scanpos) \
+	do { \
+		if (BTScanPosIsPinned(so->currPos)) \
+			BTScanPosUnpin(so->currPos); \
+	} while (0)
+
+//#define BTScanPosIsValid(scanpos) BlockNumberIsValid((scanpos).currPage)
 #define BTScanPosIsValid(scanpos) BufferIsValid((scanpos).buf)
+#define BTScanPosInvalidate(scanpos) \
+	do { \
+		(scanpos).currPage = InvalidBlockNumber; \
+		(scanpos).nextPage = InvalidBlockNumber; \
+		(scanpos).buf = InvalidBuffer; \
+		(scanpos).lsn = InvalidXLogRecPtr \
+	} while (0);
 
 /* We need one of these for each equality-type SK_SEARCHARRAY scan key */
 typedef struct BTArrayKeyInfo
@@ -656,7 +676,7 @@ extern void _bt_checkpage(Relation rel, Buffer buf);
 extern Buffer _bt_getbuf(Relation rel, BlockNumber blkno, int access);
 extern Buffer _bt_relandgetbuf(Relation rel, Buffer obuf,
 				 BlockNumber blkno, int access);
-extern void _bt_relbuf(Relation rel, Buffer buf);
+extern void _bt_relbuf(Buffer buf);
 extern void _bt_pageinit(Page page, Size size);
 extern bool _bt_page_recyclable(Page page);
 extern void _bt_delitems_delete(Relation rel, Buffer buf,

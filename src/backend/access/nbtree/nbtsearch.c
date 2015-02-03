@@ -253,7 +253,7 @@ _bt_moveright(Relation rel,
 			if (P_INCOMPLETE_SPLIT(opaque))
 				_bt_finish_split(rel, buf, stack);
 			else
-				_bt_relbuf(rel, buf);
+				_bt_relbuf(buf);
 
 			/* re-acquire the lock in the right mode, and re-check */
 			buf = _bt_getbuf(rel, blkno, access);
@@ -1159,7 +1159,7 @@ _bt_readpage(IndexScanDesc scan, ScanDirection dir, OffsetNumber offnum)
 	bool		continuescan;
 
 	/* we must have the buffer pinned and locked */
-	Assert(BufferIsValid(so->currPos.buf));
+	Assert(BTScanPosIsPinned(so->currPos));
 
 	page = BufferGetPage(so->currPos.buf);
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
@@ -1330,11 +1330,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 		so->currPos.moreLeft = true;
 
 		/* release the previous buffer, if pinned */
-		if (BufferIsValid(so->currPos.buf))
-		{
-			ReleaseBuffer(so->currPos.buf);
-			so->currPos.buf = InvalidBuffer;
-		}
+		BTScanPosUnpinIfPinned(so->currPos);
 
 		for (;;)
 		{
@@ -1359,7 +1355,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 
 			/* nope, keep going */
 			blkno = opaque->btpo_next;
-			_bt_relbuf(rel, so->currPos.buf);
+			_bt_relbuf(so->currPos.buf);
 			so->currPos.buf = InvalidBuffer;
 		}
 	}
@@ -1368,8 +1364,8 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 		/* Remember we left a page with data */
 		so->currPos.moreRight = true;
 
-		/* FIXME: Walking left needs to be lighter on the locking and pins. */
-		if (BufferIsValid(so->currPos.buf))
+		/* FIXME: Walking left needs to be lighter on the locking and pins? */
+		if (BTScanPosIsPinned(so->currPos))
 			LockBuffer(so->currPos.buf, BUFFER_LOCK_SHARE);
 		else
 			so->currPos.buf = _bt_getbuf(rel, so->currPos.currPage, BT_READ);
@@ -1386,7 +1382,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 			/* Done if we know there are no matching keys to the left */
 			if (!so->currPos.moreLeft)
 			{
-				_bt_relbuf(rel, so->currPos.buf);
+				_bt_relbuf(so->currPos.buf);
 				so->currPos.buf = InvalidBuffer;
 				return false;
 			}
@@ -1455,14 +1451,14 @@ _bt_walk_left(Relation rel, Buffer buf)
 		/* if we're at end of tree, release buf and return failure */
 		if (P_LEFTMOST(opaque))
 		{
-			_bt_relbuf(rel, buf);
+			_bt_relbuf(buf);
 			break;
 		}
 		/* remember original page we are stepping left from */
 		obknum = BufferGetBlockNumber(buf);
 		/* step left */
 		blkno = lblkno = opaque->btpo_prev;
-		_bt_relbuf(rel, buf);
+		_bt_relbuf(buf);
 		/* check for interrupts while we're not holding any buffer lock */
 		CHECK_FOR_INTERRUPTS();
 		buf = _bt_getbuf(rel, blkno, BT_READ);

@@ -1751,12 +1751,14 @@ _bt_killitems(IndexScanDesc scan)
 	int			i;
 	bool		killedsomething = false;
 
-	Assert(BufferIsValid(so->currPos.buf));
+	Assert(BTScanPosIsValid(so->currPos));
 
-	if (BufferIsValid(so->currPos.buf))
+	if (BTScanPosIsPinned(so->currPos))
 	{
 		/* The buffer is still pinned, but not locked.  Lock it now. */
 		LockBuffer(so->currPos.buf, BT_READ);
+
+		/* Since the else condition needs page, get it here, too. */
 		page = BufferGetPage(so->currPos.buf);
 	}
 	else
@@ -1776,8 +1778,7 @@ _bt_killitems(IndexScanDesc scan)
 		else
 		{
 			/* Modified while not pinned means hinting is not safe. */
-			LockBuffer(buf, BUFFER_LOCK_UNLOCK);
-			ReleaseBuffer(buf);
+			_bt_relbuf(buf);
 			return;
 		}
 	}
