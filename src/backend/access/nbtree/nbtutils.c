@@ -1749,9 +1749,16 @@ _bt_killitems(IndexScanDesc scan)
 	OffsetNumber minoff;
 	OffsetNumber maxoff;
 	int			i;
+	int			numKilled = so->numKilled;
 	bool		killedsomething = false;
 
 	Assert(BTScanPosIsValid(so->currPos));
+
+	/*
+	 * Always reset the scan state, so we don't look for same items on other
+	 * pages.
+	 */
+	so->numKilled = 0;
 
 	if (BTScanPosIsPinned(so->currPos))
 	{
@@ -1787,7 +1794,7 @@ _bt_killitems(IndexScanDesc scan)
 	minoff = P_FIRSTDATAKEY(opaque);
 	maxoff = PageGetMaxOffsetNumber(page);
 
-	for (i = 0; i < so->numKilled; i++)
+	for (i = 0; i < numKilled; i++)
 	{
 		int			itemIndex = so->killedItems[i];
 		BTScanPosItem *kitem = &so->currPos.items[itemIndex];
@@ -1826,12 +1833,6 @@ _bt_killitems(IndexScanDesc scan)
 	}
 
 	LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
-
-	/*
-	 * Always reset the scan state, so we don't look for same items on other
-	 * pages.
-	 */
-	so->numKilled = 0;
 }
 
 
