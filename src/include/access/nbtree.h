@@ -572,7 +572,8 @@ typedef BTScanPosData *BTScanPos;
 		(scanpos).currPage = InvalidBlockNumber; \
 		(scanpos).nextPage = InvalidBlockNumber; \
 		(scanpos).buf = InvalidBuffer; \
-		(scanpos).lsn = InvalidXLogRecPtr \
+		(scanpos).lsn = InvalidXLogRecPtr; \
+		(scanpos).nextTupleOffset = 0; \
 	} while (0);
 
 /* We need one of these for each equality-type SK_SEARCHARRAY scan key */

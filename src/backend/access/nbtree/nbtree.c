@@ -404,9 +404,8 @@ btbeginscan(PG_FUNCTION_ARGS)
 
 	/* allocate private workspace */
 	so = (BTScanOpaque) palloc(sizeof(BTScanOpaqueData));
-	so->currPos.buf = so->markPos.buf = InvalidBuffer;
-	so->currPos.currPage = so->currPos.nextPage =
-	so->markPos.currPage = so->markPos.nextPage = InvalidBlockNumber;
+	BTScanPosInvalidate(so->currPos);
+	BTScanPosInvalidate(so->markPos);
 	if (scan->numberOfKeys > 0)
 		so->keyData = (ScanKey) palloc(scan->numberOfKeys * sizeof(ScanKeyData));
 	else
@@ -426,8 +425,6 @@ btbeginscan(PG_FUNCTION_ARGS)
 	 * scan->xs_itupdesc whether we'll need it or not, since that's so cheap.
 	 */
 	so->currTuples = so->markTuples = NULL;
-	so->currPos.nextTupleOffset = 0;
-	so->markPos.nextTupleOffset = 0;
 
 	scan->xs_itupdesc = RelationGetDescr(rel);
 
@@ -545,17 +542,15 @@ btmarkpos(PG_FUNCTION_ARGS)
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 
 	/* we aren't holding any read locks, but gotta drop the pin */
-	if (BTScanPosIsValid(so->markPos))
-	{
-		ReleaseBuffer(so->markPos.buf);
-		so->markPos.buf = InvalidBuffer;
-	}
+	BTScanPosUnpinIfPinned(so->markPos);
 
 	/*
 	 * Just record the current itemIndex.  If we later step to next page
 	 * before releasing the marked position, _bt_steppage makes a full copy of
 	 * the currPos struct in markPos.  If (as often happens) the mark is moved
 	 * before we leave the page, we don't have to do that work.
+	 *
+	 * FIXME: mark work needed here.
 	 */
 	if (BTScanPosIsValid(so->currPos))
 		so->markItemIndex = so->currPos.itemIndex;

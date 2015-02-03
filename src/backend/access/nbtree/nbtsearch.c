@@ -1336,7 +1336,10 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 		{
 			/* if we're at end of scan, give up */
 			if (blkno == P_NONE || !so->currPos.moreRight)
+			{
+				BTScanPosInvalidate(so->currPos);
 				return false;
+			}
 			/* check for interrupts while we're not holding any buffer lock */
 			CHECK_FOR_INTERRUPTS();
 			/* step right one page */
@@ -1356,7 +1359,6 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 			/* nope, keep going */
 			blkno = opaque->btpo_next;
 			_bt_relbuf(so->currPos.buf);
-			so->currPos.buf = InvalidBuffer;
 		}
 	}
 	else
@@ -1383,7 +1385,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 			if (!so->currPos.moreLeft)
 			{
 				_bt_relbuf(so->currPos.buf);
-				so->currPos.buf = InvalidBuffer;
+				BTScanPosInvalidate(so->currPos);
 				return false;
 			}
 
@@ -1392,7 +1394,10 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 
 			/* if we're physically at end of index, return failure */
 			if (so->currPos.buf == InvalidBuffer)
+			{
+				BTScanPosInvalidate(so->currPos);
 				return false;
+			}
 
 			/*
 			 * Okay, we managed to move left to a non-deleted page. Done if
@@ -1651,7 +1656,7 @@ _bt_endpoint(IndexScanDesc scan, ScanDirection dir)
 		 * exists.
 		 */
 		PredicateLockRelation(rel, scan->xs_snapshot);
-		so->currPos.buf = InvalidBuffer;
+		BTScanPosInvalidate(so->currPos);
 		return false;
 	}
 
