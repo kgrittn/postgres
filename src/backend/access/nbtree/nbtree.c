@@ -457,7 +457,6 @@ btrescan(PG_FUNCTION_ARGS)
 
 	BTScanPosUnpinIfPinned(so->markPos);
 	BTScanPosInvalidate(so->markPos);
-	so->markItemIndex = -1;
 
 	/*
 	 * Allocate tuple workspace arrays, if needed for an index-only scan and
@@ -516,7 +515,8 @@ btendscan(PG_FUNCTION_ARGS)
 	}
 
 	BTScanPosUnpinIfPinned(so->markPos);
-	so->markItemIndex = -1;
+
+	/* No need to invalidate positions, the RAM is about to be freed. */
 
 	/* Release storage */
 	if (so->keyData != NULL)
@@ -543,21 +543,15 @@ btmarkpos(PG_FUNCTION_ARGS)
 	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 
-	/* we aren't holding any read locks, but gotta drop the pin */
-	BTScanPosUnpinIfPinned(so->markPos);
+	memcpy(&so->markPos, &so->currPos,
+		   offsetof(BTScanPosData, items[1]) +
+		   so->currPos.lastItem * sizeof(BTScanPosItem));
+	if (so->markTuples)
+		memcpy(so->markTuples, so->currTuples,
+			   so->currPos.nextTupleOffset);
 
-	/*
-	 * Just record the current itemIndex.  If we later step to next page
-	 * before releasing the marked position, _bt_steppage makes a full copy of
-	 * the currPos struct in markPos.  If (as often happens) the mark is moved
-	 * before we leave the page, we don't have to do that work.
-	 *
-	 * FIXME: mark work needed here.
-	 */
-	if (BTScanPosIsValid(so->currPos))
-		so->markItemIndex = so->currPos.itemIndex;
-	else
-		so->markItemIndex = -1;
+	/* We don't take out an extra pin for the mark position. */
+	so->markPos.buf = InvalidBuffer;
 
 	/* Also record the current positions of any array keys */
 	if (so->numArrayKeys)
@@ -579,13 +573,13 @@ btrestrpos(PG_FUNCTION_ARGS)
 	if (so->numArrayKeys)
 		_bt_restore_array_keys(scan);
 
-	if (so->markItemIndex >= 0)
+	if (so->markPos.currPage == so->currPos.currPage)
 	{
 		/*
 		 * The mark position is on the same page we are currently on. Just
 		 * restore the itemIndex.
 		 */
-		so->currPos.itemIndex = so->markItemIndex;
+		so->currPos.itemIndex = so->markPos.itemIndex;
 	}
 	else
 	{
@@ -601,8 +595,6 @@ btrestrpos(PG_FUNCTION_ARGS)
 
 		if (BTScanPosIsValid(so->markPos))
 		{
-			/* bump pin on mark buffer for assignment to current buffer */
-			IncrBufferRefCount(so->markPos.buf);
 			memcpy(&so->currPos, &so->markPos,
 				   offsetof(BTScanPosData, items[1]) +
 				   so->markPos.lastItem * sizeof(BTScanPosItem));
@@ -610,6 +602,8 @@ btrestrpos(PG_FUNCTION_ARGS)
 				memcpy(so->currTuples, so->markTuples,
 					   so->markPos.nextTupleOffset);
 		}
+		else
+			BTScanPosInvalidate(so->currPos);
 	}
 
 	PG_RETURN_VOID();

@@ -54,12 +54,12 @@ _bt_drop_lock_and_maybe_pin(IndexScanDesc scan, BTScanPos sp)
 {
 	LockBuffer(sp->buf, BUFFER_LOCK_UNLOCK);
 
-// 	if (IsMVCCSnapshot(scan->xs_snapshot) &&
-// 		RelationNeedsWAL(scan->indexRelation))
-// 	{
-// 		ReleaseBuffer(sp->buf);
-// 		sp->buf = InvalidBuffer;
-// 	}
+ 	if (IsMVCCSnapshot(scan->xs_snapshot) &&
+ 		RelationNeedsWAL(scan->indexRelation))
+ 	{
+ 		ReleaseBuffer(sp->buf);
+ 		sp->buf = InvalidBuffer;
+ 	}
 }
 
 
@@ -999,7 +999,6 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 		so->currPos.moreRight = false;
 	}
 	so->numKilled = 0;			/* just paranoia */
-	so->markItemIndex = -1;		/* ditto */
 
 	/* position to the precise item on the page */
 	offnum = _bt_binsrch(rel, buf, keysCount, scankeys, nextkey);
@@ -1309,28 +1308,11 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 	Page		page;
 	BTPageOpaque opaque;
 
+	Assert(BTScanPosIsValid(so->currPos));
+
 	/* Before leaving current page, deal with any killed items */
 	if (so->numKilled > 0)
 		_bt_killitems(scan);
-
-	/*
-	 * Before we modify currPos, make a copy of the page data if there was a
-	 * mark position that needs it.
-	 */
-	if (so->markItemIndex >= 0)
-	{
-		/* bump pin on current buffer for assignment to mark buffer */
-/* FIXME: rework mark/restore logic. */
-		IncrBufferRefCount(so->currPos.buf);
-		memcpy(&so->markPos, &so->currPos,
-			   offsetof(BTScanPosData, items[1]) +
-			   so->currPos.lastItem * sizeof(BTScanPosItem));
-		if (so->markTuples)
-			memcpy(so->markTuples, so->currTuples,
-				   so->currPos.nextTupleOffset);
-		so->markPos.itemIndex = so->markItemIndex;
-		so->markItemIndex = -1;
-	}
 
 	if (ScanDirectionIsForward(dir))
 	{
@@ -1711,7 +1693,6 @@ _bt_endpoint(IndexScanDesc scan, ScanDirection dir)
 		so->currPos.moreRight = false;
 	}
 	so->numKilled = 0;			/* just paranoia */
-	so->markItemIndex = -1;		/* ditto */
 
 	/*
 	 * Now load data from the first page of the scan.
