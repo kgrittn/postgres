@@ -1785,7 +1785,7 @@ _bt_killitems(IndexScanDesc scan)
 		else
 		{
 			/* Modified while not pinned means hinting is not safe. */
-			_bt_relbuf(buf);
+			_bt_relbuf(scan->indexRelation, buf);
 			return;
 		}
 	}

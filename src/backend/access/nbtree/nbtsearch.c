@@ -253,7 +253,7 @@ _bt_moveright(Relation rel,
 			if (P_INCOMPLETE_SPLIT(opaque))
 				_bt_finish_split(rel, buf, stack);
 			else
-				_bt_relbuf(buf);
+				_bt_relbuf(rel, buf);
 
 			/* re-acquire the lock in the right mode, and re-check */
 			buf = _bt_getbuf(rel, blkno, access);
@@ -1358,7 +1358,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 
 			/* nope, keep going */
 			blkno = opaque->btpo_next;
-			_bt_relbuf(so->currPos.buf);
+			_bt_relbuf(rel, so->currPos.buf);
 		}
 	}
 	else
@@ -1384,7 +1384,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 			/* Done if we know there are no matching keys to the left */
 			if (!so->currPos.moreLeft)
 			{
-				_bt_relbuf(so->currPos.buf);
+				_bt_relbuf(rel, so->currPos.buf);
 				BTScanPosInvalidate(so->currPos);
 				return false;
 			}
@@ -1456,14 +1456,14 @@ _bt_walk_left(Relation rel, Buffer buf)
 		/* if we're at end of tree, release buf and return failure */
 		if (P_LEFTMOST(opaque))
 		{
-			_bt_relbuf(buf);
+			_bt_relbuf(rel, buf);
 			break;
 		}
 		/* remember original page we are stepping left from */
 		obknum = BufferGetBlockNumber(buf);
 		/* step left */
 		blkno = lblkno = opaque->btpo_prev;
-		_bt_relbuf(buf);
+		_bt_relbuf(rel, buf);
 		/* check for interrupts while we're not holding any buffer lock */
 		CHECK_FOR_INTERRUPTS();
 		buf = _bt_getbuf(rel, blkno, BT_READ);

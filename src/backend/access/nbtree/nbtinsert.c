@@ -168,7 +168,7 @@ top:
 		if (TransactionIdIsValid(xwait))
 		{
 			/* Have to wait for the other guy ... */
-			_bt_relbuf(buf);
+			_bt_relbuf(rel, buf);
 			XactLockTableWait(xwait, rel, &itup->t_tid, XLTW_InsertIndex);
 			/* start over... */
 			_bt_freestack(stack);
@@ -194,7 +194,7 @@ top:
 	else
 	{
 		/* just release the buffer */
-		_bt_relbuf(buf);
+		_bt_relbuf(rel, buf);
 	}
 
 	/* be tidy */
@@ -323,7 +323,7 @@ _bt_check_unique(Relation rel, IndexTuple itup, Relation heapRel,
 					if (checkUnique == UNIQUE_CHECK_PARTIAL)
 					{
 						if (nbuf != InvalidBuffer)
-							_bt_relbuf(nbuf);
+							_bt_relbuf(rel, nbuf);
 						*is_unique = false;
 						return InvalidTransactionId;
 					}
@@ -338,7 +338,7 @@ _bt_check_unique(Relation rel, IndexTuple itup, Relation heapRel,
 					if (TransactionIdIsValid(xwait))
 					{
 						if (nbuf != InvalidBuffer)
-							_bt_relbuf(nbuf);
+							_bt_relbuf(rel, nbuf);
 						/* Tell _bt_doinsert to wait... */
 						return xwait;
 					}
@@ -383,8 +383,8 @@ _bt_check_unique(Relation rel, IndexTuple itup, Relation heapRel,
 					 * cause deadlocks.
 					 */
 					if (nbuf != InvalidBuffer)
-						_bt_relbuf(nbuf);
-					_bt_relbuf(buf);
+						_bt_relbuf(rel, nbuf);
+					_bt_relbuf(rel, buf);
 
 					{
 						Datum		values[INDEX_MAX_KEYS];
@@ -475,7 +475,7 @@ _bt_check_unique(Relation rel, IndexTuple itup, Relation heapRel,
 									RelationGetRelationName(rel))));
 
 	if (nbuf != InvalidBuffer)
-		_bt_relbuf(nbuf);
+		_bt_relbuf(rel, nbuf);
 
 	return InvalidTransactionId;
 }
@@ -645,7 +645,7 @@ _bt_findinsertloc(Relation rel,
 
 			rblkno = lpageop->btpo_next;
 		}
-		_bt_relbuf(buf);
+		_bt_relbuf(rel, buf);
 		buf = rbuf;
 		movedright = true;
 		vacuumed = false;
@@ -805,7 +805,7 @@ _bt_insertonpg(Relation rel,
 			if (metad->btm_fastlevel >= lpageop->btpo.level)
 			{
 				/* no update wanted */
-				_bt_relbuf(metabuf);
+				_bt_relbuf(rel, metabuf);
 				metabuf = InvalidBuffer;
 			}
 		}
@@ -907,10 +907,10 @@ _bt_insertonpg(Relation rel,
 
 		/* release buffers */
 		if (BufferIsValid(metabuf))
-			_bt_relbuf(metabuf);
+			_bt_relbuf(rel, metabuf);
 		if (BufferIsValid(cbuf))
-			_bt_relbuf(cbuf);
-		_bt_relbuf(buf);
+			_bt_relbuf(rel, cbuf);
+		_bt_relbuf(rel, buf);
 	}
 }
 
@@ -1326,11 +1326,11 @@ _bt_split(Relation rel, Buffer buf, Buffer cbuf, OffsetNumber firstright,
 
 	/* release the old right sibling */
 	if (!P_RIGHTMOST(ropaque))
-		_bt_relbuf(sbuf);
+		_bt_relbuf(rel, sbuf);
 
 	/* release the child */
 	if (!isleaf)
-		_bt_relbuf(cbuf);
+		_bt_relbuf(rel, cbuf);
 
 	/* split's done */
 	return rbuf;
@@ -1633,9 +1633,9 @@ _bt_insert_parent(Relation rel,
 		/* create a new root node and update the metapage */
 		rootbuf = _bt_newroot(rel, buf, rbuf);
 		/* release the split buffers */
-		_bt_relbuf(rootbuf);
-		_bt_relbuf(rbuf);
-		_bt_relbuf(buf);
+		_bt_relbuf(rel, rootbuf);
+		_bt_relbuf(rel, rbuf);
+		_bt_relbuf(rel, buf);
 	}
 	else
 	{
@@ -1661,7 +1661,7 @@ _bt_insert_parent(Relation rel,
 			stack->bts_offset = InvalidOffsetNumber;
 			/* bts_btentry will be initialized below */
 			stack->bts_parent = NULL;
-			_bt_relbuf(pbuf);
+			_bt_relbuf(rel, pbuf);
 		}
 
 		/* get high key from left page == lowest key on new right page */
@@ -1686,7 +1686,7 @@ _bt_insert_parent(Relation rel,
 		 * Now we can unlock the right child. The left child will be unlocked
 		 * by _bt_insertonpg().
 		 */
-		_bt_relbuf(rbuf);
+		_bt_relbuf(rel, rbuf);
 
 		/* Check for error only after writing children */
 		if (pbuf == InvalidBuffer)
@@ -1745,7 +1745,7 @@ _bt_finish_split(Relation rel, Buffer lbuf, BTStack stack)
 
 		was_root = (metad->btm_root == BufferGetBlockNumber(lbuf));
 
-		_bt_relbuf(metabuf);
+		_bt_relbuf(rel, metabuf);
 	}
 	else
 		was_root = false;
@@ -1864,12 +1864,12 @@ _bt_getstackbuf(Relation rel, BTStack stack, int access)
 		 */
 		if (P_RIGHTMOST(opaque))
 		{
-			_bt_relbuf(buf);
+			_bt_relbuf(rel, buf);
 			return InvalidBuffer;
 		}
 		blkno = opaque->btpo_next;
 		start = InvalidOffsetNumber;
-		_bt_relbuf(buf);
+		_bt_relbuf(rel, buf);
 	}
 }
 
@@ -2038,7 +2038,7 @@ _bt_newroot(Relation rel, Buffer lbuf, Buffer rbuf)
 	END_CRIT_SECTION();
 
 	/* done with metapage */
-	_bt_relbuf(metabuf);
+	_bt_relbuf(rel, metabuf);
 
 	pfree(left_item);
 	pfree(right_item);

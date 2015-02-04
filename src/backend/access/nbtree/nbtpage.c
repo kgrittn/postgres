@@ -148,7 +148,7 @@ _bt_getroot(Relation rel, int access)
 			/* OK, accept cached page as the root */
 			return rootbuf;
 		}
-		_bt_relbuf(rootbuf);
+		_bt_relbuf(rel, rootbuf);
 		/* Cache is stale, throw it away */
 		if (rel->rd_amcache)
 			pfree(rel->rd_amcache);
@@ -181,7 +181,7 @@ _bt_getroot(Relation rel, int access)
 		/* If access = BT_READ, caller doesn't want us to create root yet */
 		if (access == BT_READ)
 		{
-			_bt_relbuf(metabuf);
+			_bt_relbuf(rel, metabuf);
 			return InvalidBuffer;
 		}
 
@@ -202,7 +202,7 @@ _bt_getroot(Relation rel, int access)
 			 * over again.  (Is that really true? But it's hardly worth trying
 			 * to optimize this case.)
 			 */
-			_bt_relbuf(metabuf);
+			_bt_relbuf(rel, metabuf);
 			return _bt_getroot(rel, access);
 		}
 
@@ -271,7 +271,7 @@ _bt_getroot(Relation rel, int access)
 		LockBuffer(rootbuf, BT_READ);
 
 		/* okay, metadata is correct, release lock on it */
-		_bt_relbuf(metabuf);
+		_bt_relbuf(rel, metabuf);
 	}
 	else
 	{
@@ -381,7 +381,7 @@ _bt_gettrueroot(Relation rel)
 	/* if no root page initialized yet, fail */
 	if (metad->btm_root == P_NONE)
 	{
-		_bt_relbuf(metabuf);
+		_bt_relbuf(rel, metabuf);
 		return InvalidBuffer;
 	}
 
@@ -472,7 +472,7 @@ _bt_getrootheight(Relation rel)
 		 */
 		if (metad->btm_root == P_NONE)
 		{
-			_bt_relbuf(metabuf);
+			_bt_relbuf(rel, metabuf);
 			return 0;
 		}
 
@@ -483,7 +483,7 @@ _bt_getrootheight(Relation rel)
 											 sizeof(BTMetaPageData));
 		memcpy(rel->rd_amcache, metad, sizeof(BTMetaPageData));
 
-		_bt_relbuf(metabuf);
+		_bt_relbuf(rel, metabuf);
 	}
 
 	metad = (BTMetaPageData *) rel->rd_amcache;
@@ -636,7 +636,7 @@ _bt_getbuf(Relation rel, BlockNumber blkno, int access)
 					return buf;
 				}
 				elog(DEBUG2, "FSM returned nonrecyclable page");
-				_bt_relbuf(buf);
+				_bt_relbuf(rel, buf);
 			}
 			else
 			{
@@ -716,7 +716,7 @@ _bt_relandgetbuf(Relation rel, Buffer obuf, BlockNumber blkno, int access)
  * Lock and pin (refcount) are both dropped.
  */
 void
-_bt_relbuf(Buffer buf)
+_bt_relbuf(Relation rel, Buffer buf)
 {
 	UnlockReleaseBuffer(buf);
 }
@@ -935,7 +935,7 @@ _bt_is_page_halfdead(Relation rel, BlockNumber blk)
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
 
 	result = P_ISHALFDEAD(opaque);
-	_bt_relbuf(buf);
+	_bt_relbuf(rel, buf);
 
 	return result;
 }
@@ -1012,7 +1012,7 @@ _bt_lock_branch_parent(Relation rel, BlockNumber child, BTStack stack,
 			if (P_RIGHTMOST(opaque) || P_ISROOT(opaque) ||
 				P_INCOMPLETE_SPLIT(opaque))
 			{
-				_bt_relbuf(pbuf);
+				_bt_relbuf(rel, pbuf);
 				return false;
 			}
 
@@ -1020,7 +1020,7 @@ _bt_lock_branch_parent(Relation rel, BlockNumber child, BTStack stack,
 			*rightsib = opaque->btpo_next;
 			leftsib = opaque->btpo_prev;
 
-			_bt_relbuf(pbuf);
+			_bt_relbuf(rel, pbuf);
 
 			/*
 			 * Like in _bt_pagedel, check that the left sibling is not marked
@@ -1048,10 +1048,10 @@ _bt_lock_branch_parent(Relation rel, BlockNumber child, BTStack stack,
 				if (lopaque->btpo_next == parent &&
 					P_INCOMPLETE_SPLIT(lopaque))
 				{
-					_bt_relbuf(lbuf);
+					_bt_relbuf(rel, lbuf);
 					return false;
 				}
-				_bt_relbuf(lbuf);
+				_bt_relbuf(rel, lbuf);
 			}
 
 			/*
@@ -1071,7 +1071,7 @@ _bt_lock_branch_parent(Relation rel, BlockNumber child, BTStack stack,
 		else
 		{
 			/* Unsafe to delete */
-			_bt_relbuf(pbuf);
+			_bt_relbuf(rel, pbuf);
 			return false;
 		}
 	}
@@ -1152,7 +1152,7 @@ _bt_pagedel(Relation rel, Buffer buf)
 					errmsg("index \"%s\" contains a half-dead internal page",
 						   RelationGetRelationName(rel)),
 						 errhint("This can be caused by an interrupted VACUUM in version 9.3 or older, before upgrade. Please REINDEX it.")));
-			_bt_relbuf(buf);
+			_bt_relbuf(rel, buf);
 			return ndeleted;
 		}
 
@@ -1180,7 +1180,7 @@ _bt_pagedel(Relation rel, Buffer buf)
 			/* Should never fail to delete a half-dead page */
 			Assert(!P_ISHALFDEAD(opaque));
 
-			_bt_relbuf(buf);
+			_bt_relbuf(rel, buf);
 			return ndeleted;
 		}
 
@@ -1244,10 +1244,10 @@ _bt_pagedel(Relation rel, Buffer buf)
 						P_INCOMPLETE_SPLIT(lopaque))
 					{
 						ReleaseBuffer(buf);
-						_bt_relbuf(lbuf);
+						_bt_relbuf(rel, lbuf);
 						return ndeleted;
 					}
-					_bt_relbuf(lbuf);
+					_bt_relbuf(rel, lbuf);
 				}
 
 				/* we need an insertion scan key for the search, so build one */
@@ -1256,7 +1256,7 @@ _bt_pagedel(Relation rel, Buffer buf)
 				stack = _bt_search(rel, rel->rd_rel->relnatts, itup_scankey,
 								   false, &lbuf, BT_READ);
 				/* don't need a pin on the page */
-				_bt_relbuf(lbuf);
+				_bt_relbuf(rel, lbuf);
 
 				/*
 				 * Re-lock the leaf page, and start over, to re-check that the
@@ -1268,7 +1268,7 @@ _bt_pagedel(Relation rel, Buffer buf)
 
 			if (!_bt_mark_page_halfdead(rel, buf, stack))
 			{
-				_bt_relbuf(buf);
+				_bt_relbuf(rel, buf);
 				return ndeleted;
 			}
 		}
@@ -1283,7 +1283,7 @@ _bt_pagedel(Relation rel, Buffer buf)
 		{
 			if (!_bt_unlink_halfdead_page(rel, buf, &rightsib_empty))
 			{
-				_bt_relbuf(buf);
+				_bt_relbuf(rel, buf);
 				return ndeleted;
 			}
 			ndeleted++;
@@ -1291,7 +1291,7 @@ _bt_pagedel(Relation rel, Buffer buf)
 
 		rightsib = opaque->btpo_next;
 
-		_bt_relbuf(buf);
+		_bt_relbuf(rel, buf);
 
 		/*
 		 * The page has now been deleted. If its right sibling is completely
@@ -1485,7 +1485,7 @@ _bt_mark_page_halfdead(Relation rel, Buffer leafbuf, BTStack stack)
 
 	END_CRIT_SECTION();
 
-	_bt_relbuf(topparent);
+	_bt_relbuf(rel, topparent);
 	return true;
 }
 
@@ -1594,7 +1594,7 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, bool *rightsib_empty)
 		{
 			/* step right one page */
 			leftsib = opaque->btpo_next;
-			_bt_relbuf(lbuf);
+			_bt_relbuf(rel, lbuf);
 			if (leftsib == P_NONE)
 			{
 				elog(LOG, "no left sibling (concurrent deletion?) in \"%s\"",
@@ -1700,7 +1700,7 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, bool *rightsib_empty)
 			if (metad->btm_fastlevel > targetlevel + 1)
 			{
 				/* no update wanted */
-				_bt_relbuf(metabuf);
+				_bt_relbuf(rel, metabuf);
 				metabuf = InvalidBuffer;
 			}
 		}
@@ -1845,19 +1845,19 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, bool *rightsib_empty)
 
 	/* release metapage */
 	if (BufferIsValid(metabuf))
-		_bt_relbuf(metabuf);
+		_bt_relbuf(rel, metabuf);
 
 	/* release siblings */
 	if (BufferIsValid(lbuf))
-		_bt_relbuf(lbuf);
-	_bt_relbuf(rbuf);
+		_bt_relbuf(rel, lbuf);
+	_bt_relbuf(rel, rbuf);
 
 	/*
 	 * Release the target, if it was not the leaf block.  The leaf is always
 	 * kept locked.
 	 */
 	if (target != leafblkno)
-		_bt_relbuf(buf);
+		_bt_relbuf(rel, buf);
 
 	return true;
 }

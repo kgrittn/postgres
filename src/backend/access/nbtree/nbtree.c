@@ -815,7 +815,7 @@ btvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 		LockBufferForCleanup(buf);
 		_bt_checkpage(rel, buf);
 		_bt_delitems_vacuum(rel, buf, NULL, 0, vstate.lastBlockVacuumed);
-		_bt_relbuf(buf);
+		_bt_relbuf(rel, buf);
 	}
 
 	MemoryContextDelete(vstate.pagedelcontext);
@@ -883,7 +883,7 @@ restart:
 			!P_ISLEAF(opaque) ||
 			opaque->btpo_cycleid != vstate->cycleid)
 		{
-			_bt_relbuf(buf);
+			_bt_relbuf(rel, buf);
 			return;
 		}
 	}
@@ -1071,7 +1071,7 @@ restart:
 		/* pagedel released buffer, so we shouldn't */
 	}
 	else
-		_bt_relbuf(buf);
+		_bt_relbuf(rel, buf);
 
 	/*
 	 * This is really tail recursion, but if the compiler is too stupid to
