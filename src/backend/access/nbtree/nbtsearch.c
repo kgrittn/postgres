@@ -536,6 +536,8 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 	StrategyNumber strat_total;
 	BTScanPosItem *currItem;
 
+	Assert(!BTScanPosIsValid(so->currPos));
+
 	pgstat_count_index_scan(rel);
 
 	/*
@@ -972,9 +974,6 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 	/* don't need to keep the stack around... */
 	_bt_freestack(stack);
 
-	/* remember which buffer we have pinned, if any */
-	so->currPos.buf = buf;
-
 	if (!BufferIsValid(buf))
 	{
 		/*
@@ -1052,6 +1051,10 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 		default:
 			break;
 	}
+
+	/* remember which buffer we have pinned, if any */
+	Assert(!BTScanPosIsValid(so->currPos));
+	so->currPos.buf = buf;
 
 	/*
 	 * Now load data from the first page of the scan.
@@ -1158,8 +1161,11 @@ _bt_readpage(IndexScanDesc scan, ScanDirection dir, OffsetNumber offnum)
 	IndexTuple	itup;
 	bool		continuescan;
 
-	/* we must have the buffer pinned and locked */
-	Assert(BTScanPosIsPinned(so->currPos));
+	/*
+	 * We must have the buffer pinned and locked, but the usual macro can't be
+	 * used here; this function is what makes it good for currPos.
+	 */
+	Assert(BufferIsValid(so->currPos.buf));
 
 	page = BufferGetPage(so->currPos.buf);
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
@@ -1188,6 +1194,12 @@ _bt_readpage(IndexScanDesc scan, ScanDirection dir, OffsetNumber offnum)
 
 	/* initialize tuple workspace to empty */
 	so->currPos.nextTupleOffset = 0;
+
+	/*
+	 * Now that the current page has been made consistent, the macro should be
+	 * good.
+	 */
+	Assert(BTScanPosIsPinned(so->currPos));
 
 	if (ScanDirectionIsForward(dir))
 	{
