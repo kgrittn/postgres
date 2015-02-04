@@ -1084,8 +1084,8 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 /*
  *	_bt_next() -- Get the next item in a scan.
  *
- *		On entry, so->currPos describes the current page, which is pinned
- *		but not locked, and so->currPos.itemIndex identifies which item was
+ *		On entry, so->currPos describes the current page, which may be pinned
+ *		but is not locked, and so->currPos.itemIndex identifies which item was
  *		previously returned.
  *
  *		On successful exit, scan->xs_ctup.t_self is set to the TID of the
@@ -1308,7 +1308,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 	if (so->markItemIndex >= 0)
 	{
 		/* bump pin on current buffer for assignment to mark buffer */
-/* FIXME: rework mark/restore logic.
+/* FIXME: rework mark/restore logic. */
 		IncrBufferRefCount(so->currPos.buf);
 		memcpy(&so->markPos, &so->currPos,
 			   offsetof(BTScanPosData, items[1]) +
@@ -1318,7 +1318,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 				   so->currPos.nextTupleOffset);
 		so->markPos.itemIndex = so->markItemIndex;
 		so->markItemIndex = -1;
-*/	}
+	}
 
 	if (ScanDirectionIsForward(dir))
 	{

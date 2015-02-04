@@ -553,7 +553,12 @@ typedef struct BTScanPosData
 
 typedef BTScanPosData *BTScanPos;
 
-#define BTScanPosIsPinned(scanpos) BufferIsValid((scanpos).buf)
+#define BTScanPosIsPinned(scanpos) \
+( \
+	AssertMacro(BlockNumberIsValid((scanpos).currPage) || \
+				!BufferIsValid((scanpos).buf)), \
+	BufferIsValid((scanpos).buf) \
+)
 #define BTScanPosUnpin(scanpos) \
 	do { \
 		ReleaseBuffer((scanpos).buf); \
@@ -561,12 +566,16 @@ typedef BTScanPosData *BTScanPos;
 	} while (0)
 #define BTScanPosUnpinIfPinned(scanpos) \
 	do { \
-		if (BTScanPosIsPinned(so->currPos)) \
-			BTScanPosUnpin(so->currPos); \
+		if (BTScanPosIsPinned(scanpos)) \
+			BTScanPosUnpin(scanpos); \
 	} while (0)
 
-//#define BTScanPosIsValid(scanpos) BlockNumberIsValid((scanpos).currPage)
-#define BTScanPosIsValid(scanpos) BufferIsValid((scanpos).buf)
+#define BTScanPosIsValid(scanpos) \
+( \
+	AssertMacro(BlockNumberIsValid((scanpos).currPage) || \
+				!BufferIsValid((scanpos).buf)), \
+	BlockNumberIsValid((scanpos).currPage) \
+)
 #define BTScanPosInvalidate(scanpos) \
 	do { \
 		(scanpos).currPage = InvalidBlockNumber; \
