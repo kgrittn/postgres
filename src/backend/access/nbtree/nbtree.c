@@ -452,9 +452,11 @@ btrescan(PG_FUNCTION_ARGS)
 		if (so->numKilled > 0)
 			_bt_killitems(scan);
 		BTScanPosUnpinIfPinned(so->currPos);
+		BTScanPosInvalidate(so->currPos);
 	}
 
 	BTScanPosUnpinIfPinned(so->markPos);
+	BTScanPosInvalidate(so->markPos);
 	so->markItemIndex = -1;
 
 	/*
