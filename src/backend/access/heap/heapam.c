@@ -2723,7 +2723,7 @@ l1:
 		{
 			/* wait for multixact */
 			MultiXactIdWait((MultiXactId) xwait, MultiXactStatusUpdate, infomask,
-							relation, &tp.t_data->t_ctid, XLTW_Delete,
+							relation, &(tp.t_self), XLTW_Delete,
 							NULL);
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
@@ -2750,7 +2750,7 @@ l1:
 		else
 		{
 			/* wait for regular transaction to end */
-			XactLockTableWait(xwait, relation, &tp.t_data->t_ctid, XLTW_Delete);
+			XactLockTableWait(xwait, relation, &(tp.t_self), XLTW_Delete);
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
 			/*
@@ -3267,7 +3267,7 @@ l2:
 
 			/* wait for multixact */
 			MultiXactIdWait((MultiXactId) xwait, mxact_status, infomask,
-							relation, &oldtup.t_data->t_ctid, XLTW_Update,
+							relation, &oldtup.t_self, XLTW_Update,
 							&remain);
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
@@ -3347,7 +3347,7 @@ l2:
 				 */
 				heap_acquire_tuplock(relation, &(oldtup.t_self), *lockmode,
 									 LockWaitBlock, &have_tuple_lock);
-				XactLockTableWait(xwait, relation, &oldtup.t_data->t_ctid,
+				XactLockTableWait(xwait, relation, &oldtup.t_self,
 								  XLTW_Update);
 				LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
@@ -4371,7 +4371,7 @@ l3:
 				{
 					case LockWaitBlock:
 						MultiXactIdWait((MultiXactId) xwait, status, infomask,
-										relation, &tuple->t_data->t_ctid, XLTW_Lock, NULL);
+										relation, &tuple->t_self, XLTW_Lock, NULL);
 						break;
 					case LockWaitSkip:
 						if (!ConditionalMultiXactIdWait((MultiXactId) xwait,
@@ -4443,7 +4443,7 @@ l3:
 				switch (wait_policy)
 				{
 					case LockWaitBlock:
-						XactLockTableWait(xwait, relation, &tuple->t_data->t_ctid,
+						XactLockTableWait(xwait, relation, &tuple->t_self,
 										  XLTW_Lock);
 						break;
 					case LockWaitSkip:
@@ -5187,7 +5187,7 @@ l4:
 					{
 						LockBuffer(buf, BUFFER_LOCK_UNLOCK);
 						XactLockTableWait(members[i].xid, rel,
-										  &mytup.t_data->t_ctid,
+										  &mytup.t_self,
 										  XLTW_LockUpdated);
 						pfree(members);
 						goto l4;
@@ -5248,7 +5248,7 @@ l4:
 				if (needwait)
 				{
 					LockBuffer(buf, BUFFER_LOCK_UNLOCK);
-					XactLockTableWait(rawxmax, rel, &mytup.t_data->t_ctid,
+					XactLockTableWait(rawxmax, rel, &mytup.t_self,
 									  XLTW_LockUpdated);
 					goto l4;
 				}

@@ -888,6 +888,8 @@ typedef struct GinScanOpaqueData
 	uint32		totalentries;
 	uint32		allocentries;	/* allocated length of entries[] */
 
+	MemoryContext keyCtx;		/* used to hold key and entry data */
+
 	bool		isVoidRes;		/* true if query is unsatisfiable */
 } GinScanOpaqueData;
 
@@ -899,6 +901,7 @@ extern Datum ginrescan(PG_FUNCTION_ARGS);
 extern Datum ginmarkpos(PG_FUNCTION_ARGS);
 extern Datum ginrestrpos(PG_FUNCTION_ARGS);
 extern void ginNewScanKey(IndexScanDesc scan);
+extern void ginFreeScanKeys(GinScanOpaque so);
 
 /* ginget.c */
 extern Datum gingetbitmap(PG_FUNCTION_ARGS);
