@@ -55,7 +55,7 @@ _bt_drop_lock_and_maybe_pin(IndexScanDesc scan, BTScanPos sp)
 	LockBuffer(sp->buf, BUFFER_LOCK_UNLOCK);
 
 	if (IsMVCCSnapshot(scan->xs_snapshot) &&
-		RelationNeedsWAL(scan->indexRelation)
+		RelationNeedsWAL(scan->indexRelation) &&
 		!scan->xs_want_itup)
 	{
 		ReleaseBuffer(sp->buf);
