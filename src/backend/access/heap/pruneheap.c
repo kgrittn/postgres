@@ -92,6 +92,13 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 	 * need to use the horizon that includes slots, otherwise the data-only
 	 * horizon can be used. Note that the toast relation of user defined
 	 * relations are *not* considered catalog relations.
+	 *
+	 * It is OK to apply the old snapshot limit before acquiring the cleanup
+	 * lock because the worst that can happen is that we are not quite as
+	 * aggressive about the cleanup (by however many transaction IDs are
+	 * consumed between this point and acquiring the lock).  This allows us to
+	 * save significant overhead in the case where the page is found not to be
+	 * prunable.
 	 */
 	if (IsCatalogRelation(relation) ||
 		RelationIsAccessibleInLogicalDecoding(relation))
@@ -139,13 +146,6 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 		 * page's free space, and recheck the heuristic about whether to
 		 * prune. (We needn't recheck PageIsPrunable, since no one else could
 		 * have pruned while we hold pin.)
-		 *
-		 * Even when checking for old snapshots we do not want to re-read
-		 * latestCompletedXid here because the important thing is that what we
-		 * use here must not be later than what is used for visibility checks.
-		 * We cannot have acquired the buffer cleanup lock while a visibility
-		 * check was in progress, so using a value from before acquiring the
-		 * lock provides sufficient interlocking to be safe.
 		 */
 		if (PageIsFull(page) || PageGetHeapFreeSpace(page) < minfree)
 		{
