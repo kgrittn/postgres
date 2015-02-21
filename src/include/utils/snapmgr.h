@@ -27,7 +27,7 @@
 		 && (snapshot)->satisfies == HeapTupleSatisfiesMVCC \
 		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
 		 && PageGetLSN(page) > (snapshot)->lsn \
-		 && NormalTransactionIdFollows(TransactionIdLimitedForOldSnapshots((snapshot)->xmin, relation), (snapshot)->xmin)) \
+		 && (snapshot)->whenTaken < (GetSnapshotCurrentTime() - (old_snapshot_threshold * USECS_PER_SEC))) \
 			ereport(ERROR, \
 					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
 					 errmsg("snapshot too old"))); \
