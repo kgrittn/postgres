@@ -78,6 +78,7 @@ typedef struct OldSnapshotControlData
 {
 	slock_t		mutex_current;			/* protect current timestamp */
 	int64		current_timestamp;		/* latest snapshot timestamp */
+	slock_t		mutex_threshold;		/* protect threshold fields */
 	int64		threshold_timestamp;	/* earlier snapshot is old */
 	TransactionId threshold_xid;		/* earlier xid may be gone */
 }	OldSnapshotControlData;
@@ -204,6 +205,7 @@ SnapMgrInit(void)
 	{
 		SpinLockInit(&oldSnapshotControl->mutex_current);
 		oldSnapshotControl->current_timestamp = 0;
+		SpinLockInit(&oldSnapshotControl->mutex_threshold);
 		oldSnapshotControl->threshold_timestamp = 0;
 		oldSnapshotControl->threshold_xid = InvalidTransactionId;
 	}
@@ -213,7 +215,7 @@ SnapMgrInit(void)
  * Get current timestamp for snapshots as int64 the never moves backward.
  */
 int64
-GetSnapshotCurrentTime(void)
+GetSnapshotCurrentTimestamp(void)
 {
 	int64		now = GetCurrentIntegerTimestamp();
 
@@ -228,6 +230,22 @@ GetSnapshotCurrentTime(void)
 	SpinLockRelease(&oldSnapshotControl->mutex_current);
 
 	return now;
+}
+
+/*
+ * Get timestamp through which vacuum can process based on last stored value
+ * for threshold_timestamp.
+ */
+int64
+GetSnapshotThresholdTimestamp(void)
+{
+	int64		threshold_timestamp;
+
+	SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
+	threshold_timestamp = oldSnapshotControl->threshold_timestamp;
+	SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+
+	return threshold_timestamp;
 }
 
 /*

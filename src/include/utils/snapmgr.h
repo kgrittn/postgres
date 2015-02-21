@@ -23,11 +23,11 @@
 #define TestForOldSnapshot(snapshot, relation, page) \
 	do { \
 		if (old_snapshot_threshold >= 0 \
-		 && ((snapshot) != NULL) \
+		 && (snapshot) != NULL \
 		 && (snapshot)->satisfies == HeapTupleSatisfiesMVCC \
 		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
 		 && PageGetLSN(page) > (snapshot)->lsn \
-		 && (snapshot)->whenTaken < (GetSnapshotCurrentTime() - (old_snapshot_threshold * USECS_PER_SEC))) \
+		 && (snapshot)->whenTaken < GetSnapshotThresholdTimestamp()) \
 			ereport(ERROR, \
 					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
 					 errmsg("snapshot too old"))); \
@@ -39,7 +39,8 @@ extern int	old_snapshot_threshold;
 
 
 extern void SnapMgrInit(void);
-int64 GetSnapshotCurrentTime(void);
+extern int64 GetSnapshotCurrentTimestamp(void);
+extern int64 GetSnapshotThresholdTimestamp(void);
 
 extern bool FirstSnapshotSet;
 
