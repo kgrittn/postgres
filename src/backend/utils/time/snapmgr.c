@@ -52,6 +52,7 @@
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "storage/sinval.h"
+#include "storage/spin.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -65,6 +66,25 @@
  * GUC parameters
  */
 int			old_snapshot_threshold;
+
+
+/*
+ * Variables for old snapshot handling are shared among processes and may only
+ * move forward.  We skip the estimation function for this structure because
+ * it is small enough to be covered by the "miscellaneous" allowance.
+ */
+
+typedef struct OldSnapshotControlData
+{
+	slock_t		mutex_current;			/* protect current timestamp */
+	int64		current_timestamp;		/* latest snapshot timestamp */
+	int64		threshold_timestamp;	/* earlier snapshot is old */
+	TransactionId threshold_xid;		/* earlier xid may be gone */
+}	OldSnapshotControlData;
+
+typedef struct OldSnapshotControlData *OldSnapshotControl;
+
+static volatile OldSnapshotControl oldSnapshotControl;
 
 
 /*
@@ -164,6 +184,51 @@ static Snapshot CopySnapshot(Snapshot snapshot);
 static void FreeSnapshot(Snapshot snapshot);
 static void SnapshotResetXmin(void);
 
+
+/*
+ * Initialize for managing old snapshot detection.
+ */
+void
+SnapMgrInit(void)
+{
+	bool		found;
+
+	/*
+	 * Create or attach to the OldSnapshotControl structure.
+	 */
+	oldSnapshotControl = (OldSnapshotControl)
+		ShmemInitStruct("OldSnapshotControlData",
+						sizeof(OldSnapshotControlData), &found);
+
+	if (!found)
+	{
+		SpinLockInit(&oldSnapshotControl->mutex_current);
+		oldSnapshotControl->current_timestamp = 0;
+		oldSnapshotControl->threshold_timestamp = 0;
+		oldSnapshotControl->threshold_xid = InvalidTransactionId;
+	}
+}
+
+/*
+ * Get current timestamp for snapshots as int64 the never moves backward.
+ */
+int64
+GetSnapshotCurrentTime(void)
+{
+	int64		now = GetCurrentIntegerTimestamp();
+
+	/*
+	 * Don't let time move backward; if it hasn't advanced, use the old value.
+	 */
+	SpinLockAcquire(&oldSnapshotControl->mutex_current);
+	if (now <= oldSnapshotControl->current_timestamp)
+		now = oldSnapshotControl->current_timestamp;
+	else
+		oldSnapshotControl->current_timestamp = now;
+	SpinLockRelease(&oldSnapshotControl->mutex_current);
+
+	return now;
+}
 
 /*
  * GetTransactionSnapshot

@@ -1611,7 +1611,7 @@ GetSnapshotData(Snapshot snapshot)
 	 * becomes old enough to need to fall back on the special "old snapshot"
 	 * logic.
 	 */
-	snapshot->whenTaken = GetCurrentIntegerTimestamp();
+	snapshot->whenTaken = GetSnapshotCurrentTime();
 	snapshot->lsn = GetXLogInsertRecPtr();
 
 	return snapshot;

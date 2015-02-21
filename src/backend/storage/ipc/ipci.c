@@ -42,6 +42,7 @@
 #include "storage/procsignal.h"
 #include "storage/sinvaladt.h"
 #include "storage/spin.h"
+#include "utils/snapmgr.h"
 
 
 shmem_startup_hook_type shmem_startup_hook = NULL;
@@ -244,6 +245,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	/*
 	 * Set up other modules that need some shared memory space
 	 */
+	SnapMgrInit();
 	BTreeShmemInit();
 	SyncScanShmemInit();
 	AsyncShmemInit();

@@ -38,6 +38,9 @@
 extern int	old_snapshot_threshold;
 
 
+extern void SnapMgrInit(void);
+int64 GetSnapshotCurrentTime(void);
+
 extern bool FirstSnapshotSet;
 
 extern TransactionId TransactionXmin;
