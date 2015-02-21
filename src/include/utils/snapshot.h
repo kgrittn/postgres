@@ -97,7 +97,8 @@ typedef struct SnapshotData
 
 	pairingheap_node ph_node;	/* link in the RegisteredSnapshots heap */
 
-	XLogRecPtr	lsn;			/* position in the WAL stream */
+	int64		whenTaken;		/* when snapshot was taken */
+	XLogRecPtr	lsn;			/* position in the WAL stream when taken */
 } SnapshotData;
 
 /*

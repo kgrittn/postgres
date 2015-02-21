@@ -1607,9 +1607,11 @@ GetSnapshotData(Snapshot snapshot)
 	snapshot->copied = false;
 
 	/*
-	 * Capture the current WAL stream location in case this snapshot becomes
-	 * old enough to need to fall back on the special "old snapshot" logic.
+	 * Capture the current time and WAL stream location in case this snapshot
+	 * becomes old enough to need to fall back on the special "old snapshot"
+	 * logic.
 	 */
+	snapshot->whenTaken = GetCurrentIntegerTimestamp();
 	snapshot->lsn = GetXLogInsertRecPtr();
 
 	return snapshot;
