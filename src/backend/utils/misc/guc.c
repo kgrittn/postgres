@@ -2449,11 +2449,12 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"old_snapshot_threshold", PGC_POSTMASTER, RESOURCES_ASYNCHRONOUS,
-			gettext_noop("The number of transaction IDs which must be consumed before a snapshot can be considered too old."),
-			gettext_noop("A value of -1 disables this feature.")
+			gettext_noop("Time before a snapshot is too old to read pages changed after the snapshot was taken."),
+			gettext_noop("A value of -1 disables this feature."),
+			GUC_UNIT_S
 		},
 		&old_snapshot_threshold,
-		-1, -1, 2000000000,
+		-1, -1, INT_MAX,
 		NULL, NULL, NULL
 	},
 
