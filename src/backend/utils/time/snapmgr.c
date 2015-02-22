@@ -184,6 +184,8 @@ static List *exportedSnapshots = NIL;
 static Snapshot CopySnapshot(Snapshot snapshot);
 static void FreeSnapshot(Snapshot snapshot);
 static void SnapshotResetXmin(void);
+static int nearest_old_threshold_cmp(const pairingheap_node *a,
+									 const pairingheap_node *b, void *arg);
 
 
 /*
@@ -798,6 +800,47 @@ xmin_cmp(const pairingheap_node *a, const pairingheap_node *b, void *arg)
 }
 
 /*
+ * Comparison function for scanning the RegisteredSnapshots heap to pick the
+ * oldest snapshot not yet past the "old snapshot" threshold.
+ *
+ * This is written on the basis that "a" is under consideration to replace "b"
+ * as the best match; therefore we don't need to test "b" for meeting the scan
+ * criterion specified by "arg"; however we do need to allow NULL for "b" to
+ * handle the case that there is not yet a match.
+ */
+static int
+nearest_old_threshold_cmp(const pairingheap_node *a, const pairingheap_node *b, void *arg)
+{
+	int64	target = *((int64 *) arg);
+	const SnapshotData *asnap;
+	const SnapshotData *bsnap;
+
+	Assert(a != NULL);
+
+	asnap = pairingheap_const_container(SnapshotData, ph_node, a);
+
+	if (asnap->whenTaken <= target)
+		return -1;
+
+	if (b == NULL)
+		return 1;
+
+	bsnap = pairingheap_const_container(SnapshotData, ph_node, b);
+
+	/* We have both, and both are on the right side of the threshold. */
+	if (asnap->whenTaken < bsnap->whenTaken)
+		return 1;
+	else if (asnap->whenTaken > bsnap->whenTaken)
+		return -1;
+	else if (TransactionIdPrecedes(asnap->xmin, bsnap->xmin))
+		return 1;
+	else if (TransactionIdFollows(asnap->xmin, bsnap->xmin))
+		return -1;
+	else
+		return 0;
+}
+
+/*
  * SnapshotResetXmin
  *
  * If there are no more snapshots, we can reset our PGXACT->xmin to InvalidXid.
@@ -1167,14 +1210,57 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 		&& !IsCatalogRelation(relation)
 		&& !RelationIsAccessibleInLogicalDecoding(relation))
 	{
-		TransactionId xlimit;
+		int64	now;
+		int64	target;
+		int64	threshold_timestamp;
+		TransactionId threshold_xid;
 
-		xlimit = ShmemVariableCache->latestCompletedXid;
-		Assert(TransactionIdIsNormal(xlimit));
-		xlimit -= old_snapshot_threshold;
-		TransactionIdAdvance(xlimit);
-		if (NormalTransactionIdFollows(xlimit, recentXmin))
-			return xlimit;
+		SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
+		threshold_timestamp = oldSnapshotControl->threshold_timestamp;
+		threshold_xid = oldSnapshotControl->threshold_xid;
+		SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+
+		/*
+		 * We don't want to be constantly scanning the snapshots, and this GUC
+		 * only has one second granularity anyway, so don't look for new
+		 * values until we are one second past the last threshold timestamp
+		 * found.  Hopefully this will keep the cost of walking through the
+		 * process's snapshots from getting out of hand.
+		 */
+		now = GetSnapshotCurrentTimestamp();
+		target = now - (old_snapshot_threshold * USECS_PER_SEC);
+		if ((threshold_timestamp + USECS_PER_SEC) < target)
+		{
+			const pairingheap_node *node;
+
+			/*
+			 * We have advanced far enough to need to look for a new value.
+			 * Scan snapshots for this connection until we find one with a
+			 * timestamp past threshold_timestamp.
+			 */
+			node = pairingheap_find_best(&RegisteredSnapshots,
+										 nearest_old_threshold_cmp,
+										 (void *) &target);
+			if (node)
+			{
+				const SnapshotData *snap =
+					pairingheap_const_container(SnapshotData, ph_node, node);
+
+				threshold_timestamp = snap->whenTaken;
+				threshold_xid = snap->xmin;
+
+				SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
+				if (oldSnapshotControl->threshold_timestamp < threshold_timestamp)
+					oldSnapshotControl->threshold_timestamp = threshold_timestamp;
+				if (TransactionIdPrecedes(oldSnapshotControl->threshold_xid,
+										  threshold_xid))
+					oldSnapshotControl->threshold_xid = threshold_xid;
+				SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+			}
+		}
+
+		if (TransactionIdFollows(threshold_xid, recentXmin))
+			return threshold_xid;
 	}
 
 	return recentXmin;
