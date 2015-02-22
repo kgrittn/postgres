@@ -285,6 +285,52 @@ merge_children(pairingheap *heap, pairingheap_node *children)
 }
 
 /*
+ * Scan the pairing heap for the best match.  In case of a tie, the first node
+ * encountered is returned.
+ */
+static pairingheap_node *
+pairingheap_find_best_recurse(pairingheap_node *node,
+							  pairingheap_comparator compare,
+							  void *opaque,
+							  pairingheap_node *prev_or_parent)
+{
+	pairingheap_node *best_match = NULL;
+	pairingheap_node *best_child;
+
+	while (node)
+	{
+		Assert(node->prev_or_parent == prev_or_parent);
+
+		if (compare(node, best_match, opaque) > 0)
+			best_match = node;
+
+		if (node->first_child)
+		{
+			best_child = pairingheap_find_best_recurse(node->first_child,
+													   compare, opaque, node);
+			if (compare(best_child, best_match, opaque) > 0)
+				best_match = best_child;
+		}
+
+		prev_or_parent = node;
+		node = node->next_sibling;
+	}
+
+	return best_match;
+}
+
+pairingheap_node *
+pairingheap_find_best(pairingheap *heap,
+					  pairingheap_comparator compare,
+					  void *opaque)
+{
+	if (!heap->ph_root)
+		return NULL;
+
+	return pairingheap_find_best_recurse(heap->ph_root, compare, opaque, NULL);
+}
+
+/*
  * A debug function to dump the contents of the heap as a string.
  *
  * The 'dumpfunc' callback appends a string representation of a single node
