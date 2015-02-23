@@ -1350,7 +1350,7 @@ ProcessUtilitySlow(Node *parsetree,
 				break;
 
 			case T_CommentStmt:
-				CommentObject((CommentStmt *) parsetree, NULL);
+				CommentObject((CommentStmt *) parsetree);
 				break;
 
 			case T_GrantStmt:
@@ -1374,7 +1374,7 @@ ProcessUtilitySlow(Node *parsetree,
 				break;
 
 			case T_SecLabelStmt:
-				ExecSecLabelStmt((SecLabelStmt *) parsetree;
+				ExecSecLabelStmt((SecLabelStmt *) parsetree);
 				break;
 
 			default:
