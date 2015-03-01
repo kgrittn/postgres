@@ -620,7 +620,7 @@ typedef struct BTScanOpaqueData
 	 */
 	char	   *currTuples;		/* tuple storage for currPos */
 	char	   *markTuples;		/* tuple storage for markPos */
- 
+
 	/*
 	 * If the marked position is on the same page as current position, we
 	 * don't use markPos, but just keep the marked itemIndex in markItemIndex
