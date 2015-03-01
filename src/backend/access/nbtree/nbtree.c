@@ -455,6 +455,7 @@ btrescan(PG_FUNCTION_ARGS)
 		BTScanPosInvalidate(so->currPos);
 	}
 
+	so->markItemIndex = -1;
 	BTScanPosUnpinIfPinned(so->markPos);
 	BTScanPosInvalidate(so->markPos);
 
@@ -514,6 +515,7 @@ btendscan(PG_FUNCTION_ARGS)
 		BTScanPosUnpinIfPinned(so->currPos);
 	}
 
+	so->markItemIndex = -1;
 	BTScanPosUnpinIfPinned(so->markPos);
 
 	/* No need to invalidate positions, the RAM is about to be freed. */
@@ -542,16 +544,21 @@ btmarkpos(PG_FUNCTION_ARGS)
 {
 	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
-
-	memcpy(&so->markPos, &so->currPos,
-		   offsetof(BTScanPosData, items[1]) +
-		   so->currPos.lastItem * sizeof(BTScanPosItem));
-	if (so->markTuples)
-		memcpy(so->markTuples, so->currTuples,
-			   so->currPos.nextTupleOffset);
+	so->markPos.currPage = so->currPos.currPage;
 
 	/* We don't take out an extra pin for the mark position. */
 	so->markPos.buf = InvalidBuffer;
+
+	/*
+	 * Just record the current itemIndex.  If we later step to next page
+	 * before releasing the marked position, _bt_steppage makes a full copy of
+	 * the currPos struct in markPos.  If (as often happens) the mark is moved
+	 * before we leave the page, we don't have to do that work.
+	 */
+	if (BTScanPosIsValid(so->currPos))
+		so->markItemIndex = so->currPos.itemIndex;
+	else
+		so->markItemIndex = -1;
 
 	/* Also record the current positions of any array keys */
 	if (so->numArrayKeys)
@@ -573,13 +580,14 @@ btrestrpos(PG_FUNCTION_ARGS)
 	if (so->numArrayKeys)
 		_bt_restore_array_keys(scan);
 
-	if (so->markPos.currPage == so->currPos.currPage)
+	if (so->markItemIndex >= 0)
 	{
 		/*
 		 * The mark position is on the same page we are currently on. Just
 		 * restore the itemIndex.
 		 */
-		so->currPos.itemIndex = so->markPos.itemIndex;
+		Assert(so->markPos.currPage == so->currPos.currPage);
+		so->currPos.itemIndex = so->markItemIndex;
 	}
 	else
 	{

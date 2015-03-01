@@ -1305,7 +1305,7 @@ static bool
 _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
-	Relation	rel = scan->indexRelation;
+	Relation	rel;
 	Page		page;
 	BTPageOpaque opaque;
 
@@ -1314,6 +1314,24 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 	/* Before leaving current page, deal with any killed items */
 	if (so->numKilled > 0)
 		_bt_killitems(scan);
+
+	/*
+	 * Before we modify currPos, make a copy of the page data if there was a
+	 * mark position that needs it.
+	 */
+	if (so->markItemIndex >= 0)
+	{
+		memcpy(&so->markPos, &so->currPos,
+			   offsetof(BTScanPosData, items[1]) +
+			   so->currPos.lastItem * sizeof(BTScanPosItem));
+		if (so->markTuples)
+			memcpy(so->markTuples, so->currTuples,
+				   so->currPos.nextTupleOffset);
+		so->markPos.itemIndex = so->markItemIndex;
+		so->markItemIndex = -1;
+	}
+
+	rel = scan->indexRelation;
 
 	if (ScanDirectionIsForward(dir))
 	{
@@ -1361,7 +1379,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 		/* Remember we left a page with data */
 		so->currPos.moreRight = true;
 
-		/* FIXME: Walking left needs to be lighter on the locking and pins? */
+		/* XXX: Can walking left be lighter on the locking and pins? */
 		if (BTScanPosIsPinned(so->currPos))
 			LockBuffer(so->currPos.buf, BUFFER_LOCK_SHARE);
 		else
