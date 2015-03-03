@@ -1000,6 +1000,7 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 		so->currPos.moreRight = false;
 	}
 	so->numKilled = 0;			/* just paranoia */
+	so->markItemIndex = -1;		/* ditto */
 
 	/* position to the precise item on the page */
 	offnum = _bt_binsrch(rel, buf, keysCount, scankeys, nextkey);
@@ -1712,6 +1713,7 @@ _bt_endpoint(IndexScanDesc scan, ScanDirection dir)
 		so->currPos.moreRight = false;
 	}
 	so->numKilled = 0;			/* just paranoia */
+	so->markItemIndex = -1;		/* ditto */
 
 	/*
 	 * Now load data from the first page of the scan.
