@@ -255,6 +255,7 @@ _outPlannedStmt(StringInfo str, const PlannedStmt *node)
 	WRITE_NODE_FIELD(relationOids);
 	WRITE_NODE_FIELD(invalItems);
 	WRITE_INT_FIELD(nParamExec);
+	WRITE_BOOL_FIELD(hasRowSecurity);
 }
 
 /*
@@ -1729,6 +1730,7 @@ _outPlannerGlobal(StringInfo str, const PlannerGlobal *node)
 	WRITE_UINT_FIELD(lastPHId);
 	WRITE_UINT_FIELD(lastRowMarkId);
 	WRITE_BOOL_FIELD(transientPlan);
+	WRITE_BOOL_FIELD(hasRowSecurity);
 }
 
 static void
@@ -2541,6 +2543,18 @@ _outAExpr(StringInfo str, const A_Expr *node)
 			break;
 		case AEXPR_IN:
 			appendStringInfoString(str, " IN ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_LIKE:
+			appendStringInfoString(str, " LIKE ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_ILIKE:
+			appendStringInfoString(str, " ILIKE ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_SIMILAR:
+			appendStringInfoString(str, " SIMILAR ");
 			WRITE_NODE_FIELD(name);
 			break;
 		case AEXPR_BETWEEN:
