@@ -1721,8 +1721,9 @@ _bt_check_rowcompare(ScanKey skey, IndexTuple tuple, TupleDesc tupdesc,
  * _bt_killitems - set LP_DEAD state for items an indexscan caller has
  * told us were killed
  *
- * scan->so contains information about the current page and killed tuples
- * thereon (generally, this should only be called if so->numKilled > 0).
+ * scan->opaque, referenced locally through so, contains information about the
+ * current page and killed tuples thereon (generally, this should only be
+ * called if so->numKilled > 0).
  *
  * The caller may or may not have a pin on so->currPos.buf.  Note that we
  * assume read-lock is sufficient for setting LP_DEAD status (which is only a
@@ -1765,7 +1766,6 @@ _bt_killitems(IndexScanDesc scan)
 		/* The buffer is still pinned, but not locked.  Lock it now. */
 		LockBuffer(so->currPos.buf, BT_READ);
 
-		/* Since the else condition needs page, get it here, too. */
 		page = BufferGetPage(so->currPos.buf);
 	}
 	else
