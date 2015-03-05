@@ -251,7 +251,8 @@ Boot_CreateStmt:
 													  (Datum) 0,
 													  false,
 													  true,
-													  false);
+													  false,
+													  NULL);
 						elog(DEBUG4, "relation created with OID %u", id);
 					}
 					do_end();
@@ -304,7 +305,9 @@ Boot_DeclareIndexStmt:
 					stmt->isconstraint = false;
 					stmt->deferrable = false;
 					stmt->initdeferred = false;
+					stmt->transformed = false;
 					stmt->concurrent = false;
+					stmt->if_not_exists = false;
 
 					/* locks and races need not concern us in bootstrap mode */
 					relationId = RangeVarGetRelid(stmt->relation, NoLock,
@@ -345,7 +348,9 @@ Boot_DeclareUniqueIndexStmt:
 					stmt->isconstraint = false;
 					stmt->deferrable = false;
 					stmt->initdeferred = false;
+					stmt->transformed = false;
 					stmt->concurrent = false;
+					stmt->if_not_exists = false;
 
 					/* locks and races need not concern us in bootstrap mode */
 					relationId = RangeVarGetRelid(stmt->relation, NoLock,

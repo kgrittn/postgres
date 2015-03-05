@@ -994,7 +994,6 @@ typedef struct MinMaxExpr
  * Note: result type/typmod/collation are not stored, but can be deduced
  * from the XmlExprOp.  The type/typmod fields are just used for display
  * purposes, and are NOT necessarily the true result type of the node.
- * (We also use type == InvalidOid to mark a not-yet-parse-analyzed XmlExpr.)
  */
 typedef enum XmlExprOp
 {
@@ -1050,6 +1049,7 @@ typedef struct NullTest
 	Expr	   *arg;			/* input expression */
 	NullTestType nulltesttype;	/* IS NULL, IS NOT NULL */
 	bool		argisrow;		/* T if input is of a composite type */
+	int			location;		/* token location, or -1 if unknown */
 } NullTest;
 
 /*
@@ -1071,6 +1071,7 @@ typedef struct BooleanTest
 	Expr		xpr;
 	Expr	   *arg;			/* input expression */
 	BoolTestType booltesttype;	/* test type */
+	int			location;		/* token location, or -1 if unknown */
 } BooleanTest;
 
 /*

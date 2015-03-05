@@ -633,9 +633,9 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 /*
  * The grammar thinks these are keywords, but they are not in the kwlist.h
  * list and so can never be entered directly.  The filter in parser.c
- * creates these tokens when required.
+ * creates these tokens when required (based on looking one token ahead).
  */
-%token			NULLS_FIRST NULLS_LAST WITH_ORDINALITY WITH_TIME
+%token			NULLS_LA WITH_LA
 
 
 /* Precedence: lowest to highest */
@@ -873,6 +873,7 @@ CreateRoleStmt:
 
 
 opt_with:	WITH									{}
+			| WITH_LA								{}
 			| /*EMPTY*/								{}
 		;
 
@@ -6563,6 +6564,7 @@ IndexStmt:	CREATE opt_unique INDEX opt_concurrently opt_index_name
 					n->isconstraint = false;
 					n->deferrable = false;
 					n->initdeferred = false;
+					n->transformed = false;
 					n->if_not_exists = false;
 					$$ = (Node *)n;
 				}
@@ -6588,6 +6590,7 @@ IndexStmt:	CREATE opt_unique INDEX opt_concurrently opt_index_name
 					n->isconstraint = false;
 					n->deferrable = false;
 					n->initdeferred = false;
+					n->transformed = false;
 					n->if_not_exists = true;
 					$$ = (Node *)n;
 				}
@@ -6671,8 +6674,8 @@ opt_asc_desc: ASC							{ $$ = SORTBY_ASC; }
 			| /*EMPTY*/						{ $$ = SORTBY_DEFAULT; }
 		;
 
-opt_nulls_order: NULLS_FIRST				{ $$ = SORTBY_NULLS_FIRST; }
-			| NULLS_LAST					{ $$ = SORTBY_NULLS_LAST; }
+opt_nulls_order: NULLS_LA FIRST_P			{ $$ = SORTBY_NULLS_FIRST; }
+			| NULLS_LA LAST_P				{ $$ = SORTBY_NULLS_LAST; }
 			| /*EMPTY*/						{ $$ = SORTBY_NULLS_DEFAULT; }
 		;
 
@@ -8921,7 +8924,7 @@ AlterTSDictionaryStmt:
 		;
 
 AlterTSConfigurationStmt:
-			ALTER TEXT_P SEARCH CONFIGURATION any_name ADD_P MAPPING FOR name_list WITH any_name_list
+			ALTER TEXT_P SEARCH CONFIGURATION any_name ADD_P MAPPING FOR name_list any_with any_name_list
 				{
 					AlterTSConfigurationStmt *n = makeNode(AlterTSConfigurationStmt);
 					n->cfgname = $5;
@@ -8931,7 +8934,7 @@ AlterTSConfigurationStmt:
 					n->replace = false;
 					$$ = (Node*)n;
 				}
-			| ALTER TEXT_P SEARCH CONFIGURATION any_name ALTER MAPPING FOR name_list WITH any_name_list
+			| ALTER TEXT_P SEARCH CONFIGURATION any_name ALTER MAPPING FOR name_list any_with any_name_list
 				{
 					AlterTSConfigurationStmt *n = makeNode(AlterTSConfigurationStmt);
 					n->cfgname = $5;
@@ -8941,7 +8944,7 @@ AlterTSConfigurationStmt:
 					n->replace = false;
 					$$ = (Node*)n;
 				}
-			| ALTER TEXT_P SEARCH CONFIGURATION any_name ALTER MAPPING REPLACE any_name WITH any_name
+			| ALTER TEXT_P SEARCH CONFIGURATION any_name ALTER MAPPING REPLACE any_name any_with any_name
 				{
 					AlterTSConfigurationStmt *n = makeNode(AlterTSConfigurationStmt);
 					n->cfgname = $5;
@@ -8951,7 +8954,7 @@ AlterTSConfigurationStmt:
 					n->replace = true;
 					$$ = (Node*)n;
 				}
-			| ALTER TEXT_P SEARCH CONFIGURATION any_name ALTER MAPPING FOR name_list REPLACE any_name WITH any_name
+			| ALTER TEXT_P SEARCH CONFIGURATION any_name ALTER MAPPING FOR name_list REPLACE any_name any_with any_name
 				{
 					AlterTSConfigurationStmt *n = makeNode(AlterTSConfigurationStmt);
 					n->cfgname = $5;
@@ -8977,6 +8980,11 @@ AlterTSConfigurationStmt:
 					n->missing_ok = true;
 					$$ = (Node*)n;
 				}
+		;
+
+/* Use this if TIME or ORDINALITY after WITH should be taken as an identifier */
+any_with:	WITH									{}
+			| WITH_LA								{}
 		;
 
 
@@ -9889,9 +9897,18 @@ simple_select:
  *		AS (query) [ SEARCH or CYCLE clause ]
  *
  * We don't currently support the SEARCH or CYCLE clause.
+ *
+ * Recognizing WITH_LA here allows a CTE to be named TIME or ORDINALITY.
  */
 with_clause:
 		WITH cte_list
+			{
+				$$ = makeNode(WithClause);
+				$$->ctes = $2;
+				$$->recursive = false;
+				$$->location = @1;
+			}
+		| WITH_LA cte_list
 			{
 				$$ = makeNode(WithClause);
 				$$->ctes = $2;
@@ -10599,7 +10616,7 @@ opt_col_def_list: AS '(' TableFuncElementList ')'	{ $$ = $3; }
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 
-opt_ordinality: WITH_ORDINALITY						{ $$ = true; }
+opt_ordinality: WITH_LA ORDINALITY					{ $$ = true; }
 			| /*EMPTY*/								{ $$ = false; }
 		;
 
@@ -11055,7 +11072,7 @@ ConstInterval:
 		;
 
 opt_timezone:
-			WITH_TIME ZONE							{ $$ = TRUE; }
+			WITH_LA TIME ZONE						{ $$ = TRUE; }
 			| WITHOUT TIME ZONE						{ $$ = FALSE; }
 			| /*EMPTY*/								{ $$ = FALSE; }
 		;
@@ -11178,7 +11195,7 @@ a_expr:		c_expr									{ $$ = $1; }
 		 * below; and all those operators will have the same precedence.
 		 *
 		 * If you add more explicitly-known operators, be sure to add them
-		 * also to b_expr and to the MathOp list above.
+		 * also to b_expr and to the MathOp list below.
 		 */
 			| '+' a_expr					%prec UMINUS
 				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "+", NULL, $2, @1); }
@@ -11218,40 +11235,56 @@ a_expr:		c_expr									{ $$ = $1; }
 				{ $$ = makeNotExpr($2, @1); }
 
 			| a_expr LIKE a_expr
-				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "~~", $1, $3, @2); }
+				{
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_LIKE, "~~",
+												   $1, $3, @2);
+				}
 			| a_expr LIKE a_expr ESCAPE a_expr
 				{
 					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
 											   list_make2($3, $5),
 											   @2);
-					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "~~", $1, (Node *) n, @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_LIKE, "~~",
+												   $1, (Node *) n, @2);
 				}
 			| a_expr NOT LIKE a_expr
-				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~~", $1, $4, @2); }
+				{
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_LIKE, "!~~",
+												   $1, $4, @2);
+				}
 			| a_expr NOT LIKE a_expr ESCAPE a_expr
 				{
 					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
 											   list_make2($4, $6),
 											   @2);
-					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~~", $1, (Node *) n, @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_LIKE, "!~~",
+												   $1, (Node *) n, @2);
 				}
 			| a_expr ILIKE a_expr
-				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "~~*", $1, $3, @2); }
+				{
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_ILIKE, "~~*",
+												   $1, $3, @2);
+				}
 			| a_expr ILIKE a_expr ESCAPE a_expr
 				{
 					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
 											   list_make2($3, $5),
 											   @2);
-					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "~~*", $1, (Node *) n, @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_ILIKE, "~~*",
+												   $1, (Node *) n, @2);
 				}
 			| a_expr NOT ILIKE a_expr
-				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~~*", $1, $4, @2); }
+				{
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_ILIKE, "!~~*",
+												   $1, $4, @2);
+				}
 			| a_expr NOT ILIKE a_expr ESCAPE a_expr
 				{
 					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
 											   list_make2($4, $6),
 											   @2);
-					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~~*", $1, (Node *) n, @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_ILIKE, "!~~*",
+												   $1, (Node *) n, @2);
 				}
 
 			| a_expr SIMILAR TO a_expr				%prec SIMILAR
@@ -11259,28 +11292,32 @@ a_expr:		c_expr									{ $$ = $1; }
 					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
 											   list_make2($4, makeNullAConst(-1)),
 											   @2);
-					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "~", $1, (Node *) n, @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "~",
+												   $1, (Node *) n, @2);
 				}
 			| a_expr SIMILAR TO a_expr ESCAPE a_expr
 				{
 					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
 											   list_make2($4, $6),
 											   @2);
-					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "~", $1, (Node *) n, @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "~",
+												   $1, (Node *) n, @2);
 				}
 			| a_expr NOT SIMILAR TO a_expr			%prec SIMILAR
 				{
 					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
 											   list_make2($5, makeNullAConst(-1)),
 											   @2);
-					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~", $1, (Node *) n, @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "!~",
+												   $1, (Node *) n, @2);
 				}
 			| a_expr NOT SIMILAR TO a_expr ESCAPE a_expr
 				{
 					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
 											   list_make2($5, $7),
 											   @2);
-					$$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "!~", $1, (Node *) n, @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "!~",
+												   $1, (Node *) n, @2);
 				}
 
 			/* NullTest clause
@@ -11297,6 +11334,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					NullTest *n = makeNode(NullTest);
 					n->arg = (Expr *) $1;
 					n->nulltesttype = IS_NULL;
+					n->location = @2;
 					$$ = (Node *)n;
 				}
 			| a_expr ISNULL
@@ -11304,6 +11342,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					NullTest *n = makeNode(NullTest);
 					n->arg = (Expr *) $1;
 					n->nulltesttype = IS_NULL;
+					n->location = @2;
 					$$ = (Node *)n;
 				}
 			| a_expr IS NOT NULL_P						%prec IS
@@ -11311,6 +11350,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					NullTest *n = makeNode(NullTest);
 					n->arg = (Expr *) $1;
 					n->nulltesttype = IS_NOT_NULL;
+					n->location = @2;
 					$$ = (Node *)n;
 				}
 			| a_expr NOTNULL
@@ -11318,6 +11358,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					NullTest *n = makeNode(NullTest);
 					n->arg = (Expr *) $1;
 					n->nulltesttype = IS_NOT_NULL;
+					n->location = @2;
 					$$ = (Node *)n;
 				}
 			| row OVERLAPS row
@@ -11341,6 +11382,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					BooleanTest *b = makeNode(BooleanTest);
 					b->arg = (Expr *) $1;
 					b->booltesttype = IS_TRUE;
+					b->location = @2;
 					$$ = (Node *)b;
 				}
 			| a_expr IS NOT TRUE_P						%prec IS
@@ -11348,6 +11390,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					BooleanTest *b = makeNode(BooleanTest);
 					b->arg = (Expr *) $1;
 					b->booltesttype = IS_NOT_TRUE;
+					b->location = @2;
 					$$ = (Node *)b;
 				}
 			| a_expr IS FALSE_P							%prec IS
@@ -11355,6 +11398,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					BooleanTest *b = makeNode(BooleanTest);
 					b->arg = (Expr *) $1;
 					b->booltesttype = IS_FALSE;
+					b->location = @2;
 					$$ = (Node *)b;
 				}
 			| a_expr IS NOT FALSE_P						%prec IS
@@ -11362,6 +11406,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					BooleanTest *b = makeNode(BooleanTest);
 					b->arg = (Expr *) $1;
 					b->booltesttype = IS_NOT_FALSE;
+					b->location = @2;
 					$$ = (Node *)b;
 				}
 			| a_expr IS UNKNOWN							%prec IS
@@ -11369,6 +11414,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					BooleanTest *b = makeNode(BooleanTest);
 					b->arg = (Expr *) $1;
 					b->booltesttype = IS_UNKNOWN;
+					b->location = @2;
 					$$ = (Node *)b;
 				}
 			| a_expr IS NOT UNKNOWN						%prec IS
@@ -11376,6 +11422,7 @@ a_expr:		c_expr									{ $$ = $1; }
 					BooleanTest *b = makeNode(BooleanTest);
 					b->arg = (Expr *) $1;
 					b->booltesttype = IS_NOT_UNKNOWN;
+					b->location = @2;
 					$$ = (Node *)b;
 				}
 			| a_expr IS DISTINCT FROM a_expr			%prec IS
@@ -11396,51 +11443,37 @@ a_expr:		c_expr									{ $$ = $1; }
 				{
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_OF, "<>", $1, (Node *) $6, @2);
 				}
-			/*
-			 *	Ideally we would not use hard-wired operators below but
-			 *	instead use opclasses.  However, mixed data types and other
-			 *	issues make this difficult:
-			 *	http://archives.postgresql.org/pgsql-hackers/2008-08/msg01142.php
-			 */
 			| a_expr BETWEEN opt_asymmetric b_expr AND b_expr		%prec BETWEEN
 				{
-					$$ = makeAndExpr(
-						(Node *) makeSimpleA_Expr(AEXPR_OP, ">=", $1, $4, @2),
-						(Node *) makeSimpleA_Expr(AEXPR_OP, "<=", $1, $6, @2),
-									 @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_BETWEEN,
+												   "BETWEEN",
+												   $1,
+												   (Node *) list_make2($4, $6),
+												   @2);
 				}
 			| a_expr NOT BETWEEN opt_asymmetric b_expr AND b_expr	%prec BETWEEN
 				{
-					$$ = makeOrExpr(
-						(Node *) makeSimpleA_Expr(AEXPR_OP, "<", $1, $5, @2),
-						(Node *) makeSimpleA_Expr(AEXPR_OP, ">", $1, $7, @2),
-									@2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_NOT_BETWEEN,
+												   "NOT BETWEEN",
+												   $1,
+												   (Node *) list_make2($5, $7),
+												   @2);
 				}
 			| a_expr BETWEEN SYMMETRIC b_expr AND b_expr			%prec BETWEEN
 				{
-					$$ = makeOrExpr(
-						  makeAndExpr(
-							(Node *) makeSimpleA_Expr(AEXPR_OP, ">=", $1, $4, @2),
-							(Node *) makeSimpleA_Expr(AEXPR_OP, "<=", $1, $6, @2),
-									  @2),
-						  makeAndExpr(
-							(Node *) makeSimpleA_Expr(AEXPR_OP, ">=", $1, $6, @2),
-							(Node *) makeSimpleA_Expr(AEXPR_OP, "<=", $1, $4, @2),
-									  @2),
-									@2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_BETWEEN_SYM,
+												   "BETWEEN SYMMETRIC",
+												   $1,
+												   (Node *) list_make2($4, $6),
+												   @2);
 				}
 			| a_expr NOT BETWEEN SYMMETRIC b_expr AND b_expr		%prec BETWEEN
 				{
-					$$ = makeAndExpr(
-						   makeOrExpr(
-							(Node *) makeSimpleA_Expr(AEXPR_OP, "<", $1, $5, @2),
-							(Node *) makeSimpleA_Expr(AEXPR_OP, ">", $1, $7, @2),
-									  @2),
-						   makeOrExpr(
-							(Node *) makeSimpleA_Expr(AEXPR_OP, "<", $1, $7, @2),
-							(Node *) makeSimpleA_Expr(AEXPR_OP, ">", $1, $5, @2),
-									  @2),
-									 @2);
+					$$ = (Node *) makeSimpleA_Expr(AEXPR_NOT_BETWEEN_SYM,
+												   "NOT BETWEEN SYMMETRIC",
+												   $1,
+												   (Node *) list_make2($5, $7),
+												   @2);
 				}
 			| a_expr IN_P in_expr
 				{
@@ -11452,7 +11485,7 @@ a_expr:		c_expr									{ $$ = $1; }
 						n->subLinkType = ANY_SUBLINK;
 						n->subLinkId = 0;
 						n->testexpr = $1;
-						n->operName = list_make1(makeString("="));
+						n->operName = NIL;		/* show it's IN not = ANY */
 						n->location = @2;
 						$$ = (Node *)n;
 					}
@@ -11473,9 +11506,9 @@ a_expr:		c_expr									{ $$ = $1; }
 						n->subLinkType = ANY_SUBLINK;
 						n->subLinkId = 0;
 						n->testexpr = $1;
-						n->operName = list_make1(makeString("="));
-						n->location = @3;
-						/* Stick a NOT on top */
+						n->operName = NIL;		/* show it's IN not = ANY */
+						n->location = @2;
+						/* Stick a NOT on top; must have same parse location */
 						$$ = makeNotExpr((Node *) n, @2);
 					}
 					else
