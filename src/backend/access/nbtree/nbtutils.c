@@ -1725,21 +1725,28 @@ _bt_check_rowcompare(ScanKey skey, IndexTuple tuple, TupleDesc tupdesc,
  * current page and killed tuples thereon (generally, this should only be
  * called if so->numKilled > 0).
  *
- * The caller may or may not have a pin on so->currPos.buf.  Note that we
- * assume read-lock is sufficient for setting LP_DEAD status (which is only a
- * hint).
+ * The caller does not have a lock on the page and may or may not have the
+ * page pinned in a buffer.  Note that read-lock is sufficient for setting
+ * LP_DEAD status (which is only a hint).
  *
  * We match items by heap TID before assuming they are the right ones to
  * delete.  We cope with cases where items have moved right due to insertions.
  * If an item has moved off the current page due to a split, we'll fail to
  * find it and do nothing (this is not an error case --- we assume the item
- * will eventually get marked in a future indexscan).  Note that because we
- * hold pin on the target page continuously from initially reading the items
- * until applying this function, VACUUM cannot have deleted any items from
- * the page, and so there is no need to search left from the recorded offset.
- * (This observation also guarantees that the item is still the right one
- * to delete, which might otherwise be questionable since heap TIDs can get
- * recycled.)
+ * will eventually get marked in a future indexscan).
+ *
+ * Note that if we hold a pin on the target page continuously from initially
+ * reading the items until applying this function, VACUUM cannot have deleted
+ * any items from the page, and so there is no need to search left from the
+ * recorded offset.  (This observation also guarantees that the item is still
+ * the right one to delete, which might otherwise be questionable since heap
+ * TIDs can get recycled.)  This holds true even if the page has been modified
+ * by inserts and page splits, so there is no need to consult the LSN.
+ *
+ * If the pin was released after reading the page, then we re-read it.  If it
+ * has been modified since we read it (as determined by the LSN), we dare not
+ * flag any entries because it is possible that the old entry was vacuumed
+ * away and the TID was re-used by a completely different heap tuple.
  */
 void
 _bt_killitems(IndexScanDesc scan)

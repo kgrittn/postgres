@@ -1322,6 +1322,9 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 	 */
 	if (so->markItemIndex >= 0)
 	{
+		/* bump pin on current buffer for assignment to mark buffer */
+		if (BTScanPosIsPinned(so->currPos))
+			IncrBufferRefCount(so->currPos.buf);
 		memcpy(&so->markPos, &so->currPos,
 			   offsetof(BTScanPosData, items[1]) +
 			   so->currPos.lastItem * sizeof(BTScanPosItem));

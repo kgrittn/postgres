@@ -544,10 +544,9 @@ btmarkpos(PG_FUNCTION_ARGS)
 {
 	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
-	so->markPos.currPage = so->currPos.currPage;
 
-	/* We don't take out an extra pin for the mark position. */
-	so->markPos.buf = InvalidBuffer;
+	/* There may be an old mark with a pin (but no lock). */
+	BTScanPosUnpinIfPinned(so->markPos);
 
 	/*
 	 * Just record the current itemIndex.  If we later step to next page
@@ -558,7 +557,10 @@ btmarkpos(PG_FUNCTION_ARGS)
 	if (BTScanPosIsValid(so->currPos))
 		so->markItemIndex = so->currPos.itemIndex;
 	else
+	{
+		BTScanPosInvalidate(so->markPos);
 		so->markItemIndex = -1;
+	}
 
 	/* Also record the current positions of any array keys */
 	if (so->numArrayKeys)
@@ -586,23 +588,36 @@ btrestrpos(PG_FUNCTION_ARGS)
 		 * The mark position is on the same page we are currently on. Just
 		 * restore the itemIndex.
 		 */
-		Assert(so->markPos.currPage == so->currPos.currPage);
 		so->currPos.itemIndex = so->markItemIndex;
 	}
 	else
 	{
-		/* we aren't holding any read locks, but gotta drop the pin */
+		/*
+		 * The scan moved to a new page after the mark, and we are now
+		 * restoring to the marked page.  We aren't holding any read locks,
+		 * but if we're still holding the pin for the current position, we
+		 * must drop it.
+		 *
+		 * NB: This must deal with the possibility that so->markItemIndex < 0
+		 * but so->currPos == so->markPos.  This would be an unusual case,
+		 * where the scan moved to a new index page after the mark, restored,
+		 * and later restored again without setting a new mark or moving off
+		 * the page again.
+		 */
 		if (BTScanPosIsValid(so->currPos))
 		{
 			/* Before leaving current page, deal with any killed items */
 			if (so->numKilled > 0 &&
-				so->currPos.buf != so->markPos.buf)
+				so->currPos.currPage != so->markPos.currPage)
 				_bt_killitems(scan);
 			BTScanPosUnpinIfPinned(so->currPos);
 		}
 
 		if (BTScanPosIsValid(so->markPos))
 		{
+			/* bump pin on mark buffer for assignment to current buffer */
+			if (BTScanPosIsPinned(so->markPos))
+				IncrBufferRefCount(so->markPos.buf);
 			memcpy(&so->currPos, &so->markPos,
 				   offsetof(BTScanPosData, items[1]) +
 				   so->markPos.lastItem * sizeof(BTScanPosItem));
