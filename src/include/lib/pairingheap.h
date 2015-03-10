@@ -82,9 +82,6 @@ extern void pairingheap_add(pairingheap *heap, pairingheap_node *node);
 extern pairingheap_node *pairingheap_first(pairingheap *heap);
 extern pairingheap_node *pairingheap_remove_first(pairingheap *heap);
 extern void pairingheap_remove(pairingheap *heap, pairingheap_node *node);
-extern pairingheap_node *pairingheap_find_best(pairingheap *heap,
-					  pairingheap_comparator compare,
-					  void *opaque);
 
 #ifdef PAIRINGHEAP_DEBUG
 extern char *pairingheap_dump(pairingheap *heap,
