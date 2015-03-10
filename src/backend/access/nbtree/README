@@ -404,12 +404,12 @@ that this breaks the interlock between VACUUM and indexscans, but that is
 not so: as long as an indexscanning process has a pin on the page where
 the index item used to be, VACUUM cannot complete its btbulkdelete scan
 and so cannot remove the heap tuple.  This is another reason why
-btbulkdelete has to get super-exclusive lock on every leaf page, not only
-the ones where it actually sees items to delete.  To handle the cases
-where it is safe to release the pin after reading the index page, the LSN
-of the index page is read along with the index entries before the shared
-lock is released, and we do not attempt to flag index tuples as dead if
-the page is not pinned and the LSN does not match.
+btbulkdelete has to get a super-exclusive lock on every leaf page, not
+only the ones where it actually sees items to delete.  To handle the cases
+where LP_DEAD flagging is attempted after the process has released its
+pin, the LSN of the index page is remembered when reading the index tuples
+from the page; we do not attempt to flag index tuples as dead if the page
+is not pinned and the LSN does not match.
 
 WAL Considerations
 ------------------

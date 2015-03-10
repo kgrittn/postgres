@@ -1770,7 +1770,12 @@ _bt_killitems(IndexScanDesc scan)
 
 	if (BTScanPosIsPinned(so->currPos))
 	{
-		/* The buffer is still pinned, but not locked.  Lock it now. */
+		/*
+		 * We have held the pin on this page since we read the index tuples,
+		 * so all we need to do is lock it.  The pin will have prevented
+		 * re-use of any TID on the page, so there is no need to check the
+		 * LSN.
+		 */
 		LockBuffer(so->currPos.buf, BT_READ);
 
 		page = BufferGetPage(so->currPos.buf);
