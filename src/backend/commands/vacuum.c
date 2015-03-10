@@ -1088,7 +1088,7 @@ vac_truncate_clog(TransactionId frozenXID,
 	 * checkpoint.
 	 */
 	TruncateCLOG(frozenXID);
-	TruncateCommitTs(frozenXID);
+	TruncateCommitTs(frozenXID, true);
 
 	/*
 	 * Update the wrap limit for GetNewTransactionId and creation of new

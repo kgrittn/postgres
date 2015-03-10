@@ -753,9 +753,10 @@ standard_ProcessUtility(Node *parsetree,
 						 * intended effect!
 						 */
 						PreventTransactionChain(isTopLevel,
-												(stmt->kind == REINDEX_OBJECT_SCHEMA) ?
-												"REINDEX SCHEMA" : "REINDEX DATABASE");
-						ReindexObject(stmt->name, stmt->kind);
+												(stmt->kind == REINDEX_OBJECT_SCHEMA) ? "REINDEX SCHEMA" :
+												(stmt->kind == REINDEX_OBJECT_SYSTEM) ? "REINDEX SYSTEM" :
+												"REINDEX DATABASE");
+						ReindexMultipleTables(stmt->name, stmt->kind);
 						break;
 					default:
 						elog(ERROR, "unrecognized object type: %d",
