@@ -408,9 +408,8 @@ btbulkdelete has to get a super-exclusive lock on every leaf page, not
 only the ones where it actually sees items to delete.  So that we can
 handle the cases where we attempt LP_DEAD flagging for a page after we
 have released its pin, we remember the LSN of the index page when we read
-the index tuples from the page; we do not attempt to flag index tuples as
-dead if the we didn't hold the pin the entire time and the LSN has
-changed.
+the index tuples from it; we do not attempt to flag index tuples as dead
+if the we didn't hold the pin the entire time and the LSN has changed.
 
 WAL Considerations
 ------------------
