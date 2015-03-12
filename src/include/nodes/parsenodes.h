@@ -239,7 +239,8 @@ typedef enum A_Expr_Kind
 	AEXPR_BETWEEN,				/* name must be "BETWEEN" */
 	AEXPR_NOT_BETWEEN,			/* name must be "NOT BETWEEN" */
 	AEXPR_BETWEEN_SYM,			/* name must be "BETWEEN SYMMETRIC" */
-	AEXPR_NOT_BETWEEN_SYM		/* name must be "NOT BETWEEN SYMMETRIC" */
+	AEXPR_NOT_BETWEEN_SYM,		/* name must be "NOT BETWEEN SYMMETRIC" */
+	AEXPR_PAREN					/* nameless dummy node for parentheses */
 } A_Expr_Kind;
 
 typedef struct A_Expr
@@ -1238,6 +1239,7 @@ typedef enum ObjectType
 	OBJECT_CONVERSION,
 	OBJECT_DATABASE,
 	OBJECT_DEFAULT,
+	OBJECT_DEFACL,
 	OBJECT_DOMAIN,
 	OBJECT_DOMCONSTRAINT,
 	OBJECT_EVENT_TRIGGER,
@@ -1267,6 +1269,7 @@ typedef enum ObjectType
 	OBJECT_TSPARSER,
 	OBJECT_TSTEMPLATE,
 	OBJECT_TYPE,
+	OBJECT_USER_MAPPING,
 	OBJECT_VIEW
 } ObjectType;
 
