@@ -585,30 +585,45 @@ btrestrpos(PG_FUNCTION_ARGS)
 	if (so->markItemIndex >= 0)
 	{
 		/*
-		 * The mark position is on the same page we are currently on. Just
+		 * The scan has never moved to a new page since the last mark.  Just
 		 * restore the itemIndex.
+		 *
+		 * NB: In this case we can't count on anything in so->markPos to be
+		 * accurate.
 		 */
 		so->currPos.itemIndex = so->markItemIndex;
+	}
+	else if (so->currPos.currPage == so->markPos.currPage)
+	{
+		/*
+		 * so->markItemIndex < 0 but mark and current positions are on the
+		 * same page.  This would be an unusual case, where the scan moved to
+		 * a new index page after the mark, restored, and later restored again
+		 * without moving off the marked page.  It is not clear that this code
+		 * can currently be reached, but it seems better to make this function
+		 * robust for this case than to Assert() or elog() that it can't
+		 * happen.
+		 *
+		 * We neither want to set so->markItemIndex >= 0 (because that could
+		 * cause a later move to a new page to redo the memcpy() executions)
+		 * nor re-execute the memcpy() functions for a restore within the same
+		 * page.  The previous restore to this page already set everything
+		 * except markPos as it should be.
+		 */
+		so->currPos.itemIndex = so->markPos.itemIndex;
 	}
 	else
 	{
 		/*
-		 * The scan moved to a new page after the mark, and we are now
-		 * restoring to the marked page.  We aren't holding any read locks,
-		 * but if we're still holding the pin for the current position, we
-		 * must drop it.
-		 *
-		 * NB: This must deal with the possibility that so->markItemIndex < 0
-		 * but so->currPos == so->markPos.  This would be an unusual case,
-		 * where the scan moved to a new index page after the mark, restored,
-		 * and later restored again without setting a new mark or moving off
-		 * the page again.
+		 * The scan moved to a new page after last mark or restore, and we are
+		 * now restoring to the marked page.  We aren't holding any read
+		 * locks, but if we're still holding the pin for the current position,
+		 * we must drop it.
 		 */
 		if (BTScanPosIsValid(so->currPos))
 		{
 			/* Before leaving current page, deal with any killed items */
-			if (so->numKilled > 0 &&
-				so->currPos.currPage != so->markPos.currPage)
+			if (so->numKilled > 0)
 				_bt_killitems(scan);
 			BTScanPosUnpinIfPinned(so->currPos);
 		}
