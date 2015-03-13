@@ -1385,7 +1385,7 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 
 		/* XXX: Can walking left be lighter on the locking and pins? */
 		if (BTScanPosIsPinned(so->currPos))
-			LockBuffer(so->currPos.buf, BUFFER_LOCK_SHARE);
+			LockBuffer(so->currPos.buf, BT_READ);
 		else
 			so->currPos.buf = _bt_getbuf(rel, so->currPos.currPage, BT_READ);
 
