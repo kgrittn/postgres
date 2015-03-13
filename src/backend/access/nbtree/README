@@ -164,7 +164,12 @@ when using non-MVCC snapshot rules; when using an MVCC snapshot, it
 doesn't matter if the heap tuple is replaced with an unrelated tuple at
 the same TID, because the new tuple won't be visible to our scan anyway.
 Therefore, a scan using an MVCC snapshot which has no other confounding
-factors will not hold the pin after the page contents are read.
+factors will not hold the pin after the page contents are read.  The
+current reasons for exceptions, where a pin is still needed are if the
+index is not WAL-logged or if the scan is an index-only scan.  If later
+work allows the pin to be dropped for all cases we will be able to
+simplify the vacuum code, since the concept of a super-exclusive lock
+for btree indexes will no longer be needed.
 
 Because a pin is not always held, and a page can be split even while
 someone does hold a pin on it, it is possible that an indexscan will
