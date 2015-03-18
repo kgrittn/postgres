@@ -1397,6 +1397,12 @@ _bt_steppage(IndexScanDesc scan, ScanDirection dir)
 		 * clear whether this would be a win, since if the page immediately to
 		 * the left splits after we read this page and before we step left, we
 		 * would need to visit more pages than with the current code.
+		 *
+		 * Note that if we want to drop the pin for a non-MVCC snapshot, we
+		 * must modify the code immediately following to allow for the
+		 * possibility that the page has been deleted.  As long as the buffer
+		 * is pinned or the snapshot is MVCC the page cannot move past the
+		 * half-dead state to fully deleted.
 		 */
 		if (BTScanPosIsPinned(so->currPos))
 			LockBuffer(so->currPos.buf, BT_READ);
