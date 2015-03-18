@@ -170,7 +170,7 @@ static bool heap_page_is_all_visible(Relation rel, Buffer buf,
  *		and locked the relation.
  */
 void
-lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
+lazy_vacuum_rel(Relation onerel, int options, VacuumParams *params,
 				BufferAccessStrategy bstrategy)
 {
 	LVRelStats *vacrelstats;
@@ -194,6 +194,8 @@ lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
 	TransactionId new_frozen_xid;
 	MultiXactId new_min_multi;
 
+	Assert(params != NULL);
+
 	/* measure elapsed time iff autovacuum logging requires it */
 	if (IsAutoVacuumWorkerProcess() && Log_autovacuum_min_duration >= 0)
 	{
@@ -201,7 +203,7 @@ lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
 		starttime = GetCurrentTimestamp();
 	}
 
-	if (vacstmt->options & VACOPT_VERBOSE)
+	if (options & VACOPT_VERBOSE)
 		elevel = INFO;
 	else
 		elevel = DEBUG2;
@@ -209,9 +211,10 @@ lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
 	vac_strategy = bstrategy;
 
 	vacuum_set_xid_limits(onerel,
-						  vacstmt->freeze_min_age, vacstmt->freeze_table_age,
-						  vacstmt->multixact_freeze_min_age,
-						  vacstmt->multixact_freeze_table_age,
+						  params->freeze_min_age,
+						  params->freeze_table_age,
+						  params->multixact_freeze_min_age,
+						  params->multixact_freeze_table_age,
 						  &OldestXmin, &FreezeLimit, &xidFullScanLimit,
 						  &MultiXactCutoff, &mxactFullScanLimit);
 
