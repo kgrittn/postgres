@@ -3950,8 +3950,7 @@ AlterExtensionContentsStmt:
 					n->extname = $3;
 					n->action = $4;
 					n->objtype = OBJECT_OPCLASS;
-					n->objname = $7;
-					n->objargs = list_make1(makeString($9));
+					n->objname = lcons(makeString($9), $7);
 					$$ = (Node *)n;
 				}
 			| ALTER EXTENSION name add_drop OPERATOR FAMILY any_name USING access_method
@@ -3960,8 +3959,7 @@ AlterExtensionContentsStmt:
 					n->extname = $3;
 					n->action = $4;
 					n->objtype = OBJECT_OPFAMILY;
-					n->objname = $7;
-					n->objargs = list_make1(makeString($9));
+					n->objname = lcons(makeString($9), $7);
 					$$ = (Node *)n;
 				}
 			| ALTER EXTENSION name add_drop SCHEMA name
@@ -5362,8 +5360,7 @@ DropOpClassStmt:
 			DROP OPERATOR CLASS any_name USING access_method opt_drop_behavior
 				{
 					DropStmt *n = makeNode(DropStmt);
-					n->objects = list_make1($4);
-					n->arguments = list_make1(list_make1(makeString($6)));
+					n->objects = list_make1(lcons(makeString($6), $4));
 					n->removeType = OBJECT_OPCLASS;
 					n->behavior = $7;
 					n->missing_ok = false;
@@ -5373,8 +5370,7 @@ DropOpClassStmt:
 			| DROP OPERATOR CLASS IF_P EXISTS any_name USING access_method opt_drop_behavior
 				{
 					DropStmt *n = makeNode(DropStmt);
-					n->objects = list_make1($6);
-					n->arguments = list_make1(list_make1(makeString($8)));
+					n->objects = list_make1(lcons(makeString($8), $6));
 					n->removeType = OBJECT_OPCLASS;
 					n->behavior = $9;
 					n->missing_ok = true;
@@ -5387,8 +5383,7 @@ DropOpFamilyStmt:
 			DROP OPERATOR FAMILY any_name USING access_method opt_drop_behavior
 				{
 					DropStmt *n = makeNode(DropStmt);
-					n->objects = list_make1($4);
-					n->arguments = list_make1(list_make1(makeString($6)));
+					n->objects = list_make1(lcons(makeString($6), $4));
 					n->removeType = OBJECT_OPFAMILY;
 					n->behavior = $7;
 					n->missing_ok = false;
@@ -5398,8 +5393,7 @@ DropOpFamilyStmt:
 			| DROP OPERATOR FAMILY IF_P EXISTS any_name USING access_method opt_drop_behavior
 				{
 					DropStmt *n = makeNode(DropStmt);
-					n->objects = list_make1($6);
-					n->arguments = list_make1(list_make1(makeString($8)));
+					n->objects = list_make1(lcons(makeString($8), $6));
 					n->removeType = OBJECT_OPFAMILY;
 					n->behavior = $9;
 					n->missing_ok = true;
@@ -5741,8 +5735,7 @@ CommentStmt:
 				{
 					CommentStmt *n = makeNode(CommentStmt);
 					n->objtype = OBJECT_OPCLASS;
-					n->objname = $5;
-					n->objargs = list_make1(makeString($7));
+					n->objname = lcons(makeString($7), $5);
 					n->comment = $9;
 					$$ = (Node *) n;
 				}
@@ -5750,8 +5743,8 @@ CommentStmt:
 				{
 					CommentStmt *n = makeNode(CommentStmt);
 					n->objtype = OBJECT_OPFAMILY;
-					n->objname = $5;
-					n->objargs = list_make1(makeString($7));
+					n->objname = lcons(makeString($7), $5);
+					n->objargs = NIL;
 					n->comment = $9;
 					$$ = (Node *) n;
 				}
@@ -7476,8 +7469,7 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
 					n->renameType = OBJECT_OPCLASS;
-					n->object = $4;
-					n->objarg = list_make1(makeString($6));
+					n->object = lcons(makeString($6), $4);
 					n->newname = $9;
 					n->missing_ok = false;
 					$$ = (Node *)n;
@@ -7486,8 +7478,7 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
 					n->renameType = OBJECT_OPFAMILY;
-					n->object = $4;
-					n->objarg = list_make1(makeString($6));
+					n->object = lcons(makeString($6), $4);
 					n->newname = $9;
 					n->missing_ok = false;
 					$$ = (Node *)n;
@@ -7924,8 +7915,7 @@ AlterObjectSchemaStmt:
 				{
 					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
 					n->objectType = OBJECT_OPCLASS;
-					n->object = $4;
-					n->objarg = list_make1(makeString($6));
+					n->object = lcons(makeString($6), $4);
 					n->newschema = $9;
 					n->missing_ok = false;
 					$$ = (Node *)n;
@@ -7934,8 +7924,7 @@ AlterObjectSchemaStmt:
 				{
 					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
 					n->objectType = OBJECT_OPFAMILY;
-					n->object = $4;
-					n->objarg = list_make1(makeString($6));
+					n->object = lcons(makeString($6), $4);
 					n->newschema = $9;
 					n->missing_ok = false;
 					$$ = (Node *)n;
@@ -8162,8 +8151,7 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleSpec
 				{
 					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
 					n->objectType = OBJECT_OPCLASS;
-					n->object = $4;
-					n->objarg = list_make1(makeString($6));
+					n->object = lcons(makeString($6), $4);
 					n->newowner = $9;
 					$$ = (Node *)n;
 				}
@@ -8171,8 +8159,7 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleSpec
 				{
 					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
 					n->objectType = OBJECT_OPFAMILY;
-					n->object = $4;
-					n->objarg = list_make1(makeString($6));
+					n->object = lcons(makeString($6), $4);
 					n->newowner = $9;
 					$$ = (Node *)n;
 				}
@@ -9047,12 +9034,10 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 					n->options = VACOPT_VACUUM;
 					if ($2)
 						n->options |= VACOPT_FULL;
+					if ($3)
+						n->options |= VACOPT_FREEZE;
 					if ($4)
 						n->options |= VACOPT_VERBOSE;
-					n->freeze_min_age = $3 ? 0 : -1;
-					n->freeze_table_age = $3 ? 0 : -1;
-					n->multixact_freeze_min_age = $3 ? 0 : -1;
-					n->multixact_freeze_table_age = $3 ? 0 : -1;
 					n->relation = NULL;
 					n->va_cols = NIL;
 					$$ = (Node *)n;
@@ -9063,12 +9048,10 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 					n->options = VACOPT_VACUUM;
 					if ($2)
 						n->options |= VACOPT_FULL;
+					if ($3)
+						n->options |= VACOPT_FREEZE;
 					if ($4)
 						n->options |= VACOPT_VERBOSE;
-					n->freeze_min_age = $3 ? 0 : -1;
-					n->freeze_table_age = $3 ? 0 : -1;
-					n->multixact_freeze_min_age = $3 ? 0 : -1;
-					n->multixact_freeze_table_age = $3 ? 0 : -1;
 					n->relation = $5;
 					n->va_cols = NIL;
 					$$ = (Node *)n;
@@ -9079,30 +9062,16 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 					n->options |= VACOPT_VACUUM;
 					if ($2)
 						n->options |= VACOPT_FULL;
+					if ($3)
+						n->options |= VACOPT_FREEZE;
 					if ($4)
 						n->options |= VACOPT_VERBOSE;
-					n->freeze_min_age = $3 ? 0 : -1;
-					n->freeze_table_age = $3 ? 0 : -1;
-					n->multixact_freeze_min_age = $3 ? 0 : -1;
-					n->multixact_freeze_table_age = $3 ? 0 : -1;
 					$$ = (Node *)n;
 				}
 			| VACUUM '(' vacuum_option_list ')'
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
 					n->options = VACOPT_VACUUM | $3;
-					if (n->options & VACOPT_FREEZE)
-					{
-						n->freeze_min_age = n->freeze_table_age = 0;
-						n->multixact_freeze_min_age = 0;
-						n->multixact_freeze_table_age = 0;
-					}
-					else
-					{
-						n->freeze_min_age = n->freeze_table_age = -1;
-						n->multixact_freeze_min_age = -1;
-						n->multixact_freeze_table_age = -1;
-					}
 					n->relation = NULL;
 					n->va_cols = NIL;
 					$$ = (Node *) n;
@@ -9111,18 +9080,6 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
 					n->options = VACOPT_VACUUM | $3;
-					if (n->options & VACOPT_FREEZE)
-					{
-						n->freeze_min_age = n->freeze_table_age = 0;
-						n->multixact_freeze_min_age = 0;
-						n->multixact_freeze_table_age = 0;
-					}
-					else
-					{
-						n->freeze_min_age = n->freeze_table_age = -1;
-						n->multixact_freeze_min_age = -1;
-						n->multixact_freeze_table_age = -1;
-					}
 					n->relation = $5;
 					n->va_cols = $6;
 					if (n->va_cols != NIL)	/* implies analyze */
@@ -9150,10 +9107,6 @@ AnalyzeStmt:
 					n->options = VACOPT_ANALYZE;
 					if ($2)
 						n->options |= VACOPT_VERBOSE;
-					n->freeze_min_age = -1;
-					n->freeze_table_age = -1;
-					n->multixact_freeze_min_age = -1;
-					n->multixact_freeze_table_age = -1;
 					n->relation = NULL;
 					n->va_cols = NIL;
 					$$ = (Node *)n;
@@ -9164,10 +9117,6 @@ AnalyzeStmt:
 					n->options = VACOPT_ANALYZE;
 					if ($2)
 						n->options |= VACOPT_VERBOSE;
-					n->freeze_min_age = -1;
-					n->freeze_table_age = -1;
-					n->multixact_freeze_min_age = -1;
-					n->multixact_freeze_table_age = -1;
 					n->relation = $3;
 					n->va_cols = $4;
 					$$ = (Node *)n;
