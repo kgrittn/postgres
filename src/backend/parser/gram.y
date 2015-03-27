@@ -2766,6 +2766,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->relation = $4;
 					n->tableElts = $6;
 					n->inhRelations = $8;
+					n->ofTypename = NULL;
 					n->constraints = NIL;
 					n->options = $9;
 					n->oncommit = $10;
@@ -2782,6 +2783,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->relation = $7;
 					n->tableElts = $9;
 					n->inhRelations = $11;
+					n->ofTypename = NULL;
 					n->constraints = NIL;
 					n->options = $12;
 					n->oncommit = $13;
@@ -2796,6 +2798,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$4->relpersistence = $2;
 					n->relation = $4;
 					n->tableElts = $7;
+					n->inhRelations = NIL;
 					n->ofTypename = makeTypeNameFromNameList($6);
 					n->ofTypename->location = @6;
 					n->constraints = NIL;
@@ -2812,6 +2815,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$7->relpersistence = $2;
 					n->relation = $7;
 					n->tableElts = $10;
+					n->inhRelations = NIL;
 					n->ofTypename = makeTypeNameFromNameList($9);
 					n->ofTypename->location = @9;
 					n->constraints = NIL;
@@ -4364,32 +4368,42 @@ AlterForeignServerStmt: ALTER SERVER name foreign_server_version alter_generic_o
 CreateForeignTableStmt:
 		CREATE FOREIGN TABLE qualified_name
 			'(' OptTableElementList ')'
-			SERVER name create_generic_options
+			OptInherit SERVER name create_generic_options
 				{
 					CreateForeignTableStmt *n = makeNode(CreateForeignTableStmt);
 					$4->relpersistence = RELPERSISTENCE_PERMANENT;
 					n->base.relation = $4;
 					n->base.tableElts = $6;
-					n->base.inhRelations = NIL;
+					n->base.inhRelations = $8;
+					n->base.ofTypename = NULL;
+					n->base.constraints = NIL;
+					n->base.options = NIL;
+					n->base.oncommit = ONCOMMIT_NOOP;
+					n->base.tablespacename = NULL;
 					n->base.if_not_exists = false;
 					/* FDW-specific data */
-					n->servername = $9;
-					n->options = $10;
+					n->servername = $10;
+					n->options = $11;
 					$$ = (Node *) n;
 				}
 		| CREATE FOREIGN TABLE IF_P NOT EXISTS qualified_name
 			'(' OptTableElementList ')'
-			SERVER name create_generic_options
+			OptInherit SERVER name create_generic_options
 				{
 					CreateForeignTableStmt *n = makeNode(CreateForeignTableStmt);
 					$7->relpersistence = RELPERSISTENCE_PERMANENT;
 					n->base.relation = $7;
 					n->base.tableElts = $9;
-					n->base.inhRelations = NIL;
+					n->base.inhRelations = $11;
+					n->base.ofTypename = NULL;
+					n->base.constraints = NIL;
+					n->base.options = NIL;
+					n->base.oncommit = ONCOMMIT_NOOP;
+					n->base.tablespacename = NULL;
 					n->base.if_not_exists = true;
 					/* FDW-specific data */
-					n->servername = $12;
-					n->options = $13;
+					n->servername = $13;
+					n->options = $14;
 					$$ = (Node *) n;
 				}
 		;
@@ -4535,10 +4549,10 @@ AlterUserMappingStmt: ALTER USER MAPPING FOR auth_ident SERVER name alter_generi
 /*****************************************************************************
  *
  *		QUERIES:
- *				CREATE POLICY name ON table FOR cmd TO role USING (qual)
- *					WITH CHECK (with_check)
- *				ALTER POLICY name ON table FOR cmd TO role USING (qual)
- *					WITH CHECK (with_check)
+ *				CREATE POLICY name ON table [FOR cmd] [TO role, ...]
+ *					[USING (qual)] [WITH CHECK (with_check)]
+ *				ALTER POLICY name ON table [TO role, ...]
+ *					[USING (qual)] [WITH CHECK (with_check)]
  *				DROP POLICY name ON table
  *
  *****************************************************************************/
@@ -7741,6 +7755,17 @@ RenameStmt: ALTER AGGREGATE func_name aggr_args RENAME TO name
 					n->relation = $3;
 					n->subname = $6;
 					n->newname = $8;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
+			| ALTER TABLE IF_P EXISTS relation_expr RENAME CONSTRAINT name TO name
+				{
+					RenameStmt *n = makeNode(RenameStmt);
+					n->renameType = OBJECT_TABCONSTRAINT;
+					n->relation = $5;
+					n->subname = $8;
+					n->newname = $10;
+					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
 			| ALTER FOREIGN TABLE relation_expr RENAME opt_column name TO name

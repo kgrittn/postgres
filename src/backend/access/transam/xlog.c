@@ -1408,7 +1408,7 @@ WALInsertLockAcquireExclusive(void)
 	{
 		LWLockAcquireWithVar(&WALInsertLocks[i].l.lock,
 							 &WALInsertLocks[i].l.insertingAt,
-							 UINT64CONST(0xFFFFFFFFFFFFFFFF));
+							 UINT64_MAX);
 	}
 	LWLockAcquireWithVar(&WALInsertLocks[i].l.lock,
 						 &WALInsertLocks[i].l.insertingAt,
@@ -5534,7 +5534,7 @@ recoveryApplyDelay(XLogReaderState *record)
 	if (XLogRecGetRmid(record) != RM_XACT_ID)
 		return false;
 
-	xact_info = XLogRecGetInfo(record) & XLOG_XACT_COMMIT;
+	xact_info = XLogRecGetInfo(record) & XLOG_XACT_OPMASK;
 
 	if (xact_info != XLOG_XACT_COMMIT &&
 		xact_info != XLOG_XACT_COMMIT_PREPARED)
@@ -5572,7 +5572,8 @@ recoveryApplyDelay(XLogReaderState *record)
 		TimestampDifference(GetCurrentTimestamp(), recoveryDelayUntilTime,
 							&secs, &microsecs);
 
-		if (secs <= 0 && microsecs <= 0)
+		/* NB: We're ignoring waits below min_apply_delay's resolution. */
+		if (secs <= 0 && microsecs / 1000 <= 0)
 			break;
 
 		elog(DEBUG2, "recovery apply delay %ld seconds, %d milliseconds",
