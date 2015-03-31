@@ -235,6 +235,7 @@ DATA(insert (	3919   3831 3831 4 3878 ));
 DATA(insert (	3919   3831 3831 5 3879 ));
 DATA(insert (	3919   3831 3831 6 3880 ));
 DATA(insert (	3919   3831 3831 7 3881 ));
+DATA(insert (	3919   3831 3831 9 3996 ));
 
 
 /* gin */
@@ -411,6 +412,7 @@ DATA(insert (	3550   869	869  4 3556 ));
 DATA(insert (	3550   869	869  5 3557 ));
 DATA(insert (	3550   869	869  6 3558 ));
 DATA(insert (	3550   869	869  7 3559 ));
+DATA(insert (	3550   869	869  9 3573 ));
 
 /* sp-gist */
 DATA(insert (	3474   3831 3831 1 3469 ));
