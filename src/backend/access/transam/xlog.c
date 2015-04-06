@@ -1062,8 +1062,11 @@ XLogInsertRecord(XLogRecData *rdata, XLogRecPtr fpw_lsn)
 		if (!debug_reader)
 			debug_reader = XLogReaderAllocate(NULL, NULL);
 
-		if (!debug_reader ||
-			!DecodeXLogRecord(debug_reader, (XLogRecord *) recordBuf.data,
+		if (!debug_reader)
+		{
+			appendStringInfo(&buf, "error decoding record: out of memory");
+		}
+		else if	(!DecodeXLogRecord(debug_reader, (XLogRecord *) recordBuf.data,
 							  &errormsg))
 		{
 			appendStringInfo(&buf, "error decoding record: %s",
@@ -1408,7 +1411,7 @@ WALInsertLockAcquireExclusive(void)
 	{
 		LWLockAcquireWithVar(&WALInsertLocks[i].l.lock,
 							 &WALInsertLocks[i].l.insertingAt,
-							 UINT64_MAX);
+							 PG_UINT64_MAX);
 	}
 	LWLockAcquireWithVar(&WALInsertLocks[i].l.lock,
 						 &WALInsertLocks[i].l.insertingAt,

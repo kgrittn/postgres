@@ -311,7 +311,7 @@ static PgStat_StatTabEntry *get_pgstat_tabentry_relid(Oid relid, bool isshared,
 						  PgStat_StatDBEntry *shared,
 						  PgStat_StatDBEntry *dbentry);
 static void autovac_report_activity(autovac_table *tab);
-static void avl_sighup_handler(SIGNAL_ARGS);
+static void av_sighup_handler(SIGNAL_ARGS);
 static void avl_sigusr2_handler(SIGNAL_ARGS);
 static void avl_sigterm_handler(SIGNAL_ARGS);
 static void autovac_refresh_stats(void);
@@ -419,7 +419,7 @@ AutoVacLauncherMain(int argc, char *argv[])
 	 * backend, so we use the same signal handling.  See equivalent code in
 	 * tcop/postgres.c.
 	 */
-	pqsignal(SIGHUP, avl_sighup_handler);
+	pqsignal(SIGHUP, av_sighup_handler);
 	pqsignal(SIGINT, StatementCancelHandler);
 	pqsignal(SIGTERM, avl_sigterm_handler);
 
@@ -1329,7 +1329,7 @@ AutoVacWorkerFailed(void)
 
 /* SIGHUP: set flag to re-read config file at next convenient time */
 static void
-avl_sighup_handler(SIGNAL_ARGS)
+av_sighup_handler(SIGNAL_ARGS)
 {
 	int			save_errno = errno;
 
@@ -1460,11 +1460,8 @@ AutoVacWorkerMain(int argc, char *argv[])
 	 * Set up signal handlers.  We operate on databases much like a regular
 	 * backend, so we use the same signal handling.  See equivalent code in
 	 * tcop/postgres.c.
-	 *
-	 * Currently, we don't pay attention to postgresql.conf changes that
-	 * happen during a single daemon iteration, so we can ignore SIGHUP.
 	 */
-	pqsignal(SIGHUP, SIG_IGN);
+	pqsignal(SIGHUP, av_sighup_handler);
 
 	/*
 	 * SIGINT is used to signal canceling the current table's vacuum; SIGTERM
@@ -2164,6 +2161,22 @@ do_autovacuum(void)
 		CHECK_FOR_INTERRUPTS();
 
 		/*
+		 * Check for config changes before processing each collected table.
+		 */
+		if (got_SIGHUP)
+		{
+			got_SIGHUP = false;
+			ProcessConfigFile(PGC_SIGHUP);
+
+			/*
+			 * You might be tempted to bail out if we see autovacuum is now
+			 * disabled.  Must resist that temptation -- this might be a
+			 * for-wraparound emergency worker, in which case that would be
+			 * entirely inappropriate.
+			 */
+		}
+
+		/*
 		 * hold schedule lock from here until we're sure that this table still
 		 * needs vacuuming.  We also need the AutovacuumLock to walk the
 		 * worker array, but we'll let go of that one quickly.
@@ -2480,6 +2493,7 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 		int			multixact_freeze_table_age;
 		int			vac_cost_limit;
 		int			vac_cost_delay;
+		int			log_min_duration;
 
 		/*
 		 * Calculate the vacuum cost parameters and the freeze ages.  If there
@@ -2501,6 +2515,11 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 			: (autovacuum_vac_cost_limit > 0)
 			? autovacuum_vac_cost_limit
 			: VacuumCostLimit;
+
+		/* -1 in autovac setting means use log_autovacuum_min_duration */
+		log_min_duration = (avopts && avopts->log_min_duration >= 0)
+			? avopts->log_min_duration
+			: Log_autovacuum_min_duration;
 
 		/* these do not have autovacuum-specific settings */
 		freeze_min_age = (avopts && avopts->freeze_min_age >= 0)
@@ -2526,12 +2545,13 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 		tab->at_vacoptions = VACOPT_SKIPTOAST |
 			(dovacuum ? VACOPT_VACUUM : 0) |
 			(doanalyze ? VACOPT_ANALYZE : 0) |
-			(wraparound ? VACOPT_NOWAIT : 0);
+			(!wraparound ? VACOPT_NOWAIT : 0);
 		tab->at_params.freeze_min_age = freeze_min_age;
 		tab->at_params.freeze_table_age = freeze_table_age;
 		tab->at_params.multixact_freeze_min_age = multixact_freeze_min_age;
 		tab->at_params.multixact_freeze_table_age = multixact_freeze_table_age;
 		tab->at_params.is_wraparound = wraparound;
+		tab->at_params.log_min_duration = log_min_duration;
 		tab->at_vacuum_cost_limit = vac_cost_limit;
 		tab->at_vacuum_cost_delay = vac_cost_delay;
 		tab->at_relname = NULL;

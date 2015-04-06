@@ -2892,13 +2892,8 @@ AlterTableGetLockLevel(List *cmds)
 				break;
 
 				/*
-				 * These subcommands affect write operations only. XXX
-				 * Theoretically, these could be ShareRowExclusiveLock.
+				 * These subcommands affect write operations only.
 				 */
-			case AT_ColumnDefault:
-			case AT_ProcessedConstraint:		/* becomes AT_AddConstraint */
-			case AT_AddConstraintRecurse:		/* becomes AT_AddConstraint */
-			case AT_ReAddConstraint:	/* becomes AT_AddConstraint */
 			case AT_EnableTrig:
 			case AT_EnableAlwaysTrig:
 			case AT_EnableReplicaTrig:
@@ -2907,6 +2902,14 @@ AlterTableGetLockLevel(List *cmds)
 			case AT_DisableTrig:
 			case AT_DisableTrigAll:
 			case AT_DisableTrigUser:
+				cmd_lockmode = ShareRowExclusiveLock;
+				break;
+
+				/*
+				 * These subcommands affect write operations only. XXX
+				 * Theoretically, these could be ShareRowExclusiveLock.
+				 */
+			case AT_ColumnDefault:
 			case AT_AlterConstraint:
 			case AT_AddIndex:	/* from ADD CONSTRAINT */
 			case AT_AddIndexConstraint:
@@ -2918,6 +2921,9 @@ AlterTableGetLockLevel(List *cmds)
 				break;
 
 			case AT_AddConstraint:
+			case AT_ProcessedConstraint:		/* becomes AT_AddConstraint */
+			case AT_AddConstraintRecurse:		/* becomes AT_AddConstraint */
+			case AT_ReAddConstraint:	/* becomes AT_AddConstraint */
 				if (IsA(cmd->def, Constraint))
 				{
 					Constraint *con = (Constraint *) cmd->def;
@@ -2943,11 +2949,9 @@ AlterTableGetLockLevel(List *cmds)
 							/*
 							 * We add triggers to both tables when we add a
 							 * Foreign Key, so the lock level must be at least
-							 * as strong as CREATE TRIGGER. XXX Might be set
-							 * down to ShareRowExclusiveLock though trigger
-							 * info is accessed by pg_get_triggerdef
+							 * as strong as CREATE TRIGGER.
 							 */
-							cmd_lockmode = AccessExclusiveLock;
+							cmd_lockmode = ShareRowExclusiveLock;
 							break;
 
 						default:
@@ -6193,16 +6197,13 @@ ATAddForeignKeyConstraint(AlteredTableInfo *tab, Relation rel,
 	ListCell   *old_pfeqop_item = list_head(fkconstraint->old_conpfeqop);
 
 	/*
-	 * Grab an exclusive lock on the pk table, so that someone doesn't delete
-	 * rows out from under us. (Although a lesser lock would do for that
-	 * purpose, we'll need exclusive lock anyway to add triggers to the pk
-	 * table; trying to start with a lesser lock will just create a risk of
-	 * deadlock.)
+	 * Grab ShareRowExclusiveLock on the pk table, so that someone doesn't
+	 * delete rows out from under us.
 	 */
 	if (OidIsValid(fkconstraint->old_pktable_oid))
-		pkrel = heap_open(fkconstraint->old_pktable_oid, AccessExclusiveLock);
+		pkrel = heap_open(fkconstraint->old_pktable_oid, ShareRowExclusiveLock);
 	else
-		pkrel = heap_openrv(fkconstraint->pktable, AccessExclusiveLock);
+		pkrel = heap_openrv(fkconstraint->pktable, ShareRowExclusiveLock);
 
 	/*
 	 * Validity checks (permission checks wait till we have the column
@@ -7776,7 +7777,7 @@ ATPrepAlterColumnType(List **wqueue,
 	char	   *colName = cmd->name;
 	ColumnDef  *def = (ColumnDef *) cmd->def;
 	TypeName   *typeName = def->typeName;
-	Node	   *transform = def->raw_default;
+	Node	   *transform = def->cooked_default;
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
 	AttrNumber	attnum;
@@ -7835,34 +7836,13 @@ ATPrepAlterColumnType(List **wqueue,
 	{
 		/*
 		 * Set up an expression to transform the old data value to the new
-		 * type. If a USING option was given, transform and use that
-		 * expression, else just take the old value and try to coerce it.  We
-		 * do this first so that type incompatibility can be detected before
-		 * we waste effort, and because we need the expression to be parsed
-		 * against the original table row type.
+		 * type. If a USING option was given, use the expression as transformed
+		 * by transformAlterTableStmt, else just take the old value and try to
+		 * coerce it.  We do this first so that type incompatibility can be
+		 * detected before we waste effort, and because we need the expression
+		 * to be parsed against the original table row type.
 		 */
-		if (transform)
-		{
-			RangeTblEntry *rte;
-
-			/* Expression must be able to access vars of old table */
-			rte = addRangeTableEntryForRelation(pstate,
-												rel,
-												NULL,
-												false,
-												true);
-			addRTEtoQuery(pstate, rte, false, true, true);
-
-			transform = transformExpr(pstate, transform,
-									  EXPR_KIND_ALTER_COL_TRANSFORM);
-
-			/* It can't return a set */
-			if (expression_returns_set(transform))
-				ereport(ERROR,
-						(errcode(ERRCODE_DATATYPE_MISMATCH),
-					  errmsg("transform expression must not return a set")));
-		}
-		else
+		if (!transform)
 		{
 			transform = (Node *) makeVar(1, attnum,
 										 attTup->atttypid, attTup->atttypmod,
