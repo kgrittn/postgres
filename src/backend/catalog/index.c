@@ -69,7 +69,7 @@
 #include "utils/tqual.h"
 
 
-/* Potentially set by contrib/pg_upgrade_support functions */
+/* Potentially set by pg_upgrade_support functions */
 Oid			binary_upgrade_next_index_pg_class_oid = InvalidOid;
 
 /* state info for validate_index bulkdelete callback */
@@ -3316,7 +3316,7 @@ reindex_index(Oid indexId, bool skip_constraint_checks, char persistence)
  * REINDEX_REL_FORCE_INDEXES_UNLOGGED: if true, set the persistence of the
  * rebuilt indexes to unlogged.
  *
- * REINDEX_REL_FORCE_INDEXES_LOGGED: if true, set the persistence of the
+ * REINDEX_REL_FORCE_INDEXES_PERMANENT: if true, set the persistence of the
  * rebuilt indexes to permanent.
  *
  * Returns true if any indexes were rebuilt (including toast table's index

@@ -31,7 +31,7 @@ if (-e "src/tools/msvc/buildenv.pl")
 
 my $what = shift || "";
 if ($what =~
-/^(check|installcheck|plcheck|contribcheck|ecpgcheck|isolationcheck|upgradecheck)$/i
+/^(check|installcheck|plcheck|contribcheck|modulescheck|ecpgcheck|isolationcheck|upgradecheck)$/i
   )
 {
 	$what = uc $what;
@@ -49,7 +49,7 @@ copy("$Config/autoinc/autoinc.dll",               "src/test/regress");
 copy("$Config/regress/regress.dll",               "src/test/regress");
 copy("$Config/dummy_seclabel/dummy_seclabel.dll", "src/test/regress");
 
-$ENV{PATH} = "../../../$Config/libpq;../../$Config/libpq;$ENV{PATH}";
+$ENV{PATH} = "$topdir/$Config/libpq;$topdir/$Config/libpq;$ENV{PATH}";
 
 my $schedule = shift;
 unless ($schedule)
@@ -76,6 +76,7 @@ my %command = (
 	INSTALLCHECK   => \&installcheck,
 	ECPGCHECK      => \&ecpgcheck,
 	CONTRIBCHECK   => \&contribcheck,
+	MODULESCHECK   => \&modulescheck,
 	ISOLATIONCHECK => \&isolationcheck,
 	UPGRADECHECK   => \&upgradecheck,);
 
@@ -213,10 +214,39 @@ sub plcheck
 	chdir "../../..";
 }
 
+sub subdircheck
+{
+	my $subdir = shift;
+	my $module = shift;
+	my $mstat = 0;
+
+	if ( ! -d "$module/sql" ||
+		 ! -d "$module/expected" ||
+		 ( ! -f "$module/GNUmakefile" && ! -f "$module/Makefile"))
+	{
+		return;
+	}
+	chdir $module;
+	print
+	  "============================================================\n";
+	print "Checking $module\n";
+	my @tests = fetchTests();
+	my @opts  = fetchRegressOpts();
+	my @args  = (
+		"$topdir/$Config/pg_regress/pg_regress",
+		"--psqldir=$topdir/$Config/psql",
+		"--dbname=contrib_regression", @opts, @tests);
+	system(@args);
+	my $status = $? >> 8;
+	$mstat ||= $status;
+	chdir "..";
+
+	exit $mstat if $mstat;
+}
+
 sub contribcheck
 {
-	chdir "../../../contrib";
-	my $mstat = 0;
+	chdir "$topdir/contrib";
 	foreach my $module (glob("*"))
 	{
 		# these configuration-based exclusions must match Install.pm
@@ -225,27 +255,19 @@ sub contribcheck
 		next if ($module eq "xml2"      && !defined($config->{xml}));
 		next if ($module eq "sepgsql");
 
-		next
-		  unless -d "$module/sql"
-			  && -d "$module/expected"
-			  && (-f "$module/GNUmakefile" || -f "$module/Makefile");
-		chdir $module;
-		print
-		  "============================================================\n";
-		print "Checking $module\n";
-		my @tests = fetchTests();
-		my @opts  = fetchRegressOpts();
-		my @args  = (
-			"../../$Config/pg_regress/pg_regress",
-			"--psqldir=../../$Config/psql",
-			"--dbname=contrib_regression", @opts, @tests);
-		system(@args);
-		my $status = $? >> 8;
-		$mstat ||= $status;
-		chdir "..";
+		subdircheck("$topdir/contrib", $module);
 	}
-	exit $mstat if $mstat;
 }
+
+sub modulescheck
+{
+	chdir "$topdir/src/test/modules";
+	foreach my $module (glob("*"))
+	{
+		subdircheck("$topdir/src/test/modules", $module);
+	}
+}
+
 
 # Run "initdb", then reconfigure authentication.
 sub standard_initdb
@@ -269,7 +291,7 @@ sub upgradecheck
 
 	$ENV{PGHOST} = 'localhost';
 	$ENV{PGPORT} ||= 50432;
-	my $tmp_root = "$topdir/contrib/pg_upgrade/tmp_check";
+	my $tmp_root = "$topdir/src/bin/pg_upgrade/tmp_check";
 	(mkdir $tmp_root || die $!) unless -d $tmp_root;
 	my $tmp_install = "$tmp_root/install";
 	print "Setting up temp install\n\n";
@@ -282,7 +304,7 @@ sub upgradecheck
 	$ENV{PATH} = "$bindir;$ENV{PATH}";
 	my $data = "$tmp_root/data";
 	$ENV{PGDATA} = "$data.old";
-	my $logdir = "$topdir/contrib/pg_upgrade/log";
+	my $logdir = "$topdir/src/bin/pg_upgrade/log";
 	(mkdir $logdir || die $!) unless -d $logdir;
 	print "\nRunning initdb on old cluster\n\n";
 	standard_initdb() or exit 1;
@@ -292,7 +314,7 @@ sub upgradecheck
 	installcheck();
 
 	# now we can chdir into the source dir
-	chdir "$topdir/contrib/pg_upgrade";
+	chdir "$topdir/src/bin/pg_upgrade";
 	print "\nDumping old cluster\n\n";
 	system("pg_dumpall -f $tmp_root/dump1.sql") == 0 or exit 1;
 	print "\nStopping old cluster\n\n";

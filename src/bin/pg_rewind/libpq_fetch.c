@@ -190,7 +190,7 @@ libpqProcessFileList(void)
 		else
 			type = FILE_TYPE_REGULAR;
 
-		process_remote_file(path, type, filesize, link_target);
+		process_source_file(path, type, filesize, link_target);
 	}
 }
 
@@ -231,6 +231,7 @@ receiveFileChunks(const char *sql)
 				break;
 
 			case PGRES_TUPLES_OK:
+				PQclear(res);
 				continue;		/* final zero-row result */
 
 			default:

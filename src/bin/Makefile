@@ -15,6 +15,7 @@ include $(top_builddir)/src/Makefile.global
 
 SUBDIRS = \
 	initdb \
+	pg_archivecleanup \
 	pg_basebackup \
 	pg_config \
 	pg_controldata \
@@ -22,6 +23,8 @@ SUBDIRS = \
 	pg_dump \
 	pg_resetxlog \
 	pg_rewind \
+	pg_upgrade \
+	pgbench \
 	psql \
 	scripts
 

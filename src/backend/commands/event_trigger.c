@@ -121,6 +121,7 @@ typedef struct SQLDropObject
 	List	   *addrargs;
 	bool		original;
 	bool		normal;
+	bool		istemp;
 	slist_node	next;
 } SQLDropObject;
 
@@ -1294,9 +1295,10 @@ EventTriggerSQLDropAddObject(const ObjectAddress *object, bool original, bool no
 
 	Assert(EventTriggerSupportsObjectClass(getObjectClass(object)));
 
-	/* don't report temp schemas */
+	/* don't report temp schemas except my own */
 	if (object->classId == NamespaceRelationId &&
-		isAnyTempNamespace(object->objectId))
+		(isAnyTempNamespace(object->objectId) &&
+		 !isTempNamespace(object->objectId)))
 		return;
 
 	oldcxt = MemoryContextSwitchTo(currentEventTriggerState->cxt);
@@ -1336,16 +1338,24 @@ EventTriggerSQLDropAddObject(const ObjectAddress *object, bool original, bool no
 					Oid			namespaceId;
 
 					namespaceId = DatumGetObjectId(datum);
-					/* Don't report objects in temp namespaces */
-					if (isAnyTempNamespace(namespaceId))
+					/* temp objects are only reported if they are my own */
+					if (isTempNamespace(namespaceId))
+					{
+						obj->schemaname = "pg_temp";
+						obj->istemp = true;
+					}
+					else if (isAnyTempNamespace(namespaceId))
 					{
 						pfree(obj);
 						heap_close(catalog, AccessShareLock);
 						MemoryContextSwitchTo(oldcxt);
 						return;
 					}
-
-					obj->schemaname = get_namespace_name(namespaceId);
+					else
+					{
+						obj->schemaname = get_namespace_name(namespaceId);
+						obj->istemp = false;
+					}
 				}
 			}
 
@@ -1364,6 +1374,12 @@ EventTriggerSQLDropAddObject(const ObjectAddress *object, bool original, bool no
 		}
 
 		heap_close(catalog, AccessShareLock);
+	}
+	else
+	{
+		if (object->classId == NamespaceRelationId &&
+			isTempNamespace(object->objectId))
+			obj->istemp = true;
 	}
 
 	/* object identity, objname and objargs */
@@ -1400,7 +1416,7 @@ pg_event_trigger_dropped_objects(PG_FUNCTION_ARGS)
 	if (!currentEventTriggerState ||
 		!currentEventTriggerState->in_sql_drop)
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				(errcode(ERRCODE_E_R_I_E_EVENT_TRIGGER_PROTOCOL_VIOLATED),
 		 errmsg("%s can only be called in a sql_drop event trigger function",
 				"pg_event_trigger_dropped_objects()")));
 
@@ -1433,8 +1449,8 @@ pg_event_trigger_dropped_objects(PG_FUNCTION_ARGS)
 	{
 		SQLDropObject *obj;
 		int			i = 0;
-		Datum		values[11];
-		bool		nulls[11];
+		Datum		values[12];
+		bool		nulls[12];
 
 		obj = slist_container(SQLDropObject, next, iter.cur);
 
@@ -1455,6 +1471,9 @@ pg_event_trigger_dropped_objects(PG_FUNCTION_ARGS)
 
 		/* normal */
 		values[i++] = BoolGetDatum(obj->normal);
+
+		/* is_temporary */
+		values[i++] = BoolGetDatum(obj->istemp);
 
 		/* object_type */
 		values[i++] = CStringGetTextDatum(obj->objecttype);
@@ -1517,7 +1536,7 @@ pg_event_trigger_table_rewrite_oid(PG_FUNCTION_ARGS)
 	if (!currentEventTriggerState ||
 		currentEventTriggerState->table_rewrite_oid == InvalidOid)
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				(errcode(ERRCODE_E_R_I_E_EVENT_TRIGGER_PROTOCOL_VIOLATED),
 		 errmsg("%s can only be called in a table_rewrite event trigger function",
 				"pg_event_trigger_table_rewrite_oid()")));
 
@@ -1538,7 +1557,7 @@ pg_event_trigger_table_rewrite_reason(PG_FUNCTION_ARGS)
 	if (!currentEventTriggerState ||
 		currentEventTriggerState->table_rewrite_reason == 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				(errcode(ERRCODE_E_R_I_E_EVENT_TRIGGER_PROTOCOL_VIOLATED),
 		 errmsg("%s can only be called in a table_rewrite event trigger function",
 				"pg_event_trigger_table_rewrite_reason()")));
 

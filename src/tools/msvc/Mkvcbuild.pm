@@ -28,43 +28,48 @@ my $libpgcommon;
 my $postgres;
 my $libpq;
 
-# Set of variables for contrib modules
+# Set of variables for modules in contrib/ and src/test/modules/
 my $contrib_defines = { 'refint' => 'REFINT_VERBOSE' };
 my @contrib_uselibpq =
-  ('dblink', 'oid2name', 'pgbench', 'pg_upgrade', 'postgres_fdw', 'vacuumlo');
+  ('dblink', 'oid2name', 'postgres_fdw', 'vacuumlo');
 my @contrib_uselibpgport = (
-	'oid2name',      'pgbench',
-	'pg_standby',    'pg_archivecleanup',
+	'oid2name',
+	'pg_standby',
 	'pg_test_fsync', 'pg_test_timing',
-	'pg_upgrade',    'pg_xlogdump',
+	'pg_xlogdump',
 	'vacuumlo');
 my @contrib_uselibpgcommon = (
-	'oid2name',      'pgbench',
-	'pg_standby',    'pg_archivecleanup',
+	'oid2name',
+	'pg_standby',
 	'pg_test_fsync', 'pg_test_timing',
-	'pg_upgrade',    'pg_xlogdump',
+	'pg_xlogdump',
 	'vacuumlo');
-my $contrib_extralibs = { 'pgbench' => ['ws2_32.lib'] };
+my $contrib_extralibs = undef;
 my $contrib_extraincludes =
   { 'tsearch2' => ['contrib/tsearch2'], 'dblink' => ['src/backend'] };
 my $contrib_extrasource = {
 	'cube' => [ 'contrib\cube\cubescan.l', 'contrib\cube\cubeparse.y' ],
-	'pgbench' =>
-	  [ 'contrib\pgbench\exprscan.l', 'contrib\pgbench\exprparse.y' ],
 	'seg' => [ 'contrib\seg\segscan.l', 'contrib\seg\segparse.y' ], };
-my @contrib_excludes = ('pgcrypto', 'intagg', 'sepgsql');
+my @contrib_excludes = ('pgcrypto', 'commit_ts', 'intagg', 'sepgsql');
 
 # Set of variables for frontend modules
 my $frontend_defines = { 'initdb' => 'FRONTEND' };
-my @frontend_uselibpq = ('pg_ctl', 'psql');
+my @frontend_uselibpq = ('pg_ctl', 'pg_upgrade', 'pgbench', 'psql');
+my @frontend_uselibpgport = ( 'pg_archivecleanup', 'pg_upgrade', 'pgbench' );
+my @frontend_uselibpgcommon = ( 'pg_archivecleanup', 'pg_upgrade', 'pgbench' );
 my $frontend_extralibs = {
 	'initdb'     => ['ws2_32.lib'],
 	'pg_restore' => ['ws2_32.lib'],
+	'pgbench'    => ['ws2_32.lib'],
 	'psql'       => ['ws2_32.lib'] };
 my $frontend_extraincludes = {
 	'initdb' => ['src\timezone'],
 	'psql'   => [ 'src\bin\pg_dump', 'src\backend' ] };
-my $frontend_extrasource = { 'psql' => ['src\bin\psql\psqlscan.l'] };
+my $frontend_extrasource = {
+	'psql' => ['src\bin\psql\psqlscan.l'],
+	'pgbench' =>
+		[ 'src\bin\pgbench\exprscan.l', 'src\bin\pgbench\exprparse.y' ],
+};
 my @frontend_excludes =
   ('pgevent', 'pg_basebackup', 'pg_rewind', 'pg_dump', 'scripts');
 
@@ -91,8 +96,19 @@ sub mkvcbuild
 
 	push(@pgportfiles, 'rint.c') if ($vsVersion < '12.00');
 
+	if ($vsVersion >= '9.00')
+	{
+		push(@pgportfiles, 'pg_crc32c_choose.c');
+		push(@pgportfiles, 'pg_crc32c_sse42.c');
+		push(@pgportfiles, 'pg_crc32c_sb8.c');
+	}
+	else
+	{
+		push(@pgportfiles, 'pg_crc32c_sb8.c')
+	}
+
 	our @pgcommonallfiles = qw(
-	  exec.c pg_crc.c pg_lzcompress.c pgfnames.c psprintf.c relpath.c rmtree.c
+	  exec.c pg_lzcompress.c pgfnames.c psprintf.c relpath.c rmtree.c
 	  string.c username.c wait_error.c);
 
 	our @pgcommonfrontendfiles = (@pgcommonallfiles, qw(fe_memutils.c
@@ -548,15 +564,18 @@ sub mkvcbuild
 	my $mf = Project::read_file('contrib/pgcrypto/Makefile');
 	GenerateContribSqlFiles('pgcrypto', $mf);
 
-	opendir($D, 'contrib') || croak "Could not opendir on contrib!\n";
-	while (my $d = readdir($D))
+	foreach my $subdir ('contrib', 'src/test/modules')
 	{
-		next if ($d =~ /^\./);
-		next unless (-f "contrib/$d/Makefile");
-		next if (grep { /^$d$/ } @contrib_excludes);
-		AddContrib($d);
+		opendir($D, $subdir) || croak "Could not opendir on $subdir!\n";
+		while (my $d = readdir($D))
+		{
+			next if ($d =~ /^\./);
+			next unless (-f "$subdir/$d/Makefile");
+			next if (grep { /^$d$/ } @contrib_excludes);
+			AddContrib($subdir, $d);
+		}
+		closedir($D);
 	}
-	closedir($D);
 
 	$mf =
 	  Project::read_file('src\backend\utils\mb\conversion_procs\Makefile');
@@ -664,7 +683,7 @@ sub AddSimpleFrontend
 		$p->AddReference($libpq);
 	}
 
-	# Adjust module definition using frontent variables
+	# Adjust module definition using frontend variables
 	AdjustFrontendProj($p);
 
 	return $p;
@@ -673,14 +692,15 @@ sub AddSimpleFrontend
 # Add a simple contrib project
 sub AddContrib
 {
+	my $subdir = shift;
 	my $n  = shift;
-	my $mf = Project::read_file('contrib\\' . $n . '\Makefile');
+	my $mf = Project::read_file("$subdir/$n/Makefile");
 
 	if ($mf =~ /^MODULE_big\s*=\s*(.*)$/mg)
 	{
 		my $dn = $1;
 		my $proj =
-		  $solution->AddProject($dn, 'dll', 'contrib', 'contrib\\' . $n);
+		  $solution->AddProject($dn, 'dll', 'contrib', "$subdir/$n");
 		$proj->AddReference($postgres);
 		AdjustContribProj($proj);
 	}
@@ -689,8 +709,9 @@ sub AddContrib
 		foreach my $mod (split /\s+/, $1)
 		{
 			my $proj =
-			  $solution->AddProject($mod, 'dll', 'contrib', 'contrib\\' . $n);
-			$proj->AddFile('contrib\\' . $n . '\\' . $mod . '.c');
+			  $solution->AddProject($mod, 'dll', 'contrib', "$subdir/$n");
+			my $filename = $mod . '.c';
+			$proj->AddFile($subdir . '\\' . $n . '\\' .  $mod . '.c');
 			$proj->AddReference($postgres);
 			AdjustContribProj($proj);
 		}
@@ -698,7 +719,7 @@ sub AddContrib
 	elsif ($mf =~ /^PROGRAM\s*=\s*(.*)$/mg)
 	{
 		my $proj =
-		  $solution->AddProject($1, 'exe', 'contrib', 'contrib\\' . $n);
+		  $solution->AddProject($1, 'exe', 'contrib', "$subdir/$n");
 		AdjustContribProj($proj);
 	}
 	else
@@ -769,8 +790,9 @@ sub AdjustContribProj
 sub AdjustFrontendProj
 {
 	my $proj = shift;
-	AdjustModule($proj, $frontend_defines, \@frontend_uselibpq, undef,
-		undef, $frontend_extralibs,
+	AdjustModule($proj, $frontend_defines, \@frontend_uselibpq,
+		\@frontend_uselibpgport, \@frontend_uselibpgcommon,
+		$frontend_extralibs,
 		$frontend_extrasource, $frontend_extraincludes);
 }
 
