@@ -243,6 +243,8 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->queryId = parse->queryId;
 	result->hasReturning = (parse->returningList != NIL);
 	result->hasModifyingCTE = parse->hasModifyingCTE;
+	result->isUpsert =
+		(parse->onConflict && parse->onConflict->action == ONCONFLICT_UPDATE);
 	result->canSetTag = parse->canSetTag;
 	result->transientPlan = glob->transientPlan;
 	result->planTree = top_plan;
@@ -462,6 +464,17 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	parse->limitCount = preprocess_expression(root, parse->limitCount,
 											  EXPRKIND_LIMIT);
 
+	if (parse->onConflict)
+	{
+		parse->onConflict->onConflictSet = (List *)
+			preprocess_expression(root, (Node *) parse->onConflict->onConflictSet,
+								  EXPRKIND_TARGET);
+
+		parse->onConflict->onConflictWhere =
+			preprocess_expression(root, (Node *) parse->onConflict->onConflictWhere,
+								  EXPRKIND_QUAL);
+	}
+
 	root->append_rel_list = (List *)
 		preprocess_expression(root, (Node *) root->append_rel_list,
 							  EXPRKIND_APPINFO);
@@ -612,6 +625,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 											 withCheckOptionLists,
 											 returningLists,
 											 rowMarks,
+											 parse->onConflict,
 											 SS_assign_special_param(root));
 		}
 	}
@@ -790,6 +804,7 @@ inheritance_planner(PlannerInfo *root)
 {
 	Query	   *parse = root->parse;
 	int			parentRTindex = parse->resultRelation;
+	Bitmapset  *resultRTindexes = NULL;
 	int			nominalRelation = -1;
 	List	   *final_rtable = NIL;
 	int			save_rel_array_size = 0;
@@ -800,6 +815,8 @@ inheritance_planner(PlannerInfo *root)
 	List	   *returningLists = NIL;
 	List	   *rowMarks;
 	ListCell   *lc;
+
+	Assert(parse->commandType != CMD_INSERT);
 
 	/*
 	 * We generate a modified instance of the original Query for each target
@@ -815,7 +832,21 @@ inheritance_planner(PlannerInfo *root)
 	 * (1) would result in a rangetable of length O(N^2) for N targets, with
 	 * at least O(N^3) work expended here; and (2) would greatly complicate
 	 * management of the rowMarks list.
+	 *
+	 * Note that any RTEs with security barrier quals will be turned into
+	 * subqueries during planning, and so we must create copies of them too,
+	 * except where they are target relations, which will each only be used
+	 * in a single plan.
 	 */
+	resultRTindexes = bms_add_member(resultRTindexes, parentRTindex);
+	foreach(lc, root->append_rel_list)
+	{
+		AppendRelInfo *appinfo = (AppendRelInfo *) lfirst(lc);
+		if (appinfo->parent_relid == parentRTindex)
+			resultRTindexes = bms_add_member(resultRTindexes,
+											 appinfo->child_relid);
+	}
+
 	foreach(lc, root->append_rel_list)
 	{
 		AppendRelInfo *appinfo = (AppendRelInfo *) lfirst(lc);
@@ -886,21 +917,29 @@ inheritance_planner(PlannerInfo *root)
 			{
 				RangeTblEntry *rte = (RangeTblEntry *) lfirst(lr);
 
-				if (rte->rtekind == RTE_SUBQUERY)
+				/*
+				 * Copy subquery RTEs and RTEs with security barrier quals
+				 * that will be turned into subqueries, except those that are
+				 * target relations.
+				 */
+				if (rte->rtekind == RTE_SUBQUERY ||
+					(rte->securityQuals != NIL &&
+					 !bms_is_member(rti, resultRTindexes)))
 				{
 					Index		newrti;
 
 					/*
 					 * The RTE can't contain any references to its own RT
-					 * index, so we can save a few cycles by applying
-					 * ChangeVarNodes before we append the RTE to the
-					 * rangetable.
+					 * index, except in the security barrier quals, so we can
+					 * save a few cycles by applying ChangeVarNodes before we
+					 * append the RTE to the rangetable.
 					 */
 					newrti = list_length(subroot.parse->rtable) + 1;
 					ChangeVarNodes((Node *) subroot.parse, rti, newrti, 0);
 					ChangeVarNodes((Node *) subroot.rowMarks, rti, newrti, 0);
 					ChangeVarNodes((Node *) subroot.append_rel_list, rti, newrti, 0);
 					rte = copyObject(rte);
+					ChangeVarNodes((Node *) rte->securityQuals, rti, newrti, 0);
 					subroot.parse->rtable = lappend(subroot.parse->rtable,
 													rte);
 				}
@@ -1023,6 +1062,8 @@ inheritance_planner(PlannerInfo *root)
 		if (parse->returningList)
 			returningLists = lappend(returningLists,
 									 subroot.parse->returningList);
+
+		Assert(!parse->onConflict);
 	}
 
 	/* Mark result as unordered (probably unnecessary) */
@@ -1072,6 +1113,7 @@ inheritance_planner(PlannerInfo *root)
 									 withCheckOptionLists,
 									 returningLists,
 									 rowMarks,
+									 NULL,
 									 SS_assign_special_param(root));
 }
 
@@ -1205,6 +1247,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		bool		use_hashed_grouping = false;
 		WindowFuncLists *wflists = NULL;
 		List	   *activeWindows = NIL;
+		OnConflictExpr *onconfl;
 
 		MemSet(&agg_costs, 0, sizeof(AggClauseCosts));
 
@@ -1218,6 +1261,13 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 
 		/* Preprocess targetlist */
 		tlist = preprocess_targetlist(root, tlist);
+
+		onconfl = parse->onConflict;
+		if (onconfl)
+			onconfl->onConflictSet =
+				preprocess_onconflict_targetlist(onconfl->onConflictSet,
+												 parse->resultRelation,
+												 parse->rtable);
 
 		/*
 		 * Expand any rangetable entries that have security barrier quals.
@@ -2283,7 +2333,19 @@ select_rowmark_type(RangeTblEntry *rte, LockClauseStrength strength)
 		switch (strength)
 		{
 			case LCS_NONE:
-				/* don't need tuple lock, only ability to re-fetch the row */
+				/*
+				 * We don't need a tuple lock, only the ability to re-fetch
+				 * the row.  Regular tables support ROW_MARK_REFERENCE, but if
+				 * this RTE has security barrier quals, it will be turned into
+				 * a subquery during planning, so use ROW_MARK_COPY.
+				 *
+				 * This is only necessary for LCS_NONE, since real tuple locks
+				 * on an RTE with security barrier quals are supported by
+				 * pushing the lock down into the subquery --- see
+				 * expand_security_qual.
+				 */
+				if (rte->securityQuals != NIL)
+					return ROW_MARK_COPY;
 				return ROW_MARK_REFERENCE;
 				break;
 			case LCS_FORKEYSHARE:

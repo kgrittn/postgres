@@ -306,6 +306,7 @@ static text *pg_get_expr_worker(text *expr, Oid relid, const char *relname,
 static int print_function_arguments(StringInfo buf, HeapTuple proctup,
 						 bool print_table_args, bool print_defaults);
 static void print_function_rettype(StringInfo buf, HeapTuple proctup);
+static void print_function_trftypes(StringInfo buf, HeapTuple proctup);
 static void set_rtable_names(deparse_namespace *dpns, List *parent_namespaces,
 				 Bitmapset *rels_used);
 static bool refname_is_unique(char *refname, deparse_namespace *dpns,
@@ -353,6 +354,9 @@ static void get_select_query_def(Query *query, deparse_context *context,
 					 TupleDesc resultDesc);
 static void get_insert_query_def(Query *query, deparse_context *context);
 static void get_update_query_def(Query *query, deparse_context *context);
+static void get_update_query_targetlist_def(Query *query, List *targetList,
+									deparse_context *context,
+									RangeTblEntry *rte);
 static void get_delete_query_def(Query *query, deparse_context *context);
 static void get_utility_query_def(Query *query, deparse_context *context);
 static void get_basic_select_query(Query *query, deparse_context *context,
@@ -1912,9 +1916,7 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 	StringInfoData buf;
 	StringInfoData dq;
 	HeapTuple	proctup;
-	HeapTuple	langtup;
 	Form_pg_proc proc;
-	Form_pg_language lang;
 	Datum		tmp;
 	bool		isnull;
 	const char *prosrc;
@@ -1937,12 +1939,6 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("\"%s\" is an aggregate function", name)));
 
-	/* Need its pg_language tuple for the language name */
-	langtup = SearchSysCache1(LANGOID, ObjectIdGetDatum(proc->prolang));
-	if (!HeapTupleIsValid(langtup))
-		elog(ERROR, "cache lookup failed for language %u", proc->prolang);
-	lang = (Form_pg_language) GETSTRUCT(langtup);
-
 	/*
 	 * We always qualify the function name, to ensure the right function gets
 	 * replaced.
@@ -1953,8 +1949,11 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 	(void) print_function_arguments(&buf, proctup, false, true);
 	appendStringInfoString(&buf, ")\n RETURNS ");
 	print_function_rettype(&buf, proctup);
+
+	print_function_trftypes(&buf, proctup);
+
 	appendStringInfo(&buf, "\n LANGUAGE %s\n",
-					 quote_identifier(NameStr(lang->lanname)));
+					 quote_identifier(get_language_name(proc->prolang, false)));
 
 	/* Emit some miscellaneous options on one line */
 	oldlen = buf.len;
@@ -2074,7 +2073,6 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 
 	appendStringInfoChar(&buf, '\n');
 
-	ReleaseSysCache(langtup);
 	ReleaseSysCache(proctup);
 
 	PG_RETURN_TEXT_P(string_to_text(buf.data));
@@ -2348,6 +2346,30 @@ is_input_argument(int nth, const char *argmodes)
 			|| argmodes[nth] == PROARGMODE_IN
 			|| argmodes[nth] == PROARGMODE_INOUT
 			|| argmodes[nth] == PROARGMODE_VARIADIC);
+}
+
+/*
+ * Append used transformated types to specified buffer
+ */
+static void
+print_function_trftypes(StringInfo buf, HeapTuple proctup)
+{
+	Oid	*trftypes;
+	int	ntypes;
+
+	ntypes = get_func_trftypes(proctup, &trftypes);
+	if (ntypes > 0)
+	{
+		int	i;
+
+		appendStringInfoString(buf, "\n TRANSFORM ");
+		for (i = 0; i < ntypes; i++)
+		{
+			if (i != 0)
+				appendStringInfoString(buf, ", ");
+			appendStringInfo(buf, "FOR TYPE %s", format_type_be(trftypes[i]));
+		}
+	}
 }
 
 /*
@@ -3827,15 +3849,23 @@ set_deparse_planstate(deparse_namespace *dpns, PlanState *ps)
 	 * For a SubqueryScan, pretend the subplan is INNER referent.  (We don't
 	 * use OUTER because that could someday conflict with the normal meaning.)
 	 * Likewise, for a CteScan, pretend the subquery's plan is INNER referent.
+	 * For ON CONFLICT .. UPDATE we just need the inner tlist to point to the
+	 * excluded expression's tlist. (Similar to the SubqueryScan we don't want
+	 * to reuse OUTER, it's used for RETURNING in some modify table cases,
+	 * although not INSERT .. CONFLICT).
 	 */
 	if (IsA(ps, SubqueryScanState))
 		dpns->inner_planstate = ((SubqueryScanState *) ps)->subplan;
 	else if (IsA(ps, CteScanState))
 		dpns->inner_planstate = ((CteScanState *) ps)->cteplanstate;
+	else if (IsA(ps, ModifyTableState))
+		dpns->inner_planstate = ps;
 	else
 		dpns->inner_planstate = innerPlanState(ps);
 
-	if (dpns->inner_planstate)
+	if (IsA(ps, ModifyTableState))
+		dpns->inner_tlist = ((ModifyTableState *) ps)->mt_excludedtlist;
+	else if (dpns->inner_planstate)
 		dpns->inner_tlist = dpns->inner_planstate->plan->targetlist;
 	else
 		dpns->inner_tlist = NIL;
@@ -3843,6 +3873,10 @@ set_deparse_planstate(deparse_namespace *dpns, PlanState *ps)
 	/* index_tlist is set only if it's an IndexOnlyScan */
 	if (IsA(ps->plan, IndexOnlyScan))
 		dpns->index_tlist = ((IndexOnlyScan *) ps->plan)->indextlist;
+	else if (IsA(ps->plan, ForeignScan))
+		dpns->index_tlist = ((ForeignScan *) ps->plan)->fdw_ps_tlist;
+	else if (IsA(ps->plan, CustomScan))
+		dpns->index_tlist = ((CustomScan *) ps->plan)->custom_ps_tlist;
 	else
 		dpns->index_tlist = NIL;
 }
@@ -5279,6 +5313,32 @@ get_insert_query_def(Query *query, deparse_context *context)
 		appendStringInfoString(buf, "DEFAULT VALUES");
 	}
 
+	/* Add ON CONFLICT if present */
+	if (query->onConflict)
+	{
+		OnConflictExpr *confl = query->onConflict;
+
+		if (confl->action == ONCONFLICT_NOTHING)
+		{
+			appendStringInfoString(buf, " ON CONFLICT DO NOTHING");
+		}
+		else
+		{
+			appendStringInfoString(buf, " ON CONFLICT DO UPDATE SET ");
+			/* Deparse targetlist */
+			get_update_query_targetlist_def(query, confl->onConflictSet,
+											context, rte);
+
+			/* Add a WHERE clause if given */
+			if (confl->onConflictWhere != NULL)
+			{
+				appendContextKeyword(context, " WHERE ",
+									 -PRETTYINDENT_STD, PRETTYINDENT_STD, 1);
+				get_rule_expr(confl->onConflictWhere, context, false);
+			}
+		}
+	}
+
 	/* Add RETURNING if present */
 	if (query->returningList)
 	{
@@ -5298,12 +5358,6 @@ get_update_query_def(Query *query, deparse_context *context)
 {
 	StringInfo	buf = context->buf;
 	RangeTblEntry *rte;
-	List	   *ma_sublinks;
-	ListCell   *next_ma_cell;
-	SubLink    *cur_ma_sublink;
-	int			remaining_ma_columns;
-	const char *sep;
-	ListCell   *l;
 
 	/* Insert the WITH clause if given */
 	get_with_clause(query, context);
@@ -5326,6 +5380,46 @@ get_update_query_def(Query *query, deparse_context *context)
 						 quote_identifier(rte->alias->aliasname));
 	appendStringInfoString(buf, " SET ");
 
+	/* Deparse targetlist */
+	get_update_query_targetlist_def(query, query->targetList, context, rte);
+
+	/* Add the FROM clause if needed */
+	get_from_clause(query, " FROM ", context);
+
+	/* Add a WHERE clause if given */
+	if (query->jointree->quals != NULL)
+	{
+		appendContextKeyword(context, " WHERE ",
+							 -PRETTYINDENT_STD, PRETTYINDENT_STD, 1);
+		get_rule_expr(query->jointree->quals, context, false);
+	}
+
+	/* Add RETURNING if present */
+	if (query->returningList)
+	{
+		appendContextKeyword(context, " RETURNING",
+							 -PRETTYINDENT_STD, PRETTYINDENT_STD, 1);
+		get_target_list(query->returningList, context, NULL);
+	}
+}
+
+
+/* ----------
+ * get_update_query_targetlist_def			- Parse back an UPDATE targetlist
+ * ----------
+ */
+static void
+get_update_query_targetlist_def(Query *query, List *targetList,
+								deparse_context *context, RangeTblEntry *rte)
+{
+	StringInfo	buf = context->buf;
+	ListCell   *l;
+	ListCell   *next_ma_cell;
+	int			remaining_ma_columns;
+	const char *sep;
+	SubLink    *cur_ma_sublink;
+	List	   *ma_sublinks;
+
 	/*
 	 * Prepare to deal with MULTIEXPR assignments: collect the source SubLinks
 	 * into a list.  We expect them to appear, in ID order, in resjunk tlist
@@ -5334,7 +5428,7 @@ get_update_query_def(Query *query, deparse_context *context)
 	ma_sublinks = NIL;
 	if (query->hasSubLinks)		/* else there can't be any */
 	{
-		foreach(l, query->targetList)
+		foreach(l, targetList)
 		{
 			TargetEntry *tle = (TargetEntry *) lfirst(l);
 
@@ -5356,7 +5450,7 @@ get_update_query_def(Query *query, deparse_context *context)
 
 	/* Add the comma separated list of 'attname = value' */
 	sep = "";
-	foreach(l, query->targetList)
+	foreach(l, targetList)
 	{
 		TargetEntry *tle = (TargetEntry *) lfirst(l);
 		Node	   *expr;
@@ -5446,25 +5540,6 @@ get_update_query_def(Query *query, deparse_context *context)
 		appendStringInfoString(buf, " = ");
 
 		get_rule_expr(expr, context, false);
-	}
-
-	/* Add the FROM clause if needed */
-	get_from_clause(query, " FROM ", context);
-
-	/* Add a WHERE clause if given */
-	if (query->jointree->quals != NULL)
-	{
-		appendContextKeyword(context, " WHERE ",
-							 -PRETTYINDENT_STD, PRETTYINDENT_STD, 1);
-		get_rule_expr(query->jointree->quals, context, false);
-	}
-
-	/* Add RETURNING if present */
-	if (query->returningList)
-	{
-		appendContextKeyword(context, " RETURNING",
-							 -PRETTYINDENT_STD, PRETTYINDENT_STD, 1);
-		get_target_list(query->returningList, context, NULL);
 	}
 }
 
@@ -6833,7 +6908,7 @@ get_rule_expr(Node *node, deparse_context *context,
 			{
 				NamedArgExpr *na = (NamedArgExpr *) node;
 
-				appendStringInfo(buf, "%s := ", quote_identifier(na->name));
+				appendStringInfo(buf, "%s => ", quote_identifier(na->name));
 				get_rule_expr((Node *) na->arg, context, showimplicit);
 			}
 			break;

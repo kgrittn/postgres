@@ -665,6 +665,7 @@ CREATE VIEW pg_replication_slots AS
             L.datoid,
             D.datname AS database,
             L.active,
+            L.active_pid,
             L.xmin,
             L.catalog_xmin,
             L.restart_lsn
@@ -776,6 +777,13 @@ CREATE VIEW pg_user_mappings AS
         pg_foreign_server S ON (U.umserver = S.oid);
 
 REVOKE ALL on pg_user_mapping FROM public;
+
+
+CREATE VIEW pg_replication_origin_status AS
+    SELECT *
+    FROM pg_show_replication_origin_status();
+
+REVOKE ALL ON pg_replication_origin_status FROM public;
 
 --
 -- We have a few function definitions in here, too.

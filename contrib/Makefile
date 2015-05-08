@@ -33,13 +33,10 @@ SUBDIRS = \
 		pg_prewarm	\
 		pg_standby	\
 		pg_stat_statements \
-		pg_test_fsync	\
-		pg_test_timing	\
 		pg_trgm		\
 		pgcrypto	\
 		pgrowlocks	\
 		pgstattuple	\
-		pg_xlogdump	\
 		postgres_fdw	\
 		seg		\
 		spi		\
@@ -72,6 +69,18 @@ ifeq ($(with_selinux),yes)
 SUBDIRS += sepgsql
 else
 ALWAYS_SUBDIRS += sepgsql
+endif
+
+ifeq ($(with_perl),yes)
+SUBDIRS += hstore_plperl
+else
+ALWAYS_SUBDIRS += hstore_plperl
+endif
+
+ifeq ($(with_python),yes)
+SUBDIRS += hstore_plpython ltree_plpython
+else
+ALWAYS_SUBDIRS += hstore_plpython ltree_plpython
 endif
 
 # Missing:

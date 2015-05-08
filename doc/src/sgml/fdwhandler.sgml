@@ -242,13 +242,13 @@ IterateForeignScan (ForeignScanState *node);
 
     <para>
      Note that <productname>PostgreSQL</productname>'s executor doesn't care
-     whether the rows returned violate any <literal>NOT NULL</literal>
-     constraints that were defined on the foreign table columns &mdash; but
-     the planner does care, and may optimize queries incorrectly if
-     <literal>NULL</> values are present in a column declared not to contain
-     them.  If a <literal>NULL</> value is encountered when the user has
-     declared that none should be present, it may be appropriate to raise an
-     error (just as you would need to do in the case of a data type mismatch).
+     whether the rows returned violate any constraints that were defined on
+     the foreign table &mdash; but the planner does care, and may optimize
+     queries incorrectly if there are rows visible in the foreign table that
+     do not satisfy a declared constraint.  If a constraint is violated when
+     the user has declared that the constraint should hold true, it may be
+     appropriate to raise an error (just as you would need to do in the case
+     of a data type mismatch).
     </para>
 
     <para>
@@ -596,6 +596,42 @@ IsForeignRelUpdatable (Relation rel);
      updatability for display in the <literal>information_schema</> views.)
     </para>
 
+   </sect2>
+
+   <sect2>
+    <title>FDW Routines For Remote Joins</title>
+    <para>
+<programlisting>
+void
+GetForeignJoinPaths(PlannerInfo *root,
+                    RelOptInfo *joinrel,
+                    RelOptInfo *outerrel,
+                    RelOptInfo *innerrel,
+                    List *restrictlist,
+                    JoinType jointype,
+                    SpecialJoinInfo *sjinfo,
+                    SemiAntiJoinFactors *semifactors,
+                    Relids param_source_rels,
+                    Relids extra_lateral_rels);
+</programlisting>
+     Create possible access paths for a join of two foreign tables managed
+     by the same foreign data wrapper.
+     This optional function is called during query planning.
+    </para>
+    <para>
+     This function the FDW to add <structname>ForeignScan</> paths for the
+     supplied <literal>joinrel</>.  Typically, the FDW will send the whole
+     join to the remote server as a single query, as performing the join
+     remotely rather than locally is typically much more efficient.
+    </para>
+    <para>
+     Since we cannot construct the slot descriptor for a remote join from
+     the catalogs, the FDW should set the <structfield>scanrelid</> of the
+     <structname>ForeignScan</> to zero and <structfield>fdw_ps_tlist</>
+     to an appropriate list of <structfield>TargetEntry</> nodes.
+     Junk entries will be ignored, but can be present for the benefit of
+     deparsing performed by <command>EXPLAIN</>.
+    </para>
    </sect2>
 
    <sect2 id="fdw-callbacks-explain">
@@ -1012,6 +1048,13 @@ GetForeignServerByName(const char *name, bool missing_ok);
      require an additional remote access for every row, and might be
      impossible anyway depending on what locking semantics the external data
      source provides.
+    </para>
+
+    <para>
+     <command>INSERT</> with an <literal>ON CONFLICT</> clause does not
+     support specifying the conflict target, as remote constraints are not
+     locally known. This in turn implies that <literal>ON CONFLICT DO
+     UPDATE</> is not supported, since the specification is mandatory there.
     </para>
 
   </sect1>

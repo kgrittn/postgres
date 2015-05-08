@@ -44,6 +44,7 @@
 #include "postmaster/startup.h"
 #include "replication/logical.h"
 #include "replication/slot.h"
+#include "replication/origin.h"
 #include "replication/snapbuild.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
@@ -291,10 +292,19 @@ static TimeLineID curFileTLI;
  * end+1 of the last record, and is reset when we end a top-level transaction,
  * or start a new one; so it can be used to tell if the current transaction has
  * created any XLOG records.
+ *
+ * While in parallel mode, this may not be fully up to date.  When committing,
+ * a transaction can assume this covers all xlog records written either by the
+ * user backend or by any parallel worker which was present at any point during
+ * the transaction.  But when aborting, or when still in parallel mode, other
+ * parallel backends may have written WAL records at later LSNs than the value
+ * stored here.  The parallel leader advances its own copy, when necessary,
+ * in WaitForParallelWorkersToFinish.
  */
 static XLogRecPtr ProcLastRecPtr = InvalidXLogRecPtr;
 
 XLogRecPtr	XactLastRecEnd = InvalidXLogRecPtr;
+XLogRecPtr	XactLastCommitEnd = InvalidXLogRecPtr;
 
 /*
  * RedoRecPtr is this backend's local copy of the REDO record pointer
@@ -834,6 +844,8 @@ static void WALInsertLockAcquire(void);
 static void WALInsertLockAcquireExclusive(void);
 static void WALInsertLockRelease(void);
 static void WALInsertLockUpdateInsertingAt(XLogRecPtr insertingAt);
+
+static void fsync_pgdata(char *datadir);
 
 /*
  * Insert an XLOG record represented by an already-constructed chain of data
@@ -5900,6 +5912,18 @@ StartupXLOG(void)
 			  (errmsg("database system was interrupted; last known up at %s",
 					  str_time(ControlFile->time))));
 
+	/*
+	 * If we previously crashed, there might be data which we had written,
+	 * intending to fsync it, but which we had not actually fsync'd yet.
+	 * Therefore, a power failure in the near future might cause earlier
+	 * unflushed writes to be lost, even though more recent data written to
+	 * disk from here on would be persisted.  To avoid that, fsync the entire
+	 * data directory.
+	 */
+	if (ControlFile->state != DB_SHUTDOWNED &&
+		ControlFile->state != DB_SHUTDOWNED_IN_RECOVERY)
+		fsync_pgdata(data_directory);
+
 	/* This is just to allow attaching to startup process with a debugger */
 #ifdef XLOG_REPLAY_DELAY
 	if (ControlFile->state != DB_SHUTDOWNED)
@@ -6210,6 +6234,11 @@ StartupXLOG(void)
 	 * truncation during restartpoints.
 	 */
 	StartupMultiXact();
+
+	/*
+	 * Recover knowledge about replay progress of known replication partners.
+	 */
+	StartupReplicationOrigin();
 
 	/*
 	 * Initialize unlogged LSN. On a clean shutdown, it's restored from the
@@ -8394,6 +8423,7 @@ CheckPointGuts(XLogRecPtr checkPointRedo, int flags)
 	CheckPointSnapBuild();
 	CheckPointLogicalRewriteHeap();
 	CheckPointBuffers(flags);	/* performs all required fsyncs */
+	CheckPointReplicationOrigin();
 	/* We deliberately delay 2PC checkpointing as long as possible */
 	CheckPointTwoPhase(checkPointRedo);
 }
@@ -11106,4 +11136,32 @@ SetWalWriterSleeping(bool sleeping)
 	SpinLockAcquire(&XLogCtl->info_lck);
 	XLogCtl->WalWriterSleeping = sleeping;
 	SpinLockRelease(&XLogCtl->info_lck);
+}
+
+/*
+ * Issue fsync recursively on PGDATA and all its contents.
+ */
+static void
+fsync_pgdata(char *datadir)
+{
+	if (!enableFsync)
+		return;
+
+	/*
+	 * If possible, hint to the kernel that we're soon going to fsync
+	 * the data directory and its contents.
+	 */
+#if defined(HAVE_SYNC_FILE_RANGE) || \
+	(defined(USE_POSIX_FADVISE) && defined(POSIX_FADV_DONTNEED))
+	walkdir(datadir, pre_sync_fname);
+#endif
+
+	/*
+	 * Now we do the fsync()s in the same order.
+	 *
+	 * It's important to fsync the destination directory itself as individual
+	 * file fsyncs don't guarantee that the directory entry for the file is
+	 * synced.
+	 */
+	walkdir(datadir, fsync_fname);
 }

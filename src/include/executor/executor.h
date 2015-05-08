@@ -193,8 +193,9 @@ extern ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid);
 extern bool ExecContextForcesOids(PlanState *planstate, bool *hasoids);
 extern void ExecConstraints(ResultRelInfo *resultRelInfo,
 				TupleTableSlot *slot, EState *estate);
-extern void ExecWithCheckOptions(ResultRelInfo *resultRelInfo,
+extern void ExecWithCheckOptions(WCOKind kind, ResultRelInfo *resultRelInfo,
 					 TupleTableSlot *slot, EState *estate);
+extern LockTupleMode ExecUpdateLockMode(EState *estate, ResultRelInfo *relinfo);
 extern ExecRowMark *ExecFindRowMark(EState *estate, Index rti);
 extern ExecAuxRowMark *ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist);
 extern TupleTableSlot *EvalPlanQual(EState *estate, EPQState *epqstate,
@@ -351,22 +352,28 @@ extern bool ExecRelationIsTargetRelation(EState *estate, Index scanrelid);
 extern Relation ExecOpenScanRelation(EState *estate, Index scanrelid, int eflags);
 extern void ExecCloseScanRelation(Relation scanrel);
 
-extern void ExecOpenIndices(ResultRelInfo *resultRelInfo);
-extern void ExecCloseIndices(ResultRelInfo *resultRelInfo);
-extern List *ExecInsertIndexTuples(TupleTableSlot *slot, ItemPointer tupleid,
-					  EState *estate);
-extern bool check_exclusion_constraint(Relation heap, Relation index,
-						   IndexInfo *indexInfo,
-						   ItemPointer tupleid,
-						   Datum *values, bool *isnull,
-						   EState *estate,
-						   bool newIndex, bool errorOK);
-
 extern void RegisterExprContextCallback(ExprContext *econtext,
 							ExprContextCallbackFunction function,
 							Datum arg);
 extern void UnregisterExprContextCallback(ExprContext *econtext,
 							  ExprContextCallbackFunction function,
 							  Datum arg);
+
+/*
+ * prototypes from functions in execIndexing.c
+ */
+extern void ExecOpenIndices(ResultRelInfo *resultRelInfo, bool speculative);
+extern void ExecCloseIndices(ResultRelInfo *resultRelInfo);
+extern List *ExecInsertIndexTuples(TupleTableSlot *slot, ItemPointer tupleid,
+					  EState *estate, bool noDupErr, bool *specConflict,
+					  List *arbiterIndexes);
+extern bool ExecCheckIndexConstraints(TupleTableSlot *slot, EState *estate,
+					  ItemPointer conflictTid, List *arbiterIndexes);
+extern void check_exclusion_constraint(Relation heap, Relation index,
+						   IndexInfo *indexInfo,
+						   ItemPointer tupleid,
+						   Datum *values, bool *isnull,
+						   EState *estate, bool newIndex);
+
 
 #endif   /* EXECUTOR_H  */

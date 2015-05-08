@@ -291,7 +291,7 @@ AtAbort_Twophase(void)
 }
 
 /*
- * This is called after we have finished transfering state to the prepared
+ * This is called after we have finished transferring state to the prepared
  * PGXACT entry.
  */
 void
@@ -2053,6 +2053,12 @@ RecoverPreparedTransactions(void)
 			 */
 			if (InHotStandby)
 				StandbyReleaseLockTree(xid, hdr->nsubxacts, subxids);
+
+			/*
+			 * We're done with recovering this transaction. Clear MyLockedGxact,
+			 * like we do in PrepareTransaction() during normal operation.
+			 */
+			PostPrepare_Twophase();
 
 			pfree(buf);
 		}

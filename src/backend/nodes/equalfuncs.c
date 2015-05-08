@@ -683,6 +683,17 @@ _equalCurrentOfExpr(const CurrentOfExpr *a, const CurrentOfExpr *b)
 }
 
 static bool
+_equalInferenceElem(const InferenceElem *a, const InferenceElem *b)
+{
+	COMPARE_NODE_FIELD(expr);
+	COMPARE_SCALAR_FIELD(infercollid);
+	COMPARE_SCALAR_FIELD(inferopfamily);
+	COMPARE_SCALAR_FIELD(inferopcinputtype);
+
+	return true;
+}
+
+static bool
 _equalTargetEntry(const TargetEntry *a, const TargetEntry *b)
 {
 	COMPARE_NODE_FIELD(expr);
@@ -728,6 +739,20 @@ _equalFromExpr(const FromExpr *a, const FromExpr *b)
 	return true;
 }
 
+static bool
+_equalOnConflictExpr(const OnConflictExpr *a, const OnConflictExpr *b)
+{
+	COMPARE_SCALAR_FIELD(action);
+	COMPARE_NODE_FIELD(arbiterElems);
+	COMPARE_NODE_FIELD(arbiterWhere);
+	COMPARE_NODE_FIELD(onConflictSet);
+	COMPARE_NODE_FIELD(onConflictWhere);
+	COMPARE_SCALAR_FIELD(constraint);
+	COMPARE_SCALAR_FIELD(exclRelIndex);
+	COMPARE_NODE_FIELD(exclRelTlist);
+
+	return true;
+}
 
 /*
  * Stuff from relation.h
@@ -868,6 +893,7 @@ _equalQuery(const Query *a, const Query *b)
 	COMPARE_NODE_FIELD(jointree);
 	COMPARE_NODE_FIELD(targetList);
 	COMPARE_NODE_FIELD(withCheckOptions);
+	COMPARE_NODE_FIELD(onConflict);
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(groupClause);
 	COMPARE_NODE_FIELD(havingQual);
@@ -889,6 +915,7 @@ _equalInsertStmt(const InsertStmt *a, const InsertStmt *b)
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_NODE_FIELD(cols);
 	COMPARE_NODE_FIELD(selectStmt);
+	COMPARE_NODE_FIELD(onConflictClause);
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(withClause);
 
@@ -1780,6 +1807,18 @@ _equalImportForeignSchemaStmt(const ImportForeignSchemaStmt *a, const ImportFore
 }
 
 static bool
+_equalCreateTransformStmt(const CreateTransformStmt *a, const CreateTransformStmt *b)
+{
+	COMPARE_SCALAR_FIELD(replace);
+	COMPARE_NODE_FIELD(type_name);
+	COMPARE_STRING_FIELD(lang);
+	COMPARE_NODE_FIELD(fromsql);
+	COMPARE_NODE_FIELD(tosql);
+
+	return true;
+}
+
+static bool
 _equalCreateTrigStmt(const CreateTrigStmt *a, const CreateTrigStmt *b)
 {
 	COMPARE_STRING_FIELD(trigname);
@@ -2340,7 +2379,8 @@ _equalRangeTblEntry(const RangeTblEntry *a, const RangeTblEntry *b)
 	COMPARE_SCALAR_FIELD(requiredPerms);
 	COMPARE_SCALAR_FIELD(checkAsUser);
 	COMPARE_BITMAPSET_FIELD(selectedCols);
-	COMPARE_BITMAPSET_FIELD(modifiedCols);
+	COMPARE_BITMAPSET_FIELD(insertedCols);
+	COMPARE_BITMAPSET_FIELD(updatedCols);
 	COMPARE_NODE_FIELD(securityQuals);
 
 	return true;
@@ -2363,7 +2403,8 @@ _equalRangeTblFunction(const RangeTblFunction *a, const RangeTblFunction *b)
 static bool
 _equalWithCheckOption(const WithCheckOption *a, const WithCheckOption *b)
 {
-	COMPARE_STRING_FIELD(viewname);
+	COMPARE_SCALAR_FIELD(kind);
+	COMPARE_STRING_FIELD(relname);
 	COMPARE_NODE_FIELD(qual);
 	COMPARE_SCALAR_FIELD(cascaded);
 
@@ -2414,6 +2455,29 @@ _equalWithClause(const WithClause *a, const WithClause *b)
 {
 	COMPARE_NODE_FIELD(ctes);
 	COMPARE_SCALAR_FIELD(recursive);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
+_equalInferClause(const InferClause *a, const InferClause *b)
+{
+	COMPARE_NODE_FIELD(indexElems);
+	COMPARE_NODE_FIELD(whereClause);
+	COMPARE_STRING_FIELD(conname);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
+_equalOnConflictClause(const OnConflictClause *a, const OnConflictClause *b)
+{
+	COMPARE_SCALAR_FIELD(action);
+	COMPARE_NODE_FIELD(infer);
+	COMPARE_NODE_FIELD(targetList);
+	COMPARE_NODE_FIELD(whereClause);
 	COMPARE_LOCATION_FIELD(location);
 
 	return true;
@@ -2698,6 +2762,9 @@ equal(const void *a, const void *b)
 		case T_CurrentOfExpr:
 			retval = _equalCurrentOfExpr(a, b);
 			break;
+		case T_InferenceElem:
+			retval = _equalInferenceElem(a, b);
+			break;
 		case T_TargetEntry:
 			retval = _equalTargetEntry(a, b);
 			break;
@@ -2706,6 +2773,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_FromExpr:
 			retval = _equalFromExpr(a, b);
+			break;
+		case T_OnConflictExpr:
+			retval = _equalOnConflictExpr(a, b);
 			break;
 		case T_JoinExpr:
 			retval = _equalJoinExpr(a, b);
@@ -2990,6 +3060,9 @@ equal(const void *a, const void *b)
 		case T_ImportForeignSchemaStmt:
 			retval = _equalImportForeignSchemaStmt(a, b);
 			break;
+		case T_CreateTransformStmt:
+			retval = _equalCreateTransformStmt(a, b);
+			break;
 		case T_CreateTrigStmt:
 			retval = _equalCreateTrigStmt(a, b);
 			break;
@@ -3151,6 +3224,12 @@ equal(const void *a, const void *b)
 			break;
 		case T_WithClause:
 			retval = _equalWithClause(a, b);
+			break;
+		case T_InferClause:
+			retval = _equalInferClause(a, b);
+			break;
+		case T_OnConflictClause:
+			retval = _equalOnConflictClause(a, b);
 			break;
 		case T_CommonTableExpr:
 			retval = _equalCommonTableExpr(a, b);

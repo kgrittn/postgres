@@ -217,6 +217,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	RangeVar			*range;
 	IntoClause			*into;
 	WithClause			*with;
+	InferClause			*infer;
+	OnConflictClause	*onconflict;
 	A_Indices			*aind;
 	ResTarget			*target;
 	struct PrivTarget	*privtarget;
@@ -241,12 +243,13 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		CreateOpFamilyStmt AlterOpFamilyStmt CreatePLangStmt
 		CreateSchemaStmt CreateSeqStmt CreateStmt CreateTableSpaceStmt
 		CreateFdwStmt CreateForeignServerStmt CreateForeignTableStmt
-		CreateAssertStmt CreateTrigStmt CreateEventTrigStmt
+		CreateAssertStmt CreateTransformStmt CreateTrigStmt CreateEventTrigStmt
 		CreateUserStmt CreateUserMappingStmt CreateRoleStmt CreatePolicyStmt
 		CreatedbStmt DeclareCursorStmt DefineStmt DeleteStmt DiscardStmt DoStmt
 		DropGroupStmt DropOpClassStmt DropOpFamilyStmt DropPLangStmt DropStmt
 		DropAssertStmt DropTrigStmt DropRuleStmt DropCastStmt DropRoleStmt
 		DropPolicyStmt DropUserStmt DropdbStmt DropTableSpaceStmt DropFdwStmt
+		DropTransformStmt
 		DropForeignServerStmt DropUserMappingStmt ExplainStmt FetchStmt
 		GrantStmt GrantRoleStmt ImportForeignSchemaStmt IndexStmt InsertStmt
 		ListenStmt LoadStmt LockStmt NotifyStmt ExplainableStmt PreparableStmt
@@ -317,7 +320,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				opt_class opt_inline_handler opt_validator validator_clause
 				opt_collate
 
-%type <range>	qualified_name OptConstrFromTable
+%type <range>	qualified_name insert_target OptConstrFromTable
 
 %type <str>		all_Op MathOp
 
@@ -343,7 +346,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				OptTableElementList TableElementList OptInherit definition
 				OptTypedTableElementList TypedTableElementList
 				reloptions opt_reloptions
-				OptWith opt_distinct opt_definition func_args func_args_list
+				OptWith distinct_clause opt_all_clause opt_definition func_args func_args_list
 				func_args_with_defaults func_args_with_defaults_list
 				aggr_args aggr_args_list
 				func_as createfunc_opt_list alterfunc_opt_list
@@ -366,6 +369,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				opt_enum_val_list enum_val_list table_func_column_list
 				create_generic_options alter_generic_options
 				relation_expr_list dostmt_opt_list
+				transform_element_list transform_type_list
 
 %type <list>	opt_fdw_options fdw_options
 %type <defelt>	fdw_option
@@ -387,7 +391,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <node>	for_locking_item
 %type <list>	for_locking_clause opt_for_locking_clause for_locking_items
 %type <list>	locked_rels_list
-%type <boolean>	opt_all
+%type <boolean>	all_or_distinct
 
 %type <node>	join_outer join_qual
 %type <jtype>	join_type
@@ -416,6 +420,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <defelt>	SeqOptElem
 
 %type <istmt>	insert_rest
+%type <infer>	opt_conf_expr
+%type <onconflict> opt_on_conflict
 
 %type <vsetstmt> generic_set set_rest set_rest_more generic_reset reset_rest
 				 SetResetClause FunctionSetResetClause
@@ -555,8 +561,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	CACHE CALLED CASCADE CASCADED CASE CAST CATALOG_P CHAIN CHAR_P
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
 	CLUSTER COALESCE COLLATE COLLATION COLUMN COMMENT COMMENTS COMMIT
-	COMMITTED CONCURRENTLY CONFIGURATION CONNECTION CONSTRAINT CONSTRAINTS
-	CONTENT_P CONTINUE_P CONVERSION_P COPY COST CREATE
+	COMMITTED CONCURRENTLY CONFIGURATION CONFLICT CONNECTION CONSTRAINT
+	CONSTRAINTS CONTENT_P CONTINUE_P CONVERSION_P COPY COST CREATE
 	CROSS CSV CURRENT_P
 	CURRENT_CATALOG CURRENT_DATE CURRENT_ROLE CURRENT_SCHEMA
 	CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR CYCLE
@@ -611,12 +617,12 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	SAVEPOINT SCHEMA SCROLL SEARCH SECOND_P SECURITY SELECT SEQUENCE SEQUENCES
 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETOF SHARE
-	SHOW SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME STABLE STANDALONE_P START
+	SHOW SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME SQL_P STABLE STANDALONE_P START
 	STATEMENT STATISTICS STDIN STDOUT STORAGE STRICT_P STRIP_P SUBSTRING
 	SYMMETRIC SYSID SYSTEM_P
 
 	TABLE TABLES TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN TIME TIMESTAMP
-	TO TRAILING TRANSACTION TREAT TRIGGER TRIM TRUE_P
+	TO TRAILING TRANSACTION TRANSFORM TREAT TRIGGER TRIM TRUE_P
 	TRUNCATE TRUSTED TYPE_P TYPES_P
 
 	UNBOUNDED UNCOMMITTED UNENCRYPTED UNION UNIQUE UNKNOWN UNLISTEN UNLOGGED
@@ -790,6 +796,7 @@ stmt :
 			| CreateSeqStmt
 			| CreateStmt
 			| CreateTableSpaceStmt
+			| CreateTransformStmt
 			| CreateTrigStmt
 			| CreateEventTrigStmt
 			| CreateRoleStmt
@@ -815,6 +822,7 @@ stmt :
 			| DropRuleStmt
 			| DropStmt
 			| DropTableSpaceStmt
+			| DropTransformStmt
 			| DropTrigStmt
 			| DropRoleStmt
 			| DropUserStmt
@@ -4083,6 +4091,16 @@ AlterExtensionContentsStmt:
 					n->objname = list_make1(makeString($6));
 					$$ = (Node *)n;
 				}
+			| ALTER EXTENSION name add_drop TRANSFORM FOR Typename LANGUAGE name
+				{
+					AlterExtensionContentsStmt *n = makeNode(AlterExtensionContentsStmt);
+					n->extname = $3;
+					n->action = $4;
+					n->objtype = OBJECT_TRANSFORM;
+					n->objname = list_make1($7);
+					n->objargs = list_make1($9);
+					$$ = (Node *)n;
+				}
 			| ALTER EXTENSION name add_drop TYPE_P Typename
 				{
 					AlterExtensionContentsStmt *n = makeNode(AlterExtensionContentsStmt);
@@ -5736,6 +5754,15 @@ CommentStmt:
 					n->comment = $6;
 					$$ = (Node *) n;
 				}
+			| COMMENT ON TRANSFORM FOR Typename LANGUAGE name IS comment_text
+				{
+					CommentStmt *n = makeNode(CommentStmt);
+					n->objtype = OBJECT_TRANSFORM;
+					n->objname = list_make1($5);
+					n->objargs = list_make1($7);
+					n->comment = $9;
+					$$ = (Node *) n;
+				}
 			| COMMENT ON TRIGGER name ON any_name IS comment_text
 				{
 					CommentStmt *n = makeNode(CommentStmt);
@@ -7015,6 +7042,10 @@ createfunc_opt_item:
 				{
 					$$ = makeDefElem("language", (Node *)makeString($2));
 				}
+			| TRANSFORM transform_type_list
+				{
+					$$ = makeDefElem("transform", (Node *)$2);
+				}
 			| WINDOW
 				{
 					$$ = makeDefElem("window", (Node *)makeInteger(TRUE));
@@ -7030,6 +7061,11 @@ func_as:	Sconst						{ $$ = list_make1(makeString($1)); }
 				{
 					$$ = list_make2(makeString($1), makeString($3));
 				}
+		;
+
+transform_type_list:
+			FOR TYPE_P Typename { $$ = list_make1($3); }
+			| transform_type_list ',' FOR TYPE_P Typename { $$ = lappend($1, $5); }
 		;
 
 opt_definition:
@@ -7294,6 +7330,56 @@ DropCastStmt: DROP CAST opt_if_exists '(' Typename AS Typename ')' opt_drop_beha
 
 opt_if_exists: IF_P EXISTS						{ $$ = TRUE; }
 		| /*EMPTY*/								{ $$ = FALSE; }
+		;
+
+
+/*****************************************************************************
+ *
+ *		CREATE TRANSFORM / DROP TRANSFORM
+ *
+ *****************************************************************************/
+
+CreateTransformStmt: CREATE opt_or_replace TRANSFORM FOR Typename LANGUAGE name '(' transform_element_list ')'
+				{
+					CreateTransformStmt *n = makeNode(CreateTransformStmt);
+					n->replace = $2;
+					n->type_name = $5;
+					n->lang = $7;
+					n->fromsql = linitial($9);
+					n->tosql = lsecond($9);
+					$$ = (Node *)n;
+				}
+		;
+
+transform_element_list: FROM SQL_P WITH FUNCTION function_with_argtypes ',' TO SQL_P WITH FUNCTION function_with_argtypes
+				{
+					$$ = list_make2($5, $11);
+				}
+				| TO SQL_P WITH FUNCTION function_with_argtypes ',' FROM SQL_P WITH FUNCTION function_with_argtypes
+				{
+					$$ = list_make2($11, $5);
+				}
+				| FROM SQL_P WITH FUNCTION function_with_argtypes
+				{
+					$$ = list_make2($5, NULL);
+				}
+				| TO SQL_P WITH FUNCTION function_with_argtypes
+				{
+					$$ = list_make2(NULL, $5);
+				}
+		;
+
+
+DropTransformStmt: DROP TRANSFORM opt_if_exists FOR Typename LANGUAGE name opt_drop_behavior
+				{
+					DropStmt *n = makeNode(DropStmt);
+					n->removeType = OBJECT_TRANSFORM;
+					n->objects = list_make1(list_make1($5));
+					n->arguments = list_make1(list_make1($7));
+					n->behavior = $8;
+					n->missing_ok = $3;
+					$$ = (Node *)n;
+				}
 		;
 
 
@@ -9354,12 +9440,32 @@ DeallocateStmt: DEALLOCATE name
  *****************************************************************************/
 
 InsertStmt:
-			opt_with_clause INSERT INTO qualified_name insert_rest returning_clause
+			opt_with_clause INSERT INTO insert_target insert_rest
+			opt_on_conflict returning_clause
 				{
 					$5->relation = $4;
-					$5->returningList = $6;
+					$5->onConflictClause = $6;
+					$5->returningList = $7;
 					$5->withClause = $1;
 					$$ = (Node *) $5;
+				}
+		;
+
+/*
+ * Can't easily make AS optional here, because VALUES in insert_rest would
+ * have a shift/reduce conflict with a values as a optional alias. We could
+ * easily allow unreserved_keywords as optional aliases, but that'd be a odd
+ * divergance from other places.  So just require AS for now.
+ */
+insert_target:
+			qualified_name
+				{
+					$$ = $1;
+				}
+			| qualified_name AS ColId
+				{
+					$1->alias = makeAlias($3, NIL);
+					$$ = $1;
 				}
 		;
 
@@ -9399,6 +9505,56 @@ insert_column_item:
 					$$->indirection = check_indirection($2, yyscanner);
 					$$->val = NULL;
 					$$->location = @1;
+				}
+		;
+
+opt_on_conflict:
+			ON CONFLICT opt_conf_expr DO UPDATE SET set_clause_list	where_clause
+				{
+					$$ = makeNode(OnConflictClause);
+					$$->action = ONCONFLICT_UPDATE;
+					$$->infer = $3;
+					$$->targetList = $7;
+					$$->whereClause = $8;
+					$$->location = @1;
+				}
+			|
+			ON CONFLICT opt_conf_expr DO NOTHING
+				{
+					$$ = makeNode(OnConflictClause);
+					$$->action = ONCONFLICT_NOTHING;
+					$$->infer = $3;
+					$$->targetList = NIL;
+					$$->whereClause = NULL;
+					$$->location = @1;
+				}
+			| /*EMPTY*/
+				{
+					$$ = NULL;
+				}
+		;
+
+opt_conf_expr:
+			'(' index_params ')' where_clause
+				{
+					$$ = makeNode(InferClause);
+					$$->indexElems = $2;
+					$$->whereClause = $4;
+					$$->conname = NULL;
+					$$->location = @1;
+				}
+			|
+			ON CONSTRAINT name
+				{
+					$$ = makeNode(InferClause);
+					$$->indexElems = NIL;
+					$$->whereClause = NULL;
+					$$->conname = $3;
+					$$->location = @1;
+				}
+			| /*EMPTY*/
+				{
+					$$ = NULL;
 				}
 		;
 
@@ -9788,7 +9944,21 @@ select_clause:
  * However, this is not checked by the grammar; parse analysis must check it.
  */
 simple_select:
-			SELECT opt_distinct opt_target_list
+			SELECT opt_all_clause opt_target_list
+			into_clause from_clause where_clause
+			group_clause having_clause window_clause
+				{
+					SelectStmt *n = makeNode(SelectStmt);
+					n->targetList = $3;
+					n->intoClause = $4;
+					n->fromClause = $5;
+					n->whereClause = $6;
+					n->groupClause = $7;
+					n->havingClause = $8;
+					n->windowClause = $9;
+					$$ = (Node *)n;
+				}
+			| SELECT distinct_clause target_list
 			into_clause from_clause where_clause
 			group_clause having_clause window_clause
 				{
@@ -9823,15 +9993,15 @@ simple_select:
 					n->fromClause = list_make1($2);
 					$$ = (Node *)n;
 				}
-			| select_clause UNION opt_all select_clause
+			| select_clause UNION all_or_distinct select_clause
 				{
 					$$ = makeSetOp(SETOP_UNION, $3, $1, $4);
 				}
-			| select_clause INTERSECT opt_all select_clause
+			| select_clause INTERSECT all_or_distinct select_clause
 				{
 					$$ = makeSetOp(SETOP_INTERSECT, $3, $1, $4);
 				}
-			| select_clause EXCEPT opt_all select_clause
+			| select_clause EXCEPT all_or_distinct select_clause
 				{
 					$$ = makeSetOp(SETOP_EXCEPT, $3, $1, $4);
 				}
@@ -9970,7 +10140,8 @@ opt_table:	TABLE									{}
 			| /*EMPTY*/								{}
 		;
 
-opt_all:	ALL										{ $$ = TRUE; }
+all_or_distinct:
+			ALL										{ $$ = TRUE; }
 			| DISTINCT								{ $$ = FALSE; }
 			| /*EMPTY*/								{ $$ = FALSE; }
 		;
@@ -9978,10 +10149,13 @@ opt_all:	ALL										{ $$ = TRUE; }
 /* We use (NIL) as a placeholder to indicate that all target expressions
  * should be placed in the DISTINCT list during parsetree analysis.
  */
-opt_distinct:
+distinct_clause:
 			DISTINCT								{ $$ = list_make1(NIL); }
 			| DISTINCT ON '(' expr_list ')'			{ $$ = $4; }
-			| ALL									{ $$ = NIL; }
+		;
+
+opt_all_clause:
+			ALL										{ $$ = NIL;}
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 
@@ -13134,13 +13308,13 @@ RoleId:		RoleSpec
 						case ROLESPEC_SESSION_USER:
 							ereport(ERROR,
 									(errcode(ERRCODE_RESERVED_NAME),
-									 errmsg("%s cannot be used as a role name",
+									 errmsg("%s cannot be used as a role name here",
 											"SESSION_USER"),
 									 parser_errposition(@1)));
 						case ROLESPEC_CURRENT_USER:
 							ereport(ERROR,
 									(errcode(ERRCODE_RESERVED_NAME),
-									 errmsg("%s cannot be used as a role name",
+									 errmsg("%s cannot be used as a role name here",
 											"CURRENT_USER"),
 									 parser_errposition(@1)));
 					}
@@ -13285,6 +13459,7 @@ unreserved_keyword:
 			| COMMIT
 			| COMMITTED
 			| CONFIGURATION
+			| CONFLICT
 			| CONNECTION
 			| CONSTRAINTS
 			| CONTENT_P
@@ -13460,6 +13635,7 @@ unreserved_keyword:
 			| SIMPLE
 			| SKIP
 			| SNAPSHOT
+			| SQL_P
 			| STABLE
 			| STANDALONE_P
 			| START
@@ -13479,6 +13655,7 @@ unreserved_keyword:
 			| TEMPORARY
 			| TEXT_P
 			| TRANSACTION
+			| TRANSFORM
 			| TRIGGER
 			| TRUNCATE
 			| TRUSTED

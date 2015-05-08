@@ -41,6 +41,7 @@ extern Plan *optimize_minmax_aggregates(PlannerInfo *root, List *tlist,
  * prototypes for plan/createplan.c
  */
 extern Plan *create_plan(PlannerInfo *root, Path *best_path);
+extern Plan *create_plan_recurse(PlannerInfo *root, Path *best_path);
 extern SubqueryScan *make_subqueryscan(List *qptlist, List *qpqual,
 				  Index scanrelid, Plan *subplan);
 extern ForeignScan *make_foreignscan(List *qptlist, List *qpqual,
@@ -85,7 +86,7 @@ extern ModifyTable *make_modifytable(PlannerInfo *root,
 				 Index nominalRelation,
 				 List *resultRelations, List *subplans,
 				 List *withCheckOptionLists, List *returningLists,
-				 List *rowMarks, int epqParam);
+				 List *rowMarks, OnConflictExpr *onconflict, int epqParam);
 extern bool is_projection_capable_plan(Plan *plan);
 
 /*

@@ -68,7 +68,7 @@ brtuple_disk_tupdesc(BrinDesc *brdesc)
 		{
 			for (j = 0; j < brdesc->bd_info[i]->oi_nstored; j++)
 				TupleDescInitEntry(tupdesc, attno++, NULL,
-								   brdesc->bd_info[i]->oi_typids[j],
+								   brdesc->bd_info[i]->oi_typcache[j]->type_id,
 								   -1, 0);
 		}
 
@@ -304,7 +304,7 @@ brin_free_tuple(BrinTuple *tuple)
 }
 
 /*
- * Create an palloc'd copy of a BrinTuple.
+ * Create a palloc'd copy of a BrinTuple.
  */
 BrinTuple *
 brin_copy_tuple(BrinTuple *tuple, Size len)
@@ -444,8 +444,8 @@ brin_deform_tuple(BrinDesc *brdesc, BrinTuple *tuple)
 		for (i = 0; i < brdesc->bd_info[keyno]->oi_nstored; i++)
 			dtup->bt_columns[keyno].bv_values[i] =
 				datumCopy(values[valueno++],
-						  brdesc->bd_tupdesc->attrs[keyno]->attbyval,
-						  brdesc->bd_tupdesc->attrs[keyno]->attlen);
+						  brdesc->bd_info[keyno]->oi_typcache[i]->typbyval,
+						  brdesc->bd_info[keyno]->oi_typcache[i]->typlen);
 
 		dtup->bt_columns[keyno].bv_hasnulls = hasnulls[keyno];
 		dtup->bt_columns[keyno].bv_allnulls = false;

@@ -128,14 +128,15 @@ CommandIsReadOnly(Node *parsetree)
 static void
 check_xact_readonly(Node *parsetree)
 {
-	if (!XactReadOnly)
+	/* Only perform the check if we have a reason to do so. */
+	if (!XactReadOnly && !IsInParallelMode())
 		return;
 
 	/*
 	 * Note: Commands that need to do more complicated checking are handled
 	 * elsewhere, in particular COPY and plannable statements do their own
-	 * checking.  However they should all call PreventCommandIfReadOnly to
-	 * actually throw the error.
+	 * checking.  However they should all call PreventCommandIfReadOnly
+	 * or PreventCommandIfParallelMode to actually throw the error.
 	 */
 
 	switch (nodeTag(parsetree))
@@ -174,6 +175,7 @@ check_xact_readonly(Node *parsetree)
 		case T_CreateTableAsStmt:
 		case T_RefreshMatViewStmt:
 		case T_CreateTableSpaceStmt:
+		case T_CreateTransformStmt:
 		case T_CreateTrigStmt:
 		case T_CompositeTypeStmt:
 		case T_CreateEnumStmt:
@@ -207,6 +209,7 @@ check_xact_readonly(Node *parsetree)
 		case T_ImportForeignSchemaStmt:
 		case T_SecLabelStmt:
 			PreventCommandIfReadOnly(CreateCommandTag(parsetree));
+			PreventCommandIfParallelMode(CreateCommandTag(parsetree));
 			break;
 		default:
 			/* do nothing */
@@ -228,6 +231,24 @@ PreventCommandIfReadOnly(const char *cmdname)
 				(errcode(ERRCODE_READ_ONLY_SQL_TRANSACTION),
 		/* translator: %s is name of a SQL command, eg CREATE */
 				 errmsg("cannot execute %s in a read-only transaction",
+						cmdname)));
+}
+
+/*
+ * PreventCommandIfParallelMode: throw error if current (sub)transaction is
+ * in parallel mode.
+ *
+ * This is useful mainly to ensure consistency of the error message wording;
+ * most callers have checked IsInParallelMode() for themselves.
+ */
+void
+PreventCommandIfParallelMode(const char *cmdname)
+{
+	if (IsInParallelMode())
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TRANSACTION_STATE),
+		/* translator: %s is name of a SQL command, eg CREATE */
+				 errmsg("cannot execute %s during a parallel operation",
 						cmdname)));
 }
 
@@ -617,6 +638,7 @@ standard_ProcessUtility(Node *parsetree,
 		case T_ClusterStmt:
 			/* we choose to allow this during "read only" transactions */
 			PreventCommandDuringRecovery("CLUSTER");
+			/* forbidden in parallel mode due to CommandIsReadOnly */
 			cluster((ClusterStmt *) parsetree, isTopLevel);
 			break;
 
@@ -627,6 +649,7 @@ standard_ProcessUtility(Node *parsetree,
 				/* we choose to allow this during "read only" transactions */
 				PreventCommandDuringRecovery((stmt->options & VACOPT_VACUUM) ?
 											 "VACUUM" : "ANALYZE");
+				/* forbidden in parallel mode due to CommandIsReadOnly */
 				ExecVacuum(stmt, isTopLevel);
 			}
 			break;
@@ -703,6 +726,7 @@ standard_ProcessUtility(Node *parsetree,
 			 * outside a transaction block is presumed to be user error.
 			 */
 			RequireTransactionChain(isTopLevel, "LOCK TABLE");
+			/* forbidden in parallel mode due to CommandIsReadOnly */
 			LockTableCommand((LockStmt *) parsetree);
 			break;
 
@@ -734,6 +758,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				/* we choose to allow this during "read only" transactions */
 				PreventCommandDuringRecovery("REINDEX");
+				/* forbidden in parallel mode due to CommandIsReadOnly */
 				switch (stmt->kind)
 				{
 					case REINDEX_OBJECT_INDEX:
@@ -1312,6 +1337,10 @@ ProcessUtilitySlow(Node *parsetree,
 
 			case T_CreateOpFamilyStmt:
 				DefineOpFamily((CreateOpFamilyStmt *) parsetree);
+				break;
+
+			case T_CreateTransformStmt:
+				CreateTransform((CreateTransformStmt *) parsetree);
 				break;
 
 			case T_AlterOpFamilyStmt:
@@ -2004,6 +2033,9 @@ CreateCommandTag(Node *parsetree)
 				case OBJECT_POLICY:
 					tag = "DROP POLICY";
 					break;
+				case OBJECT_TRANSFORM:
+					tag = "DROP TRANSFORM";
+					break;
 				default:
 					tag = "???";
 			}
@@ -2261,6 +2293,10 @@ CreateCommandTag(Node *parsetree)
 				default:
 					tag = "???";
 			}
+			break;
+
+		case T_CreateTransformStmt:
+			tag = "CREATE TRANSFORM";
 			break;
 
 		case T_CreateTrigStmt:
@@ -2885,6 +2921,10 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_CreateOpFamilyStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_CreateTransformStmt:
 			lev = LOGSTMT_DDL;
 			break;
 

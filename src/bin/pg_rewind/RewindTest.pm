@@ -62,9 +62,11 @@ our @EXPORT = qw(
   clean_rewind_test
 );
 
+# A temporary directory created with 'tempdir' is deleted automatically at
+# the end of the tests. You can change it to a constant if you need to keep it
+# for debugging purposes,
+my $testroot = tempdir;
 
-# Adjust these paths for your environment
-my $testroot = "./tmp_check";
 our $test_master_datadir="$testroot/data_master";
 our $test_standby_datadir="$testroot/data_standby";
 
@@ -121,6 +123,37 @@ sub check_query
 	} else {
 		is ($stdout, $expected_stdout, "$test_name: query result matches");
 	}
+}
+
+# Run a query once a second, until it returns 't' (i.e. SQL boolean true).
+sub poll_query_until
+{
+	my ($query, $connstr) = @_;
+
+	my $max_attempts = 30;
+	my $attempts = 0;
+	my ($stdout, $stderr);
+
+	while ($attempts < $max_attempts)
+	{
+		my $cmd = ['psql', '-At', '-c', "$query", '-d', "$connstr" ];
+		my $result = run $cmd, '>', \$stdout, '2>', \$stderr;
+
+		chomp($stdout);
+		if ($stdout eq "t")
+		{
+			return 1;
+		}
+
+		# Wait a second before retrying.
+		sleep 1;
+		$attempts++;
+	}
+
+	# The query result didn't change in 30 seconds. Give up. Print the stderr
+	# from the last attempt, hopefully that's useful for debugging.
+	diag $stderr;
+	return 0;
 }
 
 sub append_to_file
@@ -183,7 +216,7 @@ sub create_standby
 	# Base backup is taken with xlog files included
 	system_or_bail("pg_basebackup -D $test_standby_datadir -p $port_master -x >>$log_path 2>&1");
 	append_to_file("$test_standby_datadir/recovery.conf", qq(
-primary_conninfo='$connstr_master'
+primary_conninfo='$connstr_master application_name=rewind_standby'
 standby_mode=on
 recovery_target_timeline='latest'
 ));
@@ -191,8 +224,11 @@ recovery_target_timeline='latest'
 	# Start standby
 	system_or_bail("pg_ctl -w -D $test_standby_datadir -o \"-k $tempdir_short --listen-addresses='' -p $port_standby\" start >>$log_path 2>&1");
 
-	# sleep a bit to make sure the standby has caught up.
-	sleep 1;
+	# Wait until the standby has caught up with the primary, by polling
+	# pg_stat_replication.
+	my $caughtup_query = "SELECT pg_current_xlog_location() = replay_location FROM pg_stat_replication WHERE application_name = 'rewind_standby';";
+	poll_query_until($caughtup_query, $connstr_master)
+		or die "Timed out while waiting for standby to catch up";
 }
 
 sub promote_standby
@@ -201,9 +237,19 @@ sub promote_standby
 	# up standby
 
 	# Now promote slave and insert some new data on master, this will put
-	# the master out-of-sync with the standby.
+	# the master out-of-sync with the standby. Wait until the standby is
+	# out of recovery mode, and is ready to accept read-write connections.
 	system_or_bail("pg_ctl -w -D $test_standby_datadir promote >>$log_path 2>&1");
-	sleep 2;
+	poll_query_until("SELECT NOT pg_is_in_recovery()", $connstr_standby)
+		or die "Timed out while waiting for promotion of standby";
+
+	# Force a checkpoint after the promotion. pg_rewind looks at the control
+	# file todetermine what timeline the server is on, and that isn't updated
+	# immediately at promotion, but only at the next checkpoint. When running
+	# pg_rewind in remote mode, it's possible that we complete the test steps
+	# after promotion so quickly that when pg_rewind runs, the standby has not
+	# performed a checkpoint after promotion yet.
+	standby_psql("checkpoint");
 }
 
 sub run_pg_rewind
