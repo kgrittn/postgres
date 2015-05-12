@@ -872,7 +872,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 							local_exprs,
 							scan_relid,
 							params_list,
-							fdw_private);
+							fdw_private,
+							NIL /* no custom tlist */ );
 }
 
 /*
@@ -2733,7 +2734,7 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					appendStringInfoString(&buf, ", ");
 				deparseStringLiteral(&buf, rv->relname);
 			}
-			appendStringInfoString(&buf, ")");
+			appendStringInfoChar(&buf, ')');
 		}
 
 		/* Append ORDER BY at the end of query to ensure output ordering */
@@ -2797,7 +2798,7 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 				 */
 				appendStringInfoString(&buf, " OPTIONS (column_name ");
 				deparseStringLiteral(&buf, attname);
-				appendStringInfoString(&buf, ")");
+				appendStringInfoChar(&buf, ')');
 
 				/* Add COLLATE if needed */
 				if (import_collate && collname != NULL && collnamespace != NULL)
