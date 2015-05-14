@@ -1597,7 +1597,6 @@ SerializeSnapshot(Snapshot snapshot, char *start_address)
 {
 	SerializedSnapshotData *serialized_snapshot;
 
-	Assert(snapshot->xcnt >= 0);
 	Assert(snapshot->subxcnt >= 0);
 
 	serialized_snapshot = (SerializedSnapshotData *) start_address;
