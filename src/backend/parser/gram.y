@@ -454,6 +454,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <range>	relation_expr
 %type <range>	relation_expr_opt_alias
 %type <target>	target_el single_set_clause set_target insert_column_item
+%type <node>	relation_expr_tablesample tablesample_clause opt_repeatable_clause
 
 %type <str>		generic_option_name
 %type <node>	generic_option_arg
@@ -463,6 +464,10 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <node>	explain_option_arg
 %type <defelt>	explain_option_elem
 %type <list>	explain_option_list
+
+%type <ival>	reindex_target_type reindex_target_multitable
+%type <ival>	reindex_option_list reindex_option_elem
+
 %type <node>	copy_generic_opt_arg copy_generic_opt_arg_list_item
 %type <defelt>	copy_generic_opt_elem
 %type <list>	copy_generic_opt_list copy_generic_opt_arg_list
@@ -621,8 +626,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	STATEMENT STATISTICS STDIN STDOUT STORAGE STRICT_P STRIP_P SUBSTRING
 	SYMMETRIC SYSID SYSTEM_P
 
-	TABLE TABLES TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN TIME TIMESTAMP
-	TO TRAILING TRANSACTION TRANSFORM TREAT TRIGGER TRIM TRUE_P
+	TABLE TABLES TABLESAMPLE TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN
+	TIME TIMESTAMP TO TRAILING TRANSACTION TRANSFORM TREAT TRIGGER TRIM TRUE_P
 	TRUNCATE TRUSTED TYPE_P TYPES_P
 
 	UNBOUNDED UNCOMMITTED UNENCRYPTED UNION UNIQUE UNKNOWN UNLISTEN UNLOGGED
@@ -7387,52 +7392,63 @@ DropTransformStmt: DROP TRANSFORM opt_if_exists FOR Typename LANGUAGE name opt_d
  *
  *		QUERY:
  *
- *		REINDEX type <name>
+ *		REINDEX [ (options) ] type <name>
  *****************************************************************************/
 
 ReindexStmt:
-			REINDEX INDEX qualified_name
+			REINDEX reindex_target_type qualified_name
 				{
 					ReindexStmt *n = makeNode(ReindexStmt);
-					n->kind = REINDEX_OBJECT_INDEX;
+					n->kind = $2;
 					n->relation = $3;
 					n->name = NULL;
+					n->options = 0;
 					$$ = (Node *)n;
 				}
-			| REINDEX TABLE qualified_name
+			| REINDEX reindex_target_multitable name
 				{
 					ReindexStmt *n = makeNode(ReindexStmt);
-					n->kind = REINDEX_OBJECT_TABLE;
-					n->relation = $3;
+					n->kind = $2;
+					n->name = $3;
+					n->relation = NULL;
+					n->options = 0;
+					$$ = (Node *)n;
+				}
+			| REINDEX '(' reindex_option_list ')' reindex_target_type qualified_name
+				{
+					ReindexStmt *n = makeNode(ReindexStmt);
+					n->kind = $5;
+					n->relation = $6;
 					n->name = NULL;
+					n->options = $3;
 					$$ = (Node *)n;
 				}
-			| REINDEX SCHEMA name
+			| REINDEX '(' reindex_option_list ')' reindex_target_multitable name
 				{
 					ReindexStmt *n = makeNode(ReindexStmt);
-					n->kind = REINDEX_OBJECT_SCHEMA;
-					n->name = $3;
+					n->kind = $5;
+					n->name = $6;
 					n->relation = NULL;
-					$$ = (Node *)n;
-				}
-			| REINDEX SYSTEM_P name
-				{
-					ReindexStmt *n = makeNode(ReindexStmt);
-					n->kind = REINDEX_OBJECT_SYSTEM;
-					n->name = $3;
-					n->relation = NULL;
-					$$ = (Node *)n;
-				}
-			| REINDEX DATABASE name
-				{
-					ReindexStmt *n = makeNode(ReindexStmt);
-					n->kind = REINDEX_OBJECT_DATABASE;
-					n->name = $3;
-					n->relation = NULL;
+					n->options = $3;
 					$$ = (Node *)n;
 				}
 		;
-
+reindex_target_type:
+			INDEX					{ $$ = REINDEX_OBJECT_INDEX; }
+			| TABLE					{ $$ = REINDEX_OBJECT_TABLE; }
+		;
+reindex_target_multitable:
+			SCHEMA					{ $$ = REINDEX_OBJECT_SCHEMA; }
+			| SYSTEM_P				{ $$ = REINDEX_OBJECT_SYSTEM; }
+			| DATABASE				{ $$ = REINDEX_OBJECT_DATABASE; }
+		;
+reindex_option_list:
+			reindex_option_elem								{ $$ = $1; }
+			| reindex_option_list ',' reindex_option_elem	{ $$ = $1 | $3; }
+		;
+reindex_option_elem:
+			VERBOSE	{ $$ = REINDEXOPT_VERBOSE; }
+		;
 
 /*****************************************************************************
  *
@@ -10371,6 +10387,10 @@ table_ref:	relation_expr opt_alias_clause
 					$1->alias = $2;
 					$$ = (Node *) $1;
 				}
+			| relation_expr_tablesample
+				{
+					$$ = (Node *) $1;
+				}
 			| func_table func_alias_clause
 				{
 					RangeFunction *n = (RangeFunction *) $1;
@@ -10694,6 +10714,32 @@ relation_expr_opt_alias: relation_expr					%prec UMINUS
 					$1->alias = alias;
 					$$ = $1;
 				}
+		;
+
+
+relation_expr_tablesample: relation_expr opt_alias_clause tablesample_clause
+				{
+					RangeTableSample *n = (RangeTableSample *) $3;
+					n->relation = $1;
+					n->relation->alias = $2;
+					$$ = (Node *) n;
+				}
+		;
+
+tablesample_clause:
+			TABLESAMPLE ColId '(' expr_list ')' opt_repeatable_clause
+				{
+					RangeTableSample *n = makeNode(RangeTableSample);
+					n->method = $2;
+					n->args = $4;
+					n->repeatable = $6;
+					$$ = (Node *) n;
+				}
+		;
+
+opt_repeatable_clause:
+			REPEATABLE '(' a_expr ')'	{ $$ = (Node *) $3; }
+			| /*EMPTY*/					{ $$ = NULL; }
 		;
 
 /*
@@ -13789,6 +13835,7 @@ type_func_name_keyword:
 			| OVERLAPS
 			| RIGHT
 			| SIMILAR
+			| TABLESAMPLE
 			| VERBOSE
 		;
 

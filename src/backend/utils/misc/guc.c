@@ -396,6 +396,7 @@ static const struct config_enum_entry row_security_options[] = {
  * Options for enum values stored in other modules
  */
 extern const struct config_enum_entry wal_level_options[];
+extern const struct config_enum_entry archive_mode_options[];
 extern const struct config_enum_entry sync_method_options[];
 extern const struct config_enum_entry dynamic_shared_memory_options[];
 
@@ -1526,16 +1527,6 @@ static struct config_bool ConfigureNamesBool[] =
 		},
 		&synchronize_seqscans,
 		true,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"archive_mode", PGC_POSTMASTER, WAL_ARCHIVING,
-			gettext_noop("Allows archiving of WAL files using archive_command."),
-			NULL
-		},
-		&XLogArchiveMode,
-		false,
 		NULL, NULL, NULL
 	},
 
@@ -3560,6 +3551,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		&synchronous_commit,
 		SYNCHRONOUS_COMMIT_ON, synchronous_commit_options,
 		NULL, assign_synchronous_commit, NULL
+	},
+
+	{
+		{"archive_mode", PGC_POSTMASTER, WAL_ARCHIVING,
+			gettext_noop("Allows archiving of WAL files using archive_command."),
+			NULL
+		},
+		&XLogArchiveMode,
+		ARCHIVE_MODE_OFF, archive_mode_options,
+		NULL, NULL, NULL
 	},
 
 	{
@@ -5938,12 +5939,14 @@ set_config_option(const char *name, const char *value,
 				{
 					if (*conf->variable != newval)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -6026,12 +6029,14 @@ set_config_option(const char *name, const char *value,
 				{
 					if (*conf->variable != newval)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -6114,12 +6119,14 @@ set_config_option(const char *name, const char *value,
 				{
 					if (*conf->variable != newval)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -6220,12 +6227,14 @@ set_config_option(const char *name, const char *value,
 					if (*conf->variable == NULL || newval == NULL ||
 						strcmp(*conf->variable, newval) != 0)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -6313,12 +6322,14 @@ set_config_option(const char *name, const char *value,
 				{
 					if (*conf->variable != newval)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -8020,6 +8031,8 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 		values[14] = NULL;
 		values[15] = NULL;
 	}
+
+	values[16] = (conf->status & GUC_PENDING_RESTART) ? "t" : "f";
 }
 
 /*
@@ -8055,7 +8068,7 @@ show_config_by_name(PG_FUNCTION_ARGS)
  * show_all_settings - equiv to SHOW ALL command but implemented as
  * a Table Function.
  */
-#define NUM_PG_SETTINGS_ATTS	16
+#define NUM_PG_SETTINGS_ATTS	17
 
 Datum
 show_all_settings(PG_FUNCTION_ARGS)
@@ -8115,6 +8128,8 @@ show_all_settings(PG_FUNCTION_ARGS)
 						   TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 16, "sourceline",
 						   INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 17, "pending_restart",
+						   BOOLOID, -1, 0);
 
 		/*
 		 * Generate attribute metadata needed later to produce tuples from raw
