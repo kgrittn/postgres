@@ -244,7 +244,7 @@ struct JsonbValue
 	union
 	{
 		Numeric numeric;
-		bool		boolean;
+		bool boolean;
 		struct
 		{
 			int			len;
@@ -401,12 +401,12 @@ extern Datum jsonb_pretty(PG_FUNCTION_ARGS);
 extern Datum jsonb_concat(PG_FUNCTION_ARGS);
 
 /* deletion */
-Datum jsonb_delete(PG_FUNCTION_ARGS);
-Datum jsonb_delete_idx(PG_FUNCTION_ARGS);
-Datum jsonb_delete_path(PG_FUNCTION_ARGS);
+extern Datum jsonb_delete(PG_FUNCTION_ARGS);
+extern Datum jsonb_delete_idx(PG_FUNCTION_ARGS);
+extern Datum jsonb_delete_path(PG_FUNCTION_ARGS);
 
 /* replacement */
-extern Datum jsonb_replace(PG_FUNCTION_ARGS);
+extern Datum jsonb_set(PG_FUNCTION_ARGS);
 
 /* Support functions */
 extern uint32 getJsonbOffset(const JsonbContainer *jc, int index);
@@ -418,7 +418,7 @@ extern JsonbValue *findJsonbValueFromContainer(JsonbContainer *sheader,
 extern JsonbValue *getIthJsonbValueFromContainer(JsonbContainer *sheader,
 							  uint32 i);
 extern JsonbValue *pushJsonbValue(JsonbParseState **pstate,
-			   JsonbIteratorToken seq, JsonbValue *scalarVal);
+			   JsonbIteratorToken seq, JsonbValue *jbVal);
 extern JsonbIterator *JsonbIteratorInit(JsonbContainer *container);
 extern JsonbIteratorToken JsonbIteratorNext(JsonbIterator **it, JsonbValue *val,
 				  bool skipNested);
@@ -431,7 +431,7 @@ extern void JsonbHashScalarValue(const JsonbValue *scalarVal, uint32 *hash);
 extern char *JsonbToCString(StringInfo out, JsonbContainer *in,
 			   int estimated_len);
 extern char *JsonbToCStringIndent(StringInfo out, JsonbContainer *in,
-			   int estimated_len);
+					 int estimated_len);
 
 
 #endif   /* __JSONB_H__ */

@@ -81,7 +81,6 @@ _copyPlannedStmt(const PlannedStmt *from)
 	COPY_SCALAR_FIELD(queryId);
 	COPY_SCALAR_FIELD(hasReturning);
 	COPY_SCALAR_FIELD(hasModifyingCTE);
-	COPY_SCALAR_FIELD(isUpsert);
 	COPY_SCALAR_FIELD(canSetTag);
 	COPY_SCALAR_FIELD(transientPlan);
 	COPY_NODE_FIELD(planTree);
@@ -381,6 +380,7 @@ _copyIndexScan(const IndexScan *from)
 	COPY_NODE_FIELD(indexqualorig);
 	COPY_NODE_FIELD(indexorderby);
 	COPY_NODE_FIELD(indexorderbyorig);
+	COPY_NODE_FIELD(indexorderbyops);
 	COPY_SCALAR_FIELD(indexorderdir);
 
 	return newnode;
@@ -839,6 +839,8 @@ _copyAgg(const Agg *from)
 		COPY_POINTER_FIELD(grpOperators, from->numCols * sizeof(Oid));
 	}
 	COPY_SCALAR_FIELD(numGroups);
+	COPY_NODE_FIELD(groupingSets);
+	COPY_NODE_FIELD(chain);
 
 	return newnode;
 }
@@ -1202,6 +1204,23 @@ _copyAggref(const Aggref *from)
 	COPY_SCALAR_FIELD(aggstar);
 	COPY_SCALAR_FIELD(aggvariadic);
 	COPY_SCALAR_FIELD(aggkind);
+	COPY_SCALAR_FIELD(agglevelsup);
+	COPY_LOCATION_FIELD(location);
+
+	return newnode;
+}
+
+/*
+ * _copyGroupingFunc
+ */
+static GroupingFunc *
+_copyGroupingFunc(const GroupingFunc *from)
+{
+	GroupingFunc *newnode = makeNode(GroupingFunc);
+
+	COPY_NODE_FIELD(args);
+	COPY_NODE_FIELD(refs);
+	COPY_NODE_FIELD(cols);
 	COPY_SCALAR_FIELD(agglevelsup);
 	COPY_LOCATION_FIELD(location);
 
@@ -1819,8 +1838,7 @@ _copyInferenceElem(const InferenceElem *from)
 
 	COPY_NODE_FIELD(expr);
 	COPY_SCALAR_FIELD(infercollid);
-	COPY_SCALAR_FIELD(inferopfamily);
-	COPY_SCALAR_FIELD(inferopcinputtype);
+	COPY_SCALAR_FIELD(inferopclass);
 
 	return newnode;
 }
@@ -1897,7 +1915,7 @@ _copyFromExpr(const FromExpr *from)
 static OnConflictExpr *
 _copyOnConflictExpr(const OnConflictExpr *from)
 {
-	OnConflictExpr   *newnode = makeNode(OnConflictExpr);
+	OnConflictExpr *newnode = makeNode(OnConflictExpr);
 
 	COPY_SCALAR_FIELD(action);
 	COPY_NODE_FIELD(arbiterElems);
@@ -2148,6 +2166,18 @@ _copySortGroupClause(const SortGroupClause *from)
 	COPY_SCALAR_FIELD(sortop);
 	COPY_SCALAR_FIELD(nulls_first);
 	COPY_SCALAR_FIELD(hashable);
+
+	return newnode;
+}
+
+static GroupingSet *
+_copyGroupingSet(const GroupingSet *from)
+{
+	GroupingSet *newnode = makeNode(GroupingSet);
+
+	COPY_SCALAR_FIELD(kind);
+	COPY_NODE_FIELD(content);
+	COPY_LOCATION_FIELD(location);
 
 	return newnode;
 }
@@ -2676,6 +2706,7 @@ _copyQuery(const Query *from)
 	COPY_NODE_FIELD(onConflict);
 	COPY_NODE_FIELD(returningList);
 	COPY_NODE_FIELD(groupClause);
+	COPY_NODE_FIELD(groupingSets);
 	COPY_NODE_FIELD(havingQual);
 	COPY_NODE_FIELD(windowClause);
 	COPY_NODE_FIELD(distinctClause);
@@ -4309,6 +4340,9 @@ copyObject(const void *from)
 		case T_Aggref:
 			retval = _copyAggref(from);
 			break;
+		case T_GroupingFunc:
+			retval = _copyGroupingFunc(from);
+			break;
 		case T_WindowFunc:
 			retval = _copyWindowFunc(from);
 			break;
@@ -4877,6 +4911,9 @@ copyObject(const void *from)
 			break;
 		case T_SortGroupClause:
 			retval = _copySortGroupClause(from);
+			break;
+		case T_GroupingSet:
+			retval = _copyGroupingSet(from);
 			break;
 		case T_WindowClause:
 			retval = _copyWindowClause(from);

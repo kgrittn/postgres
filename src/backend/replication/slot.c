@@ -79,12 +79,12 @@ typedef struct ReplicationSlotOnDisk
 /* size of the part covered by the checksum */
 #define SnapBuildOnDiskChecksummedSize \
 	sizeof(ReplicationSlotOnDisk) - SnapBuildOnDiskNotChecksummedSize
-/* size of the slot data that is version dependant */
+/* size of the slot data that is version dependent */
 #define ReplicationSlotOnDiskV2Size \
 	sizeof(ReplicationSlotOnDisk) - ReplicationSlotOnDiskConstantSize
 
 #define SLOT_MAGIC		0x1051CA1		/* format identifier */
-#define SLOT_VERSION	2				/* version for new files */
+#define SLOT_VERSION	2		/* version for new files */
 
 /* Control array for replication slot management */
 ReplicationSlotCtlData *ReplicationSlotCtl = NULL;
@@ -349,8 +349,8 @@ ReplicationSlotAcquire(const char *name)
 	if (active_pid != 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_IN_USE),
-				 errmsg("replication slot \"%s\" is already active for pid %d",
-						name, active_pid)));
+			   errmsg("replication slot \"%s\" is already active for pid %d",
+					  name, active_pid)));
 
 	/* We made this slot active, so it's ours now. */
 	MyReplicationSlot = slot;
@@ -437,7 +437,7 @@ ReplicationSlotDropAcquired(void)
 	/*
 	 * Rename the slot directory on disk, so that we'll no longer recognize
 	 * this as a valid slot.  Note that if this fails, we've got to mark the
-	 * slot inactive before bailing out.  If we're dropping a ephemeral slot,
+	 * slot inactive before bailing out.  If we're dropping an ephemeral slot,
 	 * we better never fail hard as the caller won't expect the slot to
 	 * survive and this might get called during error handling.
 	 */
@@ -546,7 +546,7 @@ ReplicationSlotMarkDirty(void)
 
 /*
  * Convert a slot that's marked as RS_EPHEMERAL to a RS_PERSISTENT slot,
- * guaranteeing it will be there after a eventual crash.
+ * guaranteeing it will be there after an eventual crash.
  */
 void
 ReplicationSlotPersist(void)

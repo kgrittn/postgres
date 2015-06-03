@@ -62,9 +62,9 @@
 #define INETSTRAT_GT			RTGreaterStrategyNumber
 #define INETSTRAT_GE			RTGreaterEqualStrategyNumber
 #define INETSTRAT_SUB			RTSubStrategyNumber
-#define INETSTRAT_SUBEQ			RTSubOrEqualStrategyNumber
+#define INETSTRAT_SUBEQ			RTSubEqualStrategyNumber
 #define INETSTRAT_SUP			RTSuperStrategyNumber
-#define INETSTRAT_SUPEQ			RTSuperOrEqualStrategyNumber
+#define INETSTRAT_SUPEQ			RTSuperEqualStrategyNumber
 
 
 /*
@@ -595,10 +595,10 @@ inet_gist_decompress(PG_FUNCTION_ARGS)
 Datum
 inet_gist_fetch(PG_FUNCTION_ARGS)
 {
-	GISTENTRY	*entry = (GISTENTRY *) PG_GETARG_POINTER(0);
-	GistInetKey	*key = DatumGetInetKeyP(entry->key);
-	GISTENTRY	*retval;
-	inet		*dst;
+	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
+	GistInetKey *key = DatumGetInetKeyP(entry->key);
+	GISTENTRY  *retval;
+	inet	   *dst;
 
 	dst = (inet *) palloc0(sizeof(inet));
 

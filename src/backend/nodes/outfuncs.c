@@ -243,7 +243,6 @@ _outPlannedStmt(StringInfo str, const PlannedStmt *node)
 	WRITE_UINT_FIELD(queryId);
 	WRITE_BOOL_FIELD(hasReturning);
 	WRITE_BOOL_FIELD(hasModifyingCTE);
-	WRITE_BOOL_FIELD(isUpsert);
 	WRITE_BOOL_FIELD(canSetTag);
 	WRITE_BOOL_FIELD(transientPlan);
 	WRITE_NODE_FIELD(planTree);
@@ -457,6 +456,7 @@ _outIndexScan(StringInfo str, const IndexScan *node)
 	WRITE_NODE_FIELD(indexqualorig);
 	WRITE_NODE_FIELD(indexorderby);
 	WRITE_NODE_FIELD(indexorderbyorig);
+	WRITE_NODE_FIELD(indexorderbyops);
 	WRITE_ENUM_FIELD(indexorderdir, ScanDirection);
 }
 
@@ -679,6 +679,9 @@ _outAgg(StringInfo str, const Agg *node)
 		appendStringInfo(str, " %u", node->grpOperators[i]);
 
 	WRITE_LONG_FIELD(numGroups);
+
+	WRITE_NODE_FIELD(groupingSets);
+	WRITE_NODE_FIELD(chain);
 }
 
 static void
@@ -1000,6 +1003,18 @@ _outAggref(StringInfo str, const Aggref *node)
 	WRITE_BOOL_FIELD(aggvariadic);
 	WRITE_CHAR_FIELD(aggkind);
 	WRITE_UINT_FIELD(agglevelsup);
+	WRITE_LOCATION_FIELD(location);
+}
+
+static void
+_outGroupingFunc(StringInfo str, const GroupingFunc *node)
+{
+	WRITE_NODE_TYPE("GROUPINGFUNC");
+
+	WRITE_NODE_FIELD(args);
+	WRITE_NODE_FIELD(refs);
+	WRITE_NODE_FIELD(cols);
+	WRITE_INT_FIELD(agglevelsup);
 	WRITE_LOCATION_FIELD(location);
 }
 
@@ -1458,8 +1473,7 @@ _outInferenceElem(StringInfo str, const InferenceElem *node)
 
 	WRITE_NODE_FIELD(expr);
 	WRITE_OID_FIELD(infercollid);
-	WRITE_OID_FIELD(inferopfamily);
-	WRITE_OID_FIELD(inferopcinputtype);
+	WRITE_OID_FIELD(inferopclass);
 }
 
 static void
@@ -1830,6 +1844,7 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_FLOAT_FIELD(rows, "%.0f");
 	WRITE_INT_FIELD(width);
 	WRITE_BOOL_FIELD(consider_startup);
+	WRITE_BOOL_FIELD(consider_param_startup);
 	WRITE_NODE_FIELD(reltargetlist);
 	WRITE_NODE_FIELD(pathlist);
 	WRITE_NODE_FIELD(ppilist);
@@ -2364,6 +2379,7 @@ _outQuery(StringInfo str, const Query *node)
 	WRITE_NODE_FIELD(onConflict);
 	WRITE_NODE_FIELD(returningList);
 	WRITE_NODE_FIELD(groupClause);
+	WRITE_NODE_FIELD(groupingSets);
 	WRITE_NODE_FIELD(havingQual);
 	WRITE_NODE_FIELD(windowClause);
 	WRITE_NODE_FIELD(distinctClause);
@@ -2396,6 +2412,16 @@ _outSortGroupClause(StringInfo str, const SortGroupClause *node)
 	WRITE_OID_FIELD(sortop);
 	WRITE_BOOL_FIELD(nulls_first);
 	WRITE_BOOL_FIELD(hashable);
+}
+
+static void
+_outGroupingSet(StringInfo str, const GroupingSet *node)
+{
+	WRITE_NODE_TYPE("GROUPINGSET");
+
+	WRITE_ENUM_FIELD(kind, GroupingSetKind);
+	WRITE_NODE_FIELD(content);
+	WRITE_LOCATION_FIELD(location);
 }
 
 static void
@@ -3087,6 +3113,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_Aggref:
 				_outAggref(str, obj);
 				break;
+			case T_GroupingFunc:
+				_outGroupingFunc(str, obj);
+				break;
 			case T_WindowFunc:
 				_outWindowFunc(str, obj);
 				break;
@@ -3348,6 +3377,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_SortGroupClause:
 				_outSortGroupClause(str, obj);
+				break;
+			case T_GroupingSet:
+				_outGroupingSet(str, obj);
 				break;
 			case T_WindowClause:
 				_outWindowClause(str, obj);

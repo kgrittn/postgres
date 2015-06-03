@@ -28,8 +28,12 @@ typedef struct MinmaxOpaque
 	FmgrInfo	strategy_procinfos[BTMaxStrategyNumber];
 } MinmaxOpaque;
 
+Datum		brin_minmax_opcinfo(PG_FUNCTION_ARGS);
+Datum		brin_minmax_add_value(PG_FUNCTION_ARGS);
+Datum		brin_minmax_consistent(PG_FUNCTION_ARGS);
+Datum		brin_minmax_union(PG_FUNCTION_ARGS);
 static FmgrInfo *minmax_get_strategy_procinfo(BrinDesc *bdesc, uint16 attno,
-					Oid subtype, uint16 strategynum);
+							 Oid subtype, uint16 strategynum);
 
 
 Datum
@@ -205,7 +209,7 @@ brin_minmax_consistent(PG_FUNCTION_ARGS)
 				break;
 			/* max() >= scankey */
 			finfo = minmax_get_strategy_procinfo(bdesc, attno, subtype,
-												 BTGreaterEqualStrategyNumber);
+											   BTGreaterEqualStrategyNumber);
 			matches = FunctionCall2Coll(finfo, colloid, column->bv_values[1],
 										value);
 			break;
@@ -256,10 +260,10 @@ brin_minmax_union(PG_FUNCTION_ARGS)
 	attr = bdesc->bd_tupdesc->attrs[attno - 1];
 
 	/*
-	 * Adjust "allnulls".  If A doesn't have values, just copy the values
-	 * from B into A, and we're done.  We cannot run the operators in this
-	 * case, because values in A might contain garbage.  Note we already
-	 * established that B contains values.
+	 * Adjust "allnulls".  If A doesn't have values, just copy the values from
+	 * B into A, and we're done.  We cannot run the operators in this case,
+	 * because values in A might contain garbage.  Note we already established
+	 * that B contains values.
 	 */
 	if (col_a->bv_allnulls)
 	{
@@ -302,6 +306,9 @@ brin_minmax_union(PG_FUNCTION_ARGS)
 
 /*
  * Cache and return the procedure for the given strategy.
+ *
+ * Note: this function mirrors inclusion_get_strategy_procinfo; see notes
+ * there.  If changes are made here, see that function too.
  */
 static FmgrInfo *
 minmax_get_strategy_procinfo(BrinDesc *bdesc, uint16 attno, Oid subtype,
@@ -348,7 +355,7 @@ minmax_get_strategy_procinfo(BrinDesc *bdesc, uint16 attno, Oid subtype,
 				 strategynum, attr->atttypid, subtype, opfamily);
 
 		oprid = DatumGetObjectId(SysCacheGetAttr(AMOPSTRATEGY, tuple,
-												 Anum_pg_amop_amopopr, &isNull));
+											 Anum_pg_amop_amopopr, &isNull));
 		ReleaseSysCache(tuple);
 		Assert(!isNull && RegProcedureIsValid(oprid));
 

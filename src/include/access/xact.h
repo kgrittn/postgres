@@ -167,7 +167,7 @@ typedef struct xl_xact_assignment
  * portion of the records won't need all possible pieces of information. So we
  * only include what's needed.
  *
- * A minimal commit/abort record only consists out of a xl_xact_commit/abort
+ * A minimal commit/abort record only consists of a xl_xact_commit/abort
  * struct. The presence of additional information is indicated by bits set in
  * 'xl_xact_xinfo->xinfo'. The presence of the xinfo field itself is signalled
  * by a set XLOG_XACT_HAS_INFO bit in the xl_info field.
@@ -204,7 +204,7 @@ typedef struct xl_xact_subxacts
 
 typedef struct xl_xact_relfilenodes
 {
-	int			nrels;		/* number of subtransaction XIDs */
+	int			nrels;			/* number of subtransaction XIDs */
 	RelFileNode xnodes[FLEXIBLE_ARRAY_MEMBER];
 } xl_xact_relfilenodes;
 #define MinSizeOfXactRelfilenodes offsetof(xl_xact_relfilenodes, xnodes)
@@ -262,23 +262,23 @@ typedef struct xl_xact_abort
  */
 typedef struct xl_xact_parsed_commit
 {
-	TimestampTz		xact_time;
+	TimestampTz xact_time;
 
-	uint32			xinfo;
+	uint32		xinfo;
 
-	Oid				dbId;		/* MyDatabaseId */
-	Oid				tsId;		/* MyDatabaseTableSpace */
+	Oid			dbId;			/* MyDatabaseId */
+	Oid			tsId;			/* MyDatabaseTableSpace */
 
-	int				nsubxacts;
-	TransactionId  *subxacts;
+	int			nsubxacts;
+	TransactionId *subxacts;
 
-	int				nrels;
-	RelFileNode	   *xnodes;
+	int			nrels;
+	RelFileNode *xnodes;
 
-	int				nmsgs;
+	int			nmsgs;
 	SharedInvalidationMessage *msgs;
 
-	TransactionId	twophase_xid;	/* only for 2PC */
+	TransactionId twophase_xid; /* only for 2PC */
 
 	XLogRecPtr	origin_lsn;
 	TimestampTz origin_timestamp;
@@ -286,16 +286,16 @@ typedef struct xl_xact_parsed_commit
 
 typedef struct xl_xact_parsed_abort
 {
-	TimestampTz		xact_time;
-	uint32			xinfo;
+	TimestampTz xact_time;
+	uint32		xinfo;
 
-	int				nsubxacts;
-	TransactionId  *subxacts;
+	int			nsubxacts;
+	TransactionId *subxacts;
 
-	int				nrels;
-	RelFileNode	   *xnodes;
+	int			nrels;
+	RelFileNode *xnodes;
 
-	TransactionId	twophase_xid;	/* only for 2PC */
+	TransactionId twophase_xid; /* only for 2PC */
 } xl_xact_parsed_abort;
 
 
@@ -356,16 +356,16 @@ extern void UnregisterSubXactCallback(SubXactCallback callback, void *arg);
 extern int	xactGetCommittedChildren(TransactionId **ptr);
 
 extern XLogRecPtr XactLogCommitRecord(TimestampTz commit_time,
-									  int nsubxacts, TransactionId *subxacts,
-									  int nrels, RelFileNode *rels,
-									  int nmsgs, SharedInvalidationMessage *msgs,
-									  bool relcacheInval, bool forceSync,
-									  TransactionId twophase_xid);
+					int nsubxacts, TransactionId *subxacts,
+					int nrels, RelFileNode *rels,
+					int nmsgs, SharedInvalidationMessage *msgs,
+					bool relcacheInval, bool forceSync,
+					TransactionId twophase_xid);
 
 extern XLogRecPtr XactLogAbortRecord(TimestampTz abort_time,
-									 int nsubxacts, TransactionId *subxacts,
-									 int nrels, RelFileNode *rels,
-									 TransactionId twophase_xid);
+				   int nsubxacts, TransactionId *subxacts,
+				   int nrels, RelFileNode *rels,
+				   TransactionId twophase_xid);
 extern void xact_redo(XLogReaderState *record);
 
 /* xactdesc.c */

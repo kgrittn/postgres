@@ -159,7 +159,7 @@ static ActiveSnapshotElt *ActiveSnapshot = NULL;
 static int xmin_cmp(const pairingheap_node *a, const pairingheap_node *b,
 		 void *arg);
 
-static pairingheap RegisteredSnapshots = { &xmin_cmp, NULL, NULL };
+static pairingheap RegisteredSnapshots = {&xmin_cmp, NULL, NULL};
 
 /* first GetTransactionSnapshot call in a transaction? */
 bool		FirstSnapshotSet = false;
@@ -403,10 +403,10 @@ GetNonHistoricCatalogSnapshot(Oid relid)
 {
 	/*
 	 * If the caller is trying to scan a relation that has no syscache, no
-	 * catcache invalidations will be sent when it is updated.  For a few
-	 * key relations, snapshot invalidations are sent instead.  If we're
-	 * trying to scan a relation for which neither catcache nor snapshot
-	 * invalidations are sent, we must refresh the snapshot every time.
+	 * catcache invalidations will be sent when it is updated.  For a few key
+	 * relations, snapshot invalidations are sent instead.  If we're trying to
+	 * scan a relation for which neither catcache nor snapshot invalidations
+	 * are sent, we must refresh the snapshot every time.
 	 */
 	if (!CatalogSnapshotStale && !RelationInvalidatesSnapshotsOnly(relid) &&
 		!RelationHasSysCache(relid))
@@ -677,7 +677,9 @@ PushCopiedSnapshot(Snapshot snapshot)
 void
 UpdateActiveSnapshotCommandId(void)
 {
-	CommandId	save_curcid, curcid;
+	CommandId	save_curcid,
+				curcid;
+
 	Assert(ActiveSnapshot != NULL);
 	Assert(ActiveSnapshot->as_snap->active_count == 1);
 	Assert(ActiveSnapshot->as_snap->regd_count == 0);
@@ -862,7 +864,7 @@ xmin_cmp(const pairingheap_node *a, const pairingheap_node *b, void *arg)
 static void
 SnapshotResetXmin(void)
 {
-	Snapshot minSnapshot;
+	Snapshot	minSnapshot;
 
 	if (ActiveSnapshot != NULL)
 		return;
@@ -987,7 +989,8 @@ AtEOXact_Snapshot(bool isCommit)
 		 */
 		foreach(lc, exportedSnapshots)
 		{
-			Snapshot snap = (Snapshot) lfirst(lc);
+			Snapshot	snap = (Snapshot) lfirst(lc);
+
 			pairingheap_remove(&RegisteredSnapshots, &snap->ph_node);
 		}
 
@@ -1589,8 +1592,8 @@ EstimateSnapshotSpace(Snapshot snap)
 
 /*
  * SerializeSnapshot
- * 		Dumps the serialized snapshot (extracted from given snapshot) onto the
- * 		memory location at start_address.
+ *		Dumps the serialized snapshot (extracted from given snapshot) onto the
+ *		memory location at start_address.
  */
 void
 SerializeSnapshot(Snapshot snapshot, char *start_address)
@@ -1611,9 +1614,9 @@ SerializeSnapshot(Snapshot snapshot, char *start_address)
 	serialized_snapshot->curcid = snapshot->curcid;
 
 	/*
-	 * Ignore the SubXID array if it has overflowed, unless the snapshot
-	 * was taken during recovey - in that case, top-level XIDs are in subxip
-	 * as well, and we mustn't lose them.
+	 * Ignore the SubXID array if it has overflowed, unless the snapshot was
+	 * taken during recovey - in that case, top-level XIDs are in subxip as
+	 * well, and we mustn't lose them.
 	 */
 	if (serialized_snapshot->suboverflowed && !snapshot->takenDuringRecovery)
 		serialized_snapshot->subxcnt = 0;
@@ -1631,8 +1634,8 @@ SerializeSnapshot(Snapshot snapshot, char *start_address)
 	 */
 	if (snapshot->subxcnt > 0)
 	{
-		Size subxipoff = sizeof(SerializedSnapshotData) +
-			snapshot->xcnt * sizeof(TransactionId);
+		Size		subxipoff = sizeof(SerializedSnapshotData) +
+		snapshot->xcnt * sizeof(TransactionId);
 
 		memcpy((TransactionId *) ((char *) serialized_snapshot + subxipoff),
 			   snapshot->subxip, snapshot->subxcnt * sizeof(TransactionId));

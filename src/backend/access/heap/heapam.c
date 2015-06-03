@@ -80,7 +80,7 @@ bool		synchronize_seqscans = true;
 static HeapScanDesc heap_beginscan_internal(Relation relation,
 						Snapshot snapshot,
 						int nkeys, ScanKey key,
-						bool allow_strat, bool allow_sync, bool allow_pagemode,
+					  bool allow_strat, bool allow_sync, bool allow_pagemode,
 						bool is_bitmapscan, bool is_samplescan,
 						bool temp_snap);
 static HeapTuple heap_prepare_insert(Relation relation, HeapTuple tup,
@@ -1370,8 +1370,8 @@ heap_beginscan_sampling(Relation relation, Snapshot snapshot,
 static HeapScanDesc
 heap_beginscan_internal(Relation relation, Snapshot snapshot,
 						int nkeys, ScanKey key,
-						bool allow_strat, bool allow_sync, bool allow_pagemode,
-						bool is_bitmapscan, bool is_samplescan, bool temp_snap)
+					  bool allow_strat, bool allow_sync, bool allow_pagemode,
+					  bool is_bitmapscan, bool is_samplescan, bool temp_snap)
 {
 	HeapScanDesc scan;
 
@@ -2290,9 +2290,9 @@ heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
 {
 	/*
 	 * For now, parallel operations are required to be strictly read-only.
-	 * Unlike heap_update() and heap_delete(), an insert should never create
-	 * a combo CID, so it might be possible to relax this restriction, but
-	 * not without more thought and testing.
+	 * Unlike heap_update() and heap_delete(), an insert should never create a
+	 * combo CID, so it might be possible to relax this restriction, but not
+	 * without more thought and testing.
 	 */
 	if (IsInParallelMode())
 		ereport(ERROR,
@@ -2774,8 +2774,8 @@ l1:
 		infomask = tp.t_data->t_infomask;
 
 		/*
-		 * Sleep until concurrent transaction ends -- except when there's a single
-		 * locker and it's our own transaction.  Note we don't care
+		 * Sleep until concurrent transaction ends -- except when there's a
+		 * single locker and it's our own transaction.  Note we don't care
 		 * which lock mode the locker has, because we need the strongest one.
 		 *
 		 * Before sleeping, we need to acquire tuple lock to establish our
@@ -2828,8 +2828,8 @@ l1:
 		else if (!TransactionIdIsCurrentTransactionId(xwait))
 		{
 			/*
-			 * Wait for regular transaction to end; but first, acquire
-			 * tuple lock.
+			 * Wait for regular transaction to end; but first, acquire tuple
+			 * lock.
 			 */
 			LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 			heap_acquire_tuplock(relation, &(tp.t_self), LockTupleExclusive,
@@ -3342,8 +3342,8 @@ l2:
 		 *
 		 * Before sleeping, we need to acquire tuple lock to establish our
 		 * priority for the tuple (see heap_lock_tuple).  LockTuple will
-		 * release us when we are next-in-line for the tuple.  Note we must not
-		 * acquire the tuple lock until we're sure we're going to sleep;
+		 * release us when we are next-in-line for the tuple.  Note we must
+		 * not acquire the tuple lock until we're sure we're going to sleep;
 		 * otherwise we're open for race conditions with other transactions
 		 * holding the tuple lock which sleep on us.
 		 *
@@ -3380,8 +3380,8 @@ l2:
 				 */
 				if (xmax_infomask_changed(oldtup.t_data->t_infomask,
 										  infomask) ||
-					!TransactionIdEquals(HeapTupleHeaderGetRawXmax(oldtup.t_data),
-										 xwait))
+				!TransactionIdEquals(HeapTupleHeaderGetRawXmax(oldtup.t_data),
+									 xwait))
 					goto l2;
 			}
 
@@ -3431,9 +3431,9 @@ l2:
 		else if (HEAP_XMAX_IS_KEYSHR_LOCKED(infomask) && key_intact)
 		{
 			/*
-			 * If it's just a key-share locker, and we're not changing the
-			 * key columns, we don't need to wait for it to end; but we
-			 * need to preserve it as locker.
+			 * If it's just a key-share locker, and we're not changing the key
+			 * columns, we don't need to wait for it to end; but we need to
+			 * preserve it as locker.
 			 */
 			checked_lockers = true;
 			locker_remains = true;
@@ -3442,8 +3442,8 @@ l2:
 		else
 		{
 			/*
-			 * Wait for regular transaction to end; but first, acquire
-			 * tuple lock.
+			 * Wait for regular transaction to end; but first, acquire tuple
+			 * lock.
 			 */
 			LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 			heap_acquire_tuplock(relation, &(oldtup.t_self), *lockmode,
@@ -3460,7 +3460,7 @@ l2:
 			 */
 			if (xmax_infomask_changed(oldtup.t_data->t_infomask, infomask) ||
 				!TransactionIdEquals(xwait,
-									 HeapTupleHeaderGetRawXmax(oldtup.t_data)))
+								   HeapTupleHeaderGetRawXmax(oldtup.t_data)))
 				goto l2;
 
 			/* Otherwise check if it committed or aborted */
@@ -3785,7 +3785,7 @@ l2:
 		HeapTupleClearHeapOnly(newtup);
 	}
 
-	RelationPutHeapTuple(relation, newbuf, heaptup, false);	/* insert new tuple */
+	RelationPutHeapTuple(relation, newbuf, heaptup, false);		/* insert new tuple */
 
 	if (!already_marked)
 	{
@@ -4483,7 +4483,7 @@ l3:
 		if (require_sleep && !(infomask & HEAP_XMAX_IS_MULTI) &&
 			TransactionIdIsCurrentTransactionId(xwait))
 		{
-			 /* ... but if the xmax changed in the meantime, start over */
+			/* ... but if the xmax changed in the meantime, start over */
 			LockBuffer(*buffer, BUFFER_LOCK_EXCLUSIVE);
 			if (xmax_infomask_changed(tuple->t_data->t_infomask, infomask) ||
 				!TransactionIdEquals(HeapTupleHeaderGetRawXmax(tuple->t_data),
@@ -4507,8 +4507,8 @@ l3:
 			 * for the tuple.  We must do this even if we are share-locking.
 			 *
 			 * If we are forced to "start over" below, we keep the tuple lock;
-			 * this arranges that we stay at the head of the line while rechecking
-			 * tuple state.
+			 * this arranges that we stay at the head of the line while
+			 * rechecking tuple state.
 			 */
 			if (!heap_acquire_tuplock(relation, tid, mode, wait_policy,
 									  &have_tuple_lock))
@@ -4536,11 +4536,11 @@ l3:
 				{
 					case LockWaitBlock:
 						MultiXactIdWait((MultiXactId) xwait, status, infomask,
-										relation, &tuple->t_self, XLTW_Lock, NULL);
+								  relation, &tuple->t_self, XLTW_Lock, NULL);
 						break;
 					case LockWaitSkip:
 						if (!ConditionalMultiXactIdWait((MultiXactId) xwait,
-														status, infomask, relation,
+												  status, infomask, relation,
 														NULL))
 						{
 							result = HeapTupleWouldBlock;
@@ -4551,12 +4551,12 @@ l3:
 						break;
 					case LockWaitError:
 						if (!ConditionalMultiXactIdWait((MultiXactId) xwait,
-														status, infomask, relation,
+												  status, infomask, relation,
 														NULL))
 							ereport(ERROR,
 									(errcode(ERRCODE_LOCK_NOT_AVAILABLE),
 									 errmsg("could not obtain lock on row in relation \"%s\"",
-											RelationGetRelationName(relation))));
+										RelationGetRelationName(relation))));
 
 						break;
 				}
@@ -4594,7 +4594,7 @@ l3:
 							ereport(ERROR,
 									(errcode(ERRCODE_LOCK_NOT_AVAILABLE),
 									 errmsg("could not obtain lock on row in relation \"%s\"",
-											RelationGetRelationName(relation))));
+										RelationGetRelationName(relation))));
 						break;
 				}
 			}
@@ -4619,9 +4619,9 @@ l3:
 			LockBuffer(*buffer, BUFFER_LOCK_EXCLUSIVE);
 
 			/*
-			 * xwait is done, but if xwait had just locked the tuple then
-			 * some other xact could update this tuple before we get to
-			 * this point.  Check for xmax change, and start over if so.
+			 * xwait is done, but if xwait had just locked the tuple then some
+			 * other xact could update this tuple before we get to this point.
+			 * Check for xmax change, and start over if so.
 			 */
 			if (xmax_infomask_changed(tuple->t_data->t_infomask, infomask) ||
 				!TransactionIdEquals(HeapTupleHeaderGetRawXmax(tuple->t_data),
@@ -4634,9 +4634,9 @@ l3:
 				 * Otherwise check if it committed or aborted.  Note we cannot
 				 * be here if the tuple was only locked by somebody who didn't
 				 * conflict with us; that would have been handled above.  So
-				 * that transaction must necessarily be gone by now.  But don't
-				 * check for this in the multixact case, because some locker
-				 * transactions might still be running.
+				 * that transaction must necessarily be gone by now.  But
+				 * don't check for this in the multixact case, because some
+				 * locker transactions might still be running.
 				 */
 				UpdateXmaxHintBits(tuple->t_data, *buffer, xwait);
 			}
@@ -4816,8 +4816,8 @@ heap_acquire_tuplock(Relation relation, ItemPointer tid, LockTupleMode mode,
 			if (!ConditionalLockTupleTuplock(relation, tid, mode))
 				ereport(ERROR,
 						(errcode(ERRCODE_LOCK_NOT_AVAILABLE),
-						 errmsg("could not obtain lock on row in relation \"%s\"",
-								RelationGetRelationName(relation))));
+					errmsg("could not obtain lock on row in relation \"%s\"",
+						   RelationGetRelationName(relation))));
 			break;
 	}
 	*have_tuple_lock = true;
@@ -5113,7 +5113,7 @@ l5:
 /*
  * Subroutine for heap_lock_updated_tuple_rec.
  *
- * Given an hypothetical multixact status held by the transaction identified
+ * Given a hypothetical multixact status held by the transaction identified
  * with the given xid, does the current transaction need to wait, fail, or can
  * it continue if it wanted to acquire a lock of the given mode?  "needwait"
  * is set to true if waiting is necessary; if it can continue, then
@@ -5519,8 +5519,8 @@ heap_finish_speculative(Relation relation, HeapTuple tuple)
 	MarkBufferDirty(buffer);
 
 	/*
-	 * Replace the speculative insertion token with a real t_ctid,
-	 * pointing to itself like it does on regular tuples.
+	 * Replace the speculative insertion token with a real t_ctid, pointing to
+	 * itself like it does on regular tuples.
 	 */
 	htup->t_ctid = tuple->t_self;
 
@@ -6453,23 +6453,23 @@ static bool
 DoesMultiXactIdConflict(MultiXactId multi, uint16 infomask,
 						LockTupleMode lockmode)
 {
-	bool	allow_old;
-	int		nmembers;
+	bool		allow_old;
+	int			nmembers;
 	MultiXactMember *members;
-	bool	result = false;
-	LOCKMODE wanted = tupleLockExtraInfo[lockmode].hwlock;
+	bool		result = false;
+	LOCKMODE	wanted = tupleLockExtraInfo[lockmode].hwlock;
 
 	allow_old = !(infomask & HEAP_LOCK_MASK) && HEAP_XMAX_IS_LOCKED_ONLY(infomask);
 	nmembers = GetMultiXactIdMembers(multi, &members, allow_old,
 									 HEAP_XMAX_IS_LOCKED_ONLY(infomask));
 	if (nmembers >= 0)
 	{
-		int		i;
+		int			i;
 
 		for (i = 0; i < nmembers; i++)
 		{
-			TransactionId		memxid;
-			LOCKMODE			memlockmode;
+			TransactionId memxid;
+			LOCKMODE	memlockmode;
 
 			memlockmode = LOCKMODE_from_mxstatus(members[i].status);
 
@@ -7099,7 +7099,7 @@ log_heap_update(Relation reln, Buffer oldbuf,
 	{
 		XLogRegisterBufData(0,
 							((char *) newtup->t_data) + SizeofHeapTupleHeader,
-							newtup->t_len - SizeofHeapTupleHeader - suffixlen);
+						  newtup->t_len - SizeofHeapTupleHeader - suffixlen);
 	}
 	else
 	{
@@ -7111,8 +7111,8 @@ log_heap_update(Relation reln, Buffer oldbuf,
 		if (newtup->t_data->t_hoff - SizeofHeapTupleHeader > 0)
 		{
 			XLogRegisterBufData(0,
-								((char *) newtup->t_data) + SizeofHeapTupleHeader,
-								newtup->t_data->t_hoff - SizeofHeapTupleHeader);
+						   ((char *) newtup->t_data) + SizeofHeapTupleHeader,
+							 newtup->t_data->t_hoff - SizeofHeapTupleHeader);
 		}
 
 		/* data after common prefix */
@@ -7145,7 +7145,7 @@ log_heap_update(Relation reln, Buffer oldbuf,
 }
 
 /*
- * Perform XLogInsert of a XLOG_HEAP2_NEW_CID record
+ * Perform XLogInsert of an XLOG_HEAP2_NEW_CID record
  *
  * This is only used in wal_level >= WAL_LEVEL_LOGICAL, and only for catalog
  * tuples.
@@ -7185,7 +7185,7 @@ log_heap_new_cid(Relation relation, HeapTuple tup)
 		 *
 		 * We need to check for LOCK ONLY because multixacts might be
 		 * transferred to the new tuple in case of FOR KEY SHARE updates in
-		 * which case there will be a xmax, although the tuple just got
+		 * which case there will be an xmax, although the tuple just got
 		 * inserted.
 		 */
 		if (hdr->t_infomask & HEAP_XMAX_INVALID ||
@@ -7223,7 +7223,7 @@ log_heap_new_cid(Relation relation, HeapTuple tup)
  * Build a heap tuple representing the configured REPLICA IDENTITY to represent
  * the old tuple in a UPDATE or DELETE.
  *
- * Returns NULL if there's no need to log a identity or if there's no suitable
+ * Returns NULL if there's no need to log an identity or if there's no suitable
  * key in the Relation relation.
  */
 static HeapTuple
@@ -7295,8 +7295,8 @@ ExtractReplicaIdentity(Relation relation, HeapTuple tp, bool key_changed, bool *
 		{
 			/*
 			 * The OID column can appear in an index definition, but that's
-			 * OK, becuse we always copy the OID if present (see below). Other
-			 * system columns may not.
+			 * OK, because we always copy the OID if present (see below).
+			 * Other system columns may not.
 			 */
 			if (attno == ObjectIdAttributeNumber)
 				continue;

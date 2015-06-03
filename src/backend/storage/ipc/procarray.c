@@ -287,7 +287,7 @@ ProcArrayAdd(PGPROC *proc)
 	/*
 	 * Keep the procs array sorted by (PGPROC *) so that we can utilize
 	 * locality of references much better. This is useful while traversing the
-	 * ProcArray because there is a increased likelihood of finding the next
+	 * ProcArray because there is an increased likelihood of finding the next
 	 * PGPROC structure in the cache.
 	 *
 	 * Since the occurrence of adding/removing a proc is much lower than the
@@ -1715,12 +1715,12 @@ ProcArrayInstallRestoredXmin(TransactionId xmin, PGPROC *proc)
 	pgxact = &allPgXact[proc->pgprocno];
 
 	/*
-	 * Be certain that the referenced PGPROC has an advertised xmin which
-	 * is no later than the one we're installing, so that the system-wide
-	 * xmin can't go backwards.  Also, make sure it's running in the same
-	 * database, so that the per-database xmin cannot go backwards.
+	 * Be certain that the referenced PGPROC has an advertised xmin which is
+	 * no later than the one we're installing, so that the system-wide xmin
+	 * can't go backwards.  Also, make sure it's running in the same database,
+	 * so that the per-database xmin cannot go backwards.
 	 */
-	xid = pgxact->xmin;		/* fetch just once */
+	xid = pgxact->xmin;			/* fetch just once */
 	if (proc->databaseId == MyDatabaseId &&
 		TransactionIdIsNormal(xid) &&
 		TransactionIdPrecedesOrEquals(xid, xmin))
@@ -2009,7 +2009,7 @@ GetOldestSafeDecodingTransactionId(void)
 	/*
 	 * If there's already a slot pegging the xmin horizon, we can start with
 	 * that value, it's guaranteed to be safe since it's computed by this
-	 * routine initally and has been enforced since.
+	 * routine initially and has been enforced since.
 	 */
 	if (TransactionIdIsValid(procArray->replication_slot_catalog_xmin) &&
 		TransactionIdPrecedes(procArray->replication_slot_catalog_xmin,
@@ -2069,7 +2069,7 @@ GetOldestSafeDecodingTransactionId(void)
  * the result is somewhat indeterminate, but we don't really care.  Even in
  * a multiprocessor with delayed writes to shared memory, it should be certain
  * that setting of delayChkpt will propagate to shared memory when the backend
- * takes a lock, so we cannot fail to see an virtual xact as delayChkpt if
+ * takes a lock, so we cannot fail to see a virtual xact as delayChkpt if
  * it's already inserted its commit record.  Whether it takes a little while
  * for clearing of delayChkpt to propagate is unimportant for correctness.
  */
@@ -3508,7 +3508,7 @@ KnownAssignedXidsRemovePreceding(TransactionId removeXid)
 
 	/*
 	 * Mark entries invalid starting at the tail.  Since array is sorted, we
-	 * can stop as soon as we reach a entry >= removeXid.
+	 * can stop as soon as we reach an entry >= removeXid.
 	 */
 	tail = pArray->tailKnownAssignedXids;
 	head = pArray->headKnownAssignedXids;

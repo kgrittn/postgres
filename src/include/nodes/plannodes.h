@@ -45,8 +45,6 @@ typedef struct PlannedStmt
 
 	bool		hasModifyingCTE;	/* has insert|update|delete in WITH? */
 
-	bool		isUpsert;		/* is it insert ... ON CONFLICT UPDATE? */
-
 	bool		canSetTag;		/* do I set the command result tag? */
 
 	bool		transientPlan;	/* redo plan when TransactionXmin changes? */
@@ -73,7 +71,6 @@ typedef struct PlannedStmt
 	int			nParamExec;		/* number of PARAM_EXEC Params used */
 
 	bool		hasRowSecurity; /* row security applied? */
-
 } PlannedStmt;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -185,10 +182,10 @@ typedef struct ModifyTable
 	List	   *fdwPrivLists;	/* per-target-table FDW private data lists */
 	List	   *rowMarks;		/* PlanRowMarks (non-locking only) */
 	int			epqParam;		/* ID of Param for EvalPlanQual re-eval */
-	OnConflictAction onConflictAction; /* ON CONFLICT action */
-	List	   *arbiterIndexes;	/* List of ON CONFLICT arbiter index OIDs  */
+	OnConflictAction onConflictAction;	/* ON CONFLICT action */
+	List	   *arbiterIndexes; /* List of ON CONFLICT arbiter index OIDs  */
 	List	   *onConflictSet;	/* SET for INSERT ON CONFLICT DO UPDATE */
-	Node	   *onConflictWhere;/* WHERE for ON CONFLICT UPDATE */
+	Node	   *onConflictWhere;	/* WHERE for ON CONFLICT UPDATE */
 	Index		exclRelRTI;		/* RTI of the EXCLUDED pseudo relation */
 	List	   *exclRelTlist;	/* tlist of the EXCLUDED pseudo relation */
 } ModifyTable;
@@ -320,10 +317,10 @@ typedef Scan SampleScan;
  * indexorderbyorig is used at runtime to recheck the ordering, if the index
  * cannot calculate an accurate ordering.  It is also needed for EXPLAIN.
  *
- * indexorderbyops is an array of operators used to sort the ORDER BY
- * expressions, used together with indexorderbyorig to recheck ordering at run
- * time.  (Note these fields are used for amcanorderbyop cases, not amcanorder
- * cases.)
+ * indexorderbyops is a list of the OIDs of the operators used to sort the
+ * ORDER BY expressions.  This is used together with indexorderbyorig to
+ * recheck ordering at run time.  (Note that indexorderby, indexorderbyorig,
+ * and indexorderbyops are used for amcanorderbyop cases, not amcanorder.)
  *
  * indexorderdir specifies the scan ordering, for indexscans on amcanorder
  * indexes (for other indexes it should be "don't care").
@@ -337,7 +334,7 @@ typedef struct IndexScan
 	List	   *indexqualorig;	/* the same in original form */
 	List	   *indexorderby;	/* list of index ORDER BY exprs */
 	List	   *indexorderbyorig;		/* the same in original form */
-	Oid		   *indexorderbyops;	/* operators to sort ORDER BY exprs */
+	List	   *indexorderbyops;	/* OIDs of sort ops for ORDER BY exprs */
 	ScanDirection indexorderdir;	/* forward or backward or don't care */
 } IndexScan;
 
@@ -712,6 +709,8 @@ typedef struct Agg
 	AttrNumber *grpColIdx;		/* their indexes in the target list */
 	Oid		   *grpOperators;	/* equality operators to compare with */
 	long		numGroups;		/* estimated number of groups in input */
+	List	   *groupingSets;	/* grouping sets to use */
+	List	   *chain;			/* chained Agg/Sort nodes */
 } Agg;
 
 /* ----------------

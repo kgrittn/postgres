@@ -53,7 +53,7 @@ static Query *transformInsertStmt(ParseState *pstate, InsertStmt *stmt);
 static List *transformInsertRow(ParseState *pstate, List *exprlist,
 				   List *stmtcols, List *icolumns, List *attrnos);
 static OnConflictExpr *transformOnConflictClause(ParseState *pstate,
-												 OnConflictClause *onConflictClause);
+						  OnConflictClause *onConflictClause);
 static int	count_rowexpr_columns(ParseState *pstate, Node *expr);
 static Query *transformSelectStmt(ParseState *pstate, SelectStmt *stmt);
 static Query *transformValuesClause(ParseState *pstate, SelectStmt *stmt);
@@ -65,7 +65,7 @@ static void determineRecursiveColTypes(ParseState *pstate,
 static Query *transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt);
 static List *transformReturningList(ParseState *pstate, List *returningList);
 static List *transformUpdateTargetList(ParseState *pstate,
-								  List *targetList);
+						  List *targetList);
 static Query *transformDeclareCursorStmt(ParseState *pstate,
 						   DeclareCursorStmt *stmt);
 static Query *transformExplainStmt(ParseState *pstate,
@@ -441,7 +441,7 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 	}
 
 	isOnConflictUpdate = (stmt->onConflictClause &&
-						  stmt->onConflictClause->action == ONCONFLICT_UPDATE);
+						stmt->onConflictClause->action == ONCONFLICT_UPDATE);
 
 	/*
 	 * We have three cases to deal with: DEFAULT VALUES (selectStmt == NULL),
@@ -882,7 +882,7 @@ transformOnConflictClause(ParseState *pstate,
 	RangeTblEntry *exclRte = NULL;
 	int			exclRelIndex = 0;
 	List	   *exclRelTlist = NIL;
-	OnConflictExpr   *result;
+	OnConflictExpr *result;
 
 	/* Process the arbiter clause, ON CONFLICT ON (...) */
 	transformOnConflictArbiter(pstate, onConflictClause, &arbiterElems,
@@ -1060,6 +1060,7 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 
 	qry->groupClause = transformGroupClause(pstate,
 											stmt->groupClause,
+											&qry->groupingSets,
 											&qry->targetList,
 											qry->sortClause,
 											EXPR_KIND_GROUP_BY,
@@ -1106,7 +1107,7 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	qry->hasSubLinks = pstate->p_hasSubLinks;
 	qry->hasWindowFuncs = pstate->p_hasWindowFuncs;
 	qry->hasAggs = pstate->p_hasAggs;
-	if (pstate->p_hasAggs || qry->groupClause || qry->havingQual)
+	if (pstate->p_hasAggs || qry->groupClause || qry->groupingSets || qry->havingQual)
 		parseCheckAggregates(pstate, qry);
 
 	foreach(l, stmt->lockingClause)
@@ -1566,7 +1567,7 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 	qry->hasSubLinks = pstate->p_hasSubLinks;
 	qry->hasWindowFuncs = pstate->p_hasWindowFuncs;
 	qry->hasAggs = pstate->p_hasAggs;
-	if (pstate->p_hasAggs || qry->groupClause || qry->havingQual)
+	if (pstate->p_hasAggs || qry->groupClause || qry->groupingSets || qry->havingQual)
 		parseCheckAggregates(pstate, qry);
 
 	foreach(l, lockingClause)
@@ -2058,10 +2059,10 @@ transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 static List *
 transformUpdateTargetList(ParseState *pstate, List *origTlist)
 {
-	List		   *tlist = NIL;
-	RangeTblEntry  *target_rte;
-	ListCell	   *orig_tl;
-	ListCell	   *tl;
+	List	   *tlist = NIL;
+	RangeTblEntry *target_rte;
+	ListCell   *orig_tl;
+	ListCell   *tl;
 
 	tlist = transformTargetList(pstate, origTlist,
 								EXPR_KIND_UPDATE_SOURCE);

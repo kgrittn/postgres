@@ -23,6 +23,7 @@
 #include "utils/reltrigger.h"
 #include "utils/sortsupport.h"
 #include "utils/tuplestore.h"
+#include "utils/tuplesort.h"
 
 
 /* ----------------
@@ -67,8 +68,8 @@ typedef struct IndexInfo
 	Oid		   *ii_ExclusionProcs;		/* array with one entry per column */
 	uint16	   *ii_ExclusionStrats;		/* array with one entry per column */
 	Oid		   *ii_UniqueOps;	/* array with one entry per column */
-	Oid		   *ii_UniqueProcs;		/* array with one entry per column */
-	uint16	   *ii_UniqueStrats;		/* array with one entry per column */
+	Oid		   *ii_UniqueProcs; /* array with one entry per column */
+	uint16	   *ii_UniqueStrats;	/* array with one entry per column */
 	bool		ii_Unique;
 	bool		ii_ReadyForInserts;
 	bool		ii_Concurrent;
@@ -615,6 +616,22 @@ typedef struct AggrefExprState
 } AggrefExprState;
 
 /* ----------------
+ *		GroupingFuncExprState node
+ *
+ * The list of column numbers refers to the input tuples of the Agg node to
+ * which the GroupingFunc belongs, and may contain 0 for references to columns
+ * that are only present in grouping sets processed by different Agg nodes (and
+ * which are therefore always considered "grouping" here).
+ * ----------------
+ */
+typedef struct GroupingFuncExprState
+{
+	ExprState	xprstate;
+	struct AggState *aggstate;
+	List	   *clauses;		/* integer list of column numbers */
+} GroupingFuncExprState;
+
+/* ----------------
  *		WindowFuncExprState node
  * ----------------
  */
@@ -1111,11 +1128,14 @@ typedef struct ModifyTableState
 	List	  **mt_arowmarks;	/* per-subplan ExecAuxRowMark lists */
 	EPQState	mt_epqstate;	/* for evaluating EvalPlanQual rechecks */
 	bool		fireBSTriggers; /* do we need to fire stmt triggers? */
-	OnConflictAction mt_onconflict; /* ON CONFLICT type */
-	List	   *mt_arbiterindexes;	/* unique index OIDs to arbitrate taking alt path */
-	TupleTableSlot *mt_existing; /* slot to store existing target tuple in */
-	List	   *mt_excludedtlist; /* the excluded pseudo relation's tlist  */
-	TupleTableSlot *mt_conflproj; /* CONFLICT ... SET ... projection target */
+	OnConflictAction mt_onconflict;		/* ON CONFLICT type */
+	List	   *mt_arbiterindexes;		/* unique index OIDs to arbitrate
+										 * taking alt path */
+	TupleTableSlot *mt_existing;	/* slot to store existing target tuple in */
+	List	   *mt_excludedtlist;		/* the excluded pseudo relation's
+										 * tlist  */
+	TupleTableSlot *mt_conflproj;		/* CONFLICT ... SET ... projection
+										 * target */
 } ModifyTableState;
 
 /* ----------------
@@ -1796,19 +1816,34 @@ typedef struct GroupState
 /* these structs are private in nodeAgg.c: */
 typedef struct AggStatePerAggData *AggStatePerAgg;
 typedef struct AggStatePerGroupData *AggStatePerGroup;
+typedef struct AggStatePerPhaseData *AggStatePerPhase;
 
 typedef struct AggState
 {
 	ScanState	ss;				/* its first field is NodeTag */
 	List	   *aggs;			/* all Aggref nodes in targetlist & quals */
 	int			numaggs;		/* length of list (could be zero!) */
-	FmgrInfo   *eqfunctions;	/* per-grouping-field equality fns */
+	AggStatePerPhase phase;		/* pointer to current phase data */
+	int			numphases;		/* number of phases */
+	int			current_phase;	/* current phase number */
 	FmgrInfo   *hashfunctions;	/* per-grouping-field hash fns */
 	AggStatePerAgg peragg;		/* per-Aggref information */
-	MemoryContext aggcontext;	/* memory context for long-lived data */
+	ExprContext **aggcontexts;	/* econtexts for long-lived data (per GS) */
 	ExprContext *tmpcontext;	/* econtext for input expressions */
 	AggStatePerAgg curperagg;	/* identifies currently active aggregate */
+	bool		input_done;		/* indicates end of input */
 	bool		agg_done;		/* indicates completion of Agg scan */
+	int			projected_set;	/* The last projected grouping set */
+	int			current_set;	/* The current grouping set being evaluated */
+	Bitmapset  *grouped_cols;	/* grouped cols in current projection */
+	List	   *all_grouped_cols;		/* list of all grouped cols in DESC
+										 * order */
+	/* These fields are for grouping set phase data */
+	int			maxsets;		/* The max number of sets in any phase */
+	AggStatePerPhase phases;	/* array of all phases */
+	Tuplesortstate *sort_in;	/* sorted input to phases > 0 */
+	Tuplesortstate *sort_out;	/* input is copied here for next phase */
+	TupleTableSlot *sort_slot;	/* slot for sort results */
 	/* these fields are used in AGG_PLAIN and AGG_SORTED modes: */
 	AggStatePerGroup pergroup;	/* per-Aggref-per-group working state */
 	HeapTuple	grp_firstTuple; /* copy of first tuple of current group */

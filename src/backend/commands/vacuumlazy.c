@@ -106,7 +106,7 @@ typedef struct LVRelStats
 	BlockNumber old_rel_pages;	/* previous value of pg_class.relpages */
 	BlockNumber rel_pages;		/* total number of pages */
 	BlockNumber scanned_pages;	/* number of pages we examined */
-	BlockNumber	pinskipped_pages; /* # of pages we skipped due to a pin */
+	BlockNumber pinskipped_pages;		/* # of pages we skipped due to a pin */
 	double		scanned_tuples; /* counts only tuples on scanned pages */
 	double		old_rel_tuples; /* previous value of pg_class.reltuples */
 	double		new_rel_tuples; /* new estimated total # of tuples */
@@ -338,7 +338,8 @@ lazy_vacuum_rel(Relation onerel, int options, VacuumParams *params,
 			TimestampDifferenceExceeds(starttime, endtime,
 									   params->log_min_duration))
 		{
-			StringInfoData	buf;
+			StringInfoData buf;
+
 			TimestampDifference(starttime, endtime, &secs, &usecs);
 
 			read_rate = 0;
@@ -371,7 +372,7 @@ lazy_vacuum_rel(Relation onerel, int options, VacuumParams *params,
 							 vacrelstats->new_rel_tuples,
 							 vacrelstats->new_dead_tuples);
 			appendStringInfo(&buf,
-							 _("buffer usage: %d hits, %d misses, %d dirtied\n"),
+						 _("buffer usage: %d hits, %d misses, %d dirtied\n"),
 							 VacuumPageHit,
 							 VacuumPageMiss,
 							 VacuumPageDirty);
@@ -456,7 +457,7 @@ lazy_scan_heap(Relation onerel, LVRelStats *vacrelstats,
 	BlockNumber next_not_all_visible_block;
 	bool		skipping_all_visible_blocks;
 	xl_heap_freeze_tuple *frozen;
-	StringInfoData	buf;
+	StringInfoData buf;
 
 	pg_rusage_init(&ru0);
 
@@ -954,7 +955,7 @@ lazy_scan_heap(Relation onerel, LVRelStats *vacrelstats,
 				heap_execute_freeze_tuple(htup, &frozen[i]);
 			}
 
-			/* Now WAL-log freezing if neccessary */
+			/* Now WAL-log freezing if necessary */
 			if (RelationNeedsWAL(onerel))
 			{
 				XLogRecPtr	recptr;
@@ -1786,7 +1787,7 @@ static bool
 heap_page_is_all_visible(Relation rel, Buffer buf, TransactionId *visibility_cutoff_xid)
 {
 	Page		page = BufferGetPage(buf);
-	BlockNumber	blockno = BufferGetBlockNumber(buf);
+	BlockNumber blockno = BufferGetBlockNumber(buf);
 	OffsetNumber offnum,
 				maxoff;
 	bool		all_visible = true;

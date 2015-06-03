@@ -997,6 +997,13 @@ create rule r3 as on delete to rules_src do notify rules_src_deletion;
 \d+ rules_src
 
 --
+-- Ensure a aliased target relation for insert is correctly deparsed.
+--
+create rule r4 as on insert to rules_src do instead insert into rules_log AS trgt SELECT NEW.* RETURNING trgt.f1, trgt.f2;
+create rule r5 as on update to rules_src do instead UPDATE rules_log AS trgt SET tag = 'updated' WHERE trgt.f1 = new.f1;
+\d+ rules_src
+
+--
 -- check alter rename rule
 --
 CREATE TABLE rule_t1 (a INT);
@@ -1049,17 +1056,22 @@ CREATE TABLE hats (
 );
 
 CREATE TABLE hat_data (
-	hat_name    char(10) primary key,
+	hat_name    char(10),
 	hat_color   char(10)      -- hat color
 );
+create unique index hat_data_unique_idx
+  on hat_data (hat_name COLLATE "C" bpchar_pattern_ops);
 
--- okay
+-- DO NOTHING with ON CONFLICT
 CREATE RULE hat_nosert AS ON INSERT TO hats
     DO INSTEAD
     INSERT INTO hat_data VALUES (
            NEW.hat_name,
            NEW.hat_color)
-        ON CONFLICT (hat_name) DO NOTHING RETURNING *;
+        ON CONFLICT (hat_name COLLATE "C" bpchar_pattern_ops) WHERE hat_color = 'green'
+        DO NOTHING
+        RETURNING *;
+SELECT definition FROM pg_rules WHERE tablename = 'hats' ORDER BY rulename;
 
 -- Works (projects row)
 INSERT INTO hats VALUES ('h7', 'black') RETURNING *;
@@ -1069,6 +1081,22 @@ SELECT tablename, rulename, definition FROM pg_rules
 	WHERE tablename = 'hats';
 DROP RULE hat_nosert ON hats;
 
+-- DO NOTHING without ON CONFLICT
+CREATE RULE hat_nosert_all AS ON INSERT TO hats
+    DO INSTEAD
+    INSERT INTO hat_data VALUES (
+           NEW.hat_name,
+           NEW.hat_color)
+        ON CONFLICT
+        DO NOTHING
+        RETURNING *;
+SELECT definition FROM pg_rules WHERE tablename = 'hats' ORDER BY rulename;
+DROP RULE hat_nosert_all ON hats;
+
+-- Works (does nothing)
+INSERT INTO hats VALUES ('h7', 'black') RETURNING *;
+
+-- DO UPDATE with a WHERE clause
 CREATE RULE hat_upsert AS ON INSERT TO hats
     DO INSTEAD
     INSERT INTO hat_data VALUES (
@@ -1079,6 +1107,7 @@ CREATE RULE hat_upsert AS ON INSERT TO hats
            SET hat_name = hat_data.hat_name, hat_color = excluded.hat_color
            WHERE excluded.hat_color <>  'forbidden'
         RETURNING *;
+SELECT definition FROM pg_rules WHERE tablename = 'hats' ORDER BY rulename;
 
 -- Works (does upsert)
 INSERT INTO hats VALUES ('h8', 'black') RETURNING *;

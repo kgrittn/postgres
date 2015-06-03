@@ -61,6 +61,7 @@ set_rel_pathlist_hook_type set_rel_pathlist_hook = NULL;
 join_search_hook_type join_search_hook = NULL;
 
 
+static void set_base_rel_consider_startup(PlannerInfo *root);
 static void set_base_rel_sizes(PlannerInfo *root);
 static void set_base_rel_pathlists(PlannerInfo *root);
 static void set_rel_size(PlannerInfo *root, RelOptInfo *rel,
@@ -72,9 +73,9 @@ static void set_plain_rel_size(PlannerInfo *root, RelOptInfo *rel,
 static void set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 					   RangeTblEntry *rte);
 static void set_tablesample_rel_size(PlannerInfo *root, RelOptInfo *rel,
-				   RangeTblEntry *rte);
+						 RangeTblEntry *rte);
 static void set_tablesample_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
-										 RangeTblEntry *rte);
+							 RangeTblEntry *rte);
 static void set_foreign_size(PlannerInfo *root, RelOptInfo *rel,
 				 RangeTblEntry *rte);
 static void set_foreign_pathlist(PlannerInfo *root, RelOptInfo *rel,
@@ -152,6 +153,9 @@ make_one_rel(PlannerInfo *root, List *joinlist)
 		root->all_baserels = bms_add_member(root->all_baserels, brel->relid);
 	}
 
+	/* Mark base rels as to whether we care about fast-start plans */
+	set_base_rel_consider_startup(root);
+
 	/*
 	 * Generate access paths for the base rels.
 	 */
@@ -169,6 +173,49 @@ make_one_rel(PlannerInfo *root, List *joinlist)
 	Assert(bms_equal(rel->relids, root->all_baserels));
 
 	return rel;
+}
+
+/*
+ * set_base_rel_consider_startup
+ *	  Set the consider_[param_]startup flags for each base-relation entry.
+ *
+ * For the moment, we only deal with consider_param_startup here; because the
+ * logic for consider_startup is pretty trivial and is the same for every base
+ * relation, we just let build_simple_rel() initialize that flag correctly to
+ * start with.  If that logic ever gets more complicated it would probably
+ * be better to move it here.
+ */
+static void
+set_base_rel_consider_startup(PlannerInfo *root)
+{
+	/*
+	 * Since parameterized paths can only be used on the inside of a nestloop
+	 * join plan, there is usually little value in considering fast-start
+	 * plans for them.  However, for relations that are on the RHS of a SEMI
+	 * or ANTI join, a fast-start plan can be useful because we're only going
+	 * to care about fetching one tuple anyway.
+	 *
+	 * To minimize growth of planning time, we currently restrict this to
+	 * cases where the RHS is a single base relation, not a join; there is no
+	 * provision for consider_param_startup to get set at all on joinrels.
+	 * Also we don't worry about appendrels.  costsize.c's costing rules for
+	 * nestloop semi/antijoins don't consider such cases either.
+	 */
+	ListCell   *lc;
+
+	foreach(lc, root->join_info_list)
+	{
+		SpecialJoinInfo *sjinfo = (SpecialJoinInfo *) lfirst(lc);
+		int			varno;
+
+		if ((sjinfo->jointype == JOIN_SEMI || sjinfo->jointype == JOIN_ANTI) &&
+			bms_get_singleton_member(sjinfo->syn_righthand, &varno))
+		{
+			RelOptInfo *rel = find_base_rel(root, varno);
+
+			rel->consider_param_startup = true;
+		}
+	}
 }
 
 /*
@@ -451,8 +498,8 @@ set_tablesample_rel_size(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 static void
 set_tablesample_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 {
-	Relids	required_outer;
-	Path   *path;
+	Relids		required_outer;
+	Path	   *path;
 
 	/*
 	 * We don't support pushing join clauses into the quals of a seqscan, but
@@ -1290,6 +1337,7 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	 */
 	if (parse->hasAggs ||
 		parse->groupClause ||
+		parse->groupingSets ||
 		parse->havingQual ||
 		parse->distinctClause ||
 		parse->sortClause ||
@@ -2150,7 +2198,7 @@ subquery_push_qual(Query *subquery, RangeTblEntry *rte, Index rti, Node *qual)
 		 * subquery uses grouping or aggregation, put it in HAVING (since the
 		 * qual really refers to the group-result rows).
 		 */
-		if (subquery->hasAggs || subquery->groupClause || subquery->havingQual)
+		if (subquery->hasAggs || subquery->groupClause || subquery->groupingSets || subquery->havingQual)
 			subquery->havingQual = make_and_qual(subquery->havingQual, qual);
 		else
 			subquery->jointree->quals =

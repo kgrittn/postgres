@@ -369,9 +369,9 @@ does_not_exist_skipping(ObjectType objtype, List *objname, List *objargs)
 		case OBJECT_TRANSFORM:
 			if (!type_in_list_does_not_exist_skipping(objname, &msg, &name))
 			{
-				msg = gettext_noop("transform for type %s language %s does not exist, skipping");
+				msg = gettext_noop("transform for type %s language \"%s\" does not exist, skipping");
 				name = TypeNameToString((TypeName *) linitial(objname));
-				args = (char *) linitial(objargs);
+				args = strVal(linitial(objargs));
 			}
 			break;
 		case OBJECT_TRIGGER:
@@ -415,7 +415,7 @@ does_not_exist_skipping(ObjectType objtype, List *objname, List *objargs)
 			break;
 		case OBJECT_OPCLASS:
 			{
-				List *opcname = list_copy_tail(objname, 1);
+				List	   *opcname = list_copy_tail(objname, 1);
 
 				if (!schema_does_not_exist_skipping(opcname, &msg, &name))
 				{
@@ -427,7 +427,7 @@ does_not_exist_skipping(ObjectType objtype, List *objname, List *objargs)
 			break;
 		case OBJECT_OPFAMILY:
 			{
-				List *opfname = list_copy_tail(objname, 1);
+				List	   *opfname = list_copy_tail(objname, 1);
 
 				if (!schema_does_not_exist_skipping(opfname, &msg, &name))
 				{

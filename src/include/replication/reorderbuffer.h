@@ -177,7 +177,7 @@ typedef struct ReorderBufferTXN
 
 	/* origin of the change that caused this transaction */
 	RepOriginId origin_id;
-	XLogRecPtr origin_lsn;
+	XLogRecPtr	origin_lsn;
 
 	/*
 	 * Commit time, only known when we read the actual commit record.
@@ -245,7 +245,7 @@ typedef struct ReorderBufferTXN
 	/* ---
 	 * Position in one of three lists:
 	 * * list of subtransactions if we are *known* to be subxact
-	 * * list of toplevel xacts (can be a as-yet unknown subxact)
+	 * * list of toplevel xacts (can be am as-yet unknown subxact)
 	 * * list of preallocated ReorderBufferTXNs
 	 * ---
 	 */
@@ -352,7 +352,7 @@ void		ReorderBufferReturnChange(ReorderBuffer *, ReorderBufferChange *);
 void		ReorderBufferQueueChange(ReorderBuffer *, TransactionId, XLogRecPtr lsn, ReorderBufferChange *);
 void ReorderBufferCommit(ReorderBuffer *, TransactionId,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
-					TimestampTz commit_time, RepOriginId origin_id, XLogRecPtr origin_lsn);
+	  TimestampTz commit_time, RepOriginId origin_id, XLogRecPtr origin_lsn);
 void		ReorderBufferAssignChild(ReorderBuffer *, TransactionId, TransactionId, XLogRecPtr commit_lsn);
 void ReorderBufferCommitChild(ReorderBuffer *, TransactionId, TransactionId,
 						 XLogRecPtr commit_lsn, XLogRecPtr end_lsn);

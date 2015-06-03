@@ -172,8 +172,9 @@ PLy_procedure_create(HeapTuple procTup, Oid fn_oid, bool is_trigger)
 	{
 		MemoryContext oldcxt;
 
-		Datum protrftypes_datum = SysCacheGetAttr(PROCOID, procTup,
-												  Anum_pg_proc_protrftypes, &isnull);
+		Datum		protrftypes_datum = SysCacheGetAttr(PROCOID, procTup,
+										  Anum_pg_proc_protrftypes, &isnull);
+
 		oldcxt = MemoryContextSwitchTo(TopMemoryContext);
 		proc->trftypes = isnull ? NIL : oid_array_to_list(protrftypes_datum);
 		MemoryContextSwitchTo(oldcxt);
@@ -445,7 +446,8 @@ PLy_procedure_argument_valid(PLyTypeInfo *arg)
 
 	/*
 	 * Zero typ_relid means that we got called on an output argument of a
-	 * function returning a unnamed record type; the info for it can't change.
+	 * function returning an unnamed record type; the info for it can't
+	 * change.
 	 */
 	if (!OidIsValid(arg->typ_relid))
 		return true;

@@ -51,7 +51,7 @@ typedef struct
 
 
 static int64 sendDir(char *path, int basepathlen, bool sizeonly,
-					 List *tablespaces, bool sendtblspclinks);
+		List *tablespaces, bool sendtblspclinks);
 static bool sendFile(char *readfilename, char *tarfilename,
 		 struct stat * statbuf, bool missing_ok);
 static void sendFileWithContent(const char *filename, const char *content);
@@ -85,7 +85,7 @@ static char *statrelpath = NULL;
 /* The actual number of bytes, transfer of which may cause sleep. */
 static uint64 throttling_sample;
 
-/* Amount of data already transfered but not yet throttled.  */
+/* Amount of data already transferred but not yet throttled.  */
 static int64 throttling_counter;
 
 /* The minimum time required to transfer throttling_sample bytes. */
@@ -130,11 +130,12 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 								  &labelfile, tblspcdir, &tablespaces,
 								  &tblspc_map_file,
 								  opt->progress, opt->sendtblspcmapfile);
+
 	/*
 	 * Once do_pg_start_backup has been called, ensure that any failure causes
-	 * us to abort the backup so we don't "leak" a backup counter. For this reason,
-	 * *all* functionality between do_pg_start_backup() and do_pg_stop_backup()
-	 * should be inside the error cleanup block!
+	 * us to abort the backup so we don't "leak" a backup counter. For this
+	 * reason, *all* functionality between do_pg_start_backup() and
+	 * do_pg_stop_backup() should be inside the error cleanup block!
 	 */
 
 	PG_ENSURE_ERROR_CLEANUP(base_backup_cleanup, (Datum) 0);
@@ -145,8 +146,8 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 		SendXlogRecPtrResult(startptr, starttli);
 
 		/*
-		 * Calculate the relative path of temporary statistics directory in order
-		 * to skip the files which are located in that directory later.
+		 * Calculate the relative path of temporary statistics directory in
+		 * order to skip the files which are located in that directory later.
 		 */
 		if (is_absolute_path(pgstat_stat_directory) &&
 			strncmp(pgstat_stat_directory, DataDir, datadirpathlen) == 0)
@@ -172,7 +173,7 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 
 			/*
 			 * The minimum amount of time for throttling_sample bytes to be
-			 * transfered.
+			 * transferred.
 			 */
 			elapsed_min_unit = USECS_PER_SEC / THROTTLING_FREQUENCY;
 
@@ -443,7 +444,7 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 			/*
 			 * Mark file as archived, otherwise files can get archived again
 			 * after promotion of a new node. This is in line with
-			 * walreceiver.c always doing a XLogArchiveForceDone() after a
+			 * walreceiver.c always doing an XLogArchiveForceDone() after a
 			 * complete segment.
 			 */
 			StatusFilePath(pathbuf, walFiles[i], ".done");
@@ -900,8 +901,8 @@ sendDir(char *path, int basepathlen, bool sizeonly, List *tablespaces,
 		/*
 		 * If there's a backup_label or tablespace_map file, it belongs to a
 		 * backup started by the user with pg_start_backup(). It is *not*
-		 * correct for this backup, our backup_label/tablespace_map is injected
-		 * into the tar separately.
+		 * correct for this backup, our backup_label/tablespace_map is
+		 * injected into the tar separately.
 		 */
 		if (strcmp(de->d_name, BACKUP_LABEL_FILE) == 0)
 			continue;
@@ -1027,7 +1028,8 @@ sendDir(char *path, int basepathlen, bool sizeonly, List *tablespaces,
 								pathbuf)));
 			if (rllen >= sizeof(linkpath))
 				ereport(ERROR,
-						(errmsg("symbolic link \"%s\" target is too long",
+						(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+						 errmsg("symbolic link \"%s\" target is too long",
 								pathbuf)));
 			linkpath[rllen] = '\0';
 
@@ -1226,8 +1228,8 @@ _tarWriteHeader(const char *filename, const char *linktarget,
 	enum tarError rc;
 
 	rc = tarCreateHeader(h, filename, linktarget, statbuf->st_size,
-					statbuf->st_mode, statbuf->st_uid, statbuf->st_gid,
-					statbuf->st_mtime);
+						 statbuf->st_mode, statbuf->st_uid, statbuf->st_gid,
+						 statbuf->st_mtime);
 
 	switch (rc)
 	{

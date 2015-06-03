@@ -1422,7 +1422,7 @@ dumpCreateDB(PGconn *conn)
 		{
 			appendPQExpBufferStr(buf, "-- For binary upgrade, set datfrozenxid and datminmxid.\n");
 			appendPQExpBuffer(buf, "UPDATE pg_catalog.pg_database "
-							"SET datfrozenxid = '%u', datminmxid = '%u' "
+							  "SET datfrozenxid = '%u', datminmxid = '%u' "
 							  "WHERE datname = ",
 							  dbfrozenxid, dbminmxid);
 			appendStringLiteralConn(buf, dbname, conn);
@@ -1734,7 +1734,7 @@ runPgDump(const char *dbname)
 /*
  * buildShSecLabels
  *
- * Build SECURITY LABEL command(s) for an shared object
+ * Build SECURITY LABEL command(s) for a shared object
  *
  * The caller has to provide object type and identifier to select security
  * labels from pg_seclabels system view.

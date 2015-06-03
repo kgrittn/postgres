@@ -43,6 +43,22 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Result
 (4 rows)
 
+explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (key, fruit) do update set fruit = excluded.fruit
+  where exists (select 1 from insertconflicttest ii where ii.key = excluded.key);
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Insert on insertconflicttest
+   Conflict Resolution: UPDATE
+   Conflict Arbiter Indexes: op_index_key, collation_index_key, both_index_key
+   Conflict Filter: (alternatives: SubPlan 1 or hashed SubPlan 2)
+   ->  Result
+   SubPlan 1
+     ->  Index Only Scan using both_index_expr_key on insertconflicttest ii
+           Index Cond: (key = excluded.key)
+   SubPlan 2
+     ->  Seq Scan on insertconflicttest ii_1
+(10 rows)
+
 -- Neither collation nor operator class specifications are required --
 -- supplying them merely *limits* matches to indexes with matching opclasses
 -- used for relevant indexes
@@ -192,7 +208,7 @@ insert into insertconflicttest values (1, 'Apple') on conflict do update set fru
 ERROR:  ON CONFLICT DO UPDATE requires inference specification or constraint name
 LINE 1: ...nsert into insertconflicttest values (1, 'Apple') on conflic...
                                                              ^
-HINT:  For example, ON CONFLICT ON CONFLICT (<column>).
+HINT:  For example, ON CONFLICT (<column>).
 -- inference succeeds:
 insert into insertconflicttest values (1, 'Apple') on conflict (key) do update set fruit = excluded.fruit;
 insert into insertconflicttest values (2, 'Orange') on conflict (key, key, key) do update set fruit = excluded.fruit;
