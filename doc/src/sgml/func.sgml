@@ -10302,15 +10302,17 @@ table2-mapping
        <row>
         <entry><literal>-</literal></entry>
         <entry><type>text</type></entry>
-        <entry>Delete the field with a specified key, or element with this
-        value</entry>
+        <entry>Delete key/value pair or <emphasis>string</emphasis>
+        element from left operand.  Key/value pairs are matched based
+        on their key value.</entry>
         <entry><literal>'{"a": "b"}'::jsonb - 'a' </literal></entry>
        </row>
        <row>
         <entry><literal>-</literal></entry>
         <entry><type>integer</type></entry>
-        <entry>Delete the field or element with specified index (Negative
-        integers count from the end)</entry>
+        <entry>Delete the array element with specified index (Negative
+        integers count from the end).  Throws an error if top level
+        container is not an array.</entry>
         <entry><literal>'["a", "b"]'::jsonb - 1 </literal></entry>
        </row>
        <row>
@@ -17260,8 +17262,8 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        </entry>
       </row>
 
-      <row id="pg-replication-origin-create">
-       <entry>
+      <row>
+       <entry id="pg-replication-origin-create">
         <indexterm>
          <primary>pg_replication_origin_create</primary>
         </indexterm>
@@ -17276,8 +17278,8 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        </entry>
       </row>
 
-      <row id="pg-replication-origin-drop">
-       <entry>
+      <row>
+       <entry id="pg-replication-origin-drop">
         <indexterm>
          <primary>pg_replication_origin_drop</primary>
         </indexterm>
@@ -17308,8 +17310,8 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        </entry>
       </row>
 
-      <row id="pg-replication-origin-session-setup">
-       <entry>
+      <row>
+       <entry id="pg-replication-origin-session-setup">
         <indexterm>
          <primary>pg_replication_origin_session_setup</primary>
         </indexterm>
@@ -17357,8 +17359,8 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        </entry>
       </row>
 
-      <row id="pg-replication-origin-session-progress">
-       <entry>
+      <row>
+       <entry id="pg-replication-origin-session-progress">
         <indexterm>
          <primary>pg_replication_origin_session_progress</primary>
         </indexterm>
@@ -17375,8 +17377,8 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        </entry>
       </row>
 
-      <row id="pg-replication-origin-xact-setup">
-       <entry>
+      <row>
+       <entry id="pg-replication-origin-xact-setup">
         <indexterm>
          <primary>pg_replication_origin_xact_setup</primary>
         </indexterm>
@@ -17394,8 +17396,8 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        </entry>
       </row>
 
-      <row id="pg-replication-origin-xact-reset">
-       <entry>
+      <row>
+       <entry id="pg-replication-origin-xact-reset">
         <indexterm>
          <primary>pg_replication_origin_xact_reset</primary>
         </indexterm>
@@ -17429,8 +17431,8 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        </entry>
       </row>
 
-      <row id="pg-replication-origin-progress">
-       <entry>
+      <row>
+       <entry id="pg-replication-origin-progress">
         <indexterm>
          <primary>pg_replication_origin_progress</primary>
         </indexterm>
