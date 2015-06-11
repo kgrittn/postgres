@@ -2558,7 +2558,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_S
 		},
 		&old_snapshot_threshold,
-		-1, -1, INT_MAX,
+		-1, -1, SECS_PER_MINUTE * MINS_PER_HOUR * HOURS_PER_DAY * DAYS_PER_MONTH * 2,
 		NULL, NULL, NULL
 	},
 
