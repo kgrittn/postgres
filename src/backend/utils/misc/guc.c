@@ -8193,7 +8193,7 @@ show_all_settings(PG_FUNCTION_ARGS)
  * show_all_file_settings
  *
  * returns a table of all parameter settings in all configuration files
- * which includes the config file path/name, filename, a sequence number
+ * which includes the config file path/name, the line number, a sequence number
  * indicating when we loaded it, the parameter name, and the value it is
  * set to.
  *
@@ -8219,8 +8219,8 @@ show_all_file_settings(PG_FUNCTION_ARGS)
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
 		/*
-		 * need a tuple descriptor representing NUM_PG_SETTINGS_ATTS columns
-		 * of the appropriate types
+		 * need a tuple descriptor representing NUM_PG_FILE_SETTINGS_ATTS
+		 * columns of the appropriate types
 		 */
 
 		tupdesc = CreateTemplateTupleDesc(NUM_PG_FILE_SETTINGS_ATTS, false);
@@ -8290,7 +8290,6 @@ show_all_file_settings(PG_FUNCTION_ARGS)
 	{
 		SRF_RETURN_DONE(funcctx);
 	}
-
 }
 
 static char *
