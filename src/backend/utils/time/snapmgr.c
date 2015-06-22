@@ -229,7 +229,7 @@ SnapMgrInit(void)
 }
 
 /*
- * Get current timestamp for snapshots as int64 the never moves backward.
+ * Get current timestamp for snapshots as int64 that never moves backward.
  */
 int64
 GetSnapshotCurrentTimestamp(void)
