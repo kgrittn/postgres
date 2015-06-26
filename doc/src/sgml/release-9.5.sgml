@@ -221,6 +221,15 @@
 
       <listitem>
        <para>
+        Extend the infrastructure that allows sorting to be performed by
+        inlined, non-<acronym>SQL</acronym>-callable comparison functions to
+        cover <command>CREATE INDEX</>, <command>REINDEX</>, and
+        <command>CLUSTER</> (Peter Geoghegan)
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
         Improve in-memory hash performance (Tomas Vondra, Robert Haas)
        </para>
       </listitem>
@@ -1690,6 +1699,12 @@
         Move <application>pg_upgrade</> from <filename>contrib</> to
         <filename>src/bin</> (Peter Eisentraut)
        </para>
+
+       <para>
+        In connection with this change, the functionality previously
+        provided by the <application>pg_upgrade_support</> module has been
+        moved into the core server.
+       </para>
       </listitem>
 
       <listitem>
@@ -1719,13 +1734,6 @@
         Remove support for upgrading from 8.3 clusters (Bruce Momjian)
        </para>
       </listitem>
-
-     <listitem>
-      <para>
-       Move <application>pg_upgrade_support</> code into backend and
-       remove the module (Peter Eisentraut)
-      </para>
-     </listitem>
 
      </itemizedlist>
 
