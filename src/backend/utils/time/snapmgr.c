@@ -71,8 +71,7 @@ int			old_snapshot_threshold;
 
 /*
  * Variables for old snapshot handling are shared among processes and may only
- * move forward.  We skip the estimation function for this structure because
- * it is small enough to be covered by the "miscellaneous" allowance.
+ * move forward.
  */
 
 typedef struct OldSnapshotControlData
@@ -82,6 +81,9 @@ typedef struct OldSnapshotControlData
 	slock_t		mutex_threshold;		/* protect threshold fields */
 	int64		threshold_timestamp;	/* earlier snapshot is old */
 	TransactionId threshold_xid;		/* earlier xid may be gone */
+
+	/* Keep one xid per minute for old snapshot error handling. */
+	TransactionId xid_by_minute[XID_AGING_BUCKETS];
 }	OldSnapshotControlData;
 
 typedef struct OldSnapshotControlData *OldSnapshotControl;
@@ -202,6 +204,12 @@ typedef struct SerializedSnapshotData
 	bool		takenDuringRecovery;
 	CommandId	curcid;
 } SerializedSnapshotData;
+
+Size
+SnapMgrShmemSize(void)
+{
+	return sizeof(OldSnapshotControlData);
+}
 
 /*
  * Initialize for managing old snapshot detection.
