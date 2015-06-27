@@ -66,14 +66,13 @@
 /*
  * GUC parameters
  */
-int			old_snapshot_threshold;
+int			old_snapshot_threshold;		/* number of minutes, -1 disables */
 
 
 /*
  * Variables for old snapshot handling are shared among processes and may only
  * move forward.
  */
-
 typedef struct OldSnapshotControlData
 {
 	slock_t		mutex_current;			/* protect current timestamp */
@@ -82,7 +81,33 @@ typedef struct OldSnapshotControlData
 	int64		threshold_timestamp;	/* earlier snapshot is old */
 	TransactionId threshold_xid;		/* earlier xid may be gone */
 
-	/* Keep one xid per minute for old snapshot error handling. */
+	/*
+	 * Keep one xid per minute for old snapshot error handling.
+	 *
+	 * Use a circular buffer with a head offset, a length, and a timestamp
+	 * corresponding to the xid at the head offset.  A length of zero means
+	 * that there are no times stored; a length of XID_AGING_BUCKETS means
+	 * that the buffer is full and the head must be advanced to add new
+	 * entries.  Use timestamps aligned to minute boundaries, since that seems
+	 * less surprising than aligning based on the first usage timestamp.
+	 *
+	 * It is OK if the xid for a given time slot is from earlier than
+	 * calculated by adding the number of minutes corresponding to the
+	 * (possibly wrapped) distance from the head offset to the time of the
+	 * head entry, since that just results in the vacuuming of old tuples
+	 * being slightly less aggressive.  It would not be OK for it to be off in
+	 * the other direction, since it might result in vacuuming tuples that are
+	 * still expected to be there.
+	 *
+	 * Use of an SLRU was considered but not chosen because it is more
+	 * heavyweight than is needed for this, and would probably not be any less
+	 * code to implement.
+	 *
+	 * Persistence is not needed.
+	 */
+	int			head_offset;		/* subscript of oldest tracked time */
+	int64		head_timestamp;		/* time corresponding to head xid */
+	int			count_used;			/* how many slots are in use */
 	TransactionId xid_by_minute[XID_AGING_BUCKETS];
 }	OldSnapshotControlData;
 
@@ -233,6 +258,9 @@ SnapMgrInit(void)
 		SpinLockInit(&oldSnapshotControl->mutex_threshold);
 		oldSnapshotControl->threshold_timestamp = 0;
 		oldSnapshotControl->threshold_xid = InvalidTransactionId;
+		oldSnapshotControl->head_offset = 0;
+		oldSnapshotControl->head_timestamp = 0;
+		oldSnapshotControl->count_used = 0;
 	}
 }
 
