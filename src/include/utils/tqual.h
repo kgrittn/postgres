@@ -15,7 +15,6 @@
 #ifndef TQUAL_H
 #define TQUAL_H
 
-#include "utils/hsearch.h"
 #include "utils/snapshot.h"
 
 
