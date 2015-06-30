@@ -68,13 +68,15 @@
  */
 int			old_snapshot_threshold;		/* number of minutes, -1 disables */
 
-
 /*
- * Variables for old snapshot handling are shared among processes and may only
- * move forward.
+ * Structure for dealing with old_snapshot_threshold implementation.
  */
 typedef struct OldSnapshotControlData
 {
+	/*
+	 * Variables for old snapshot handling are shared among processes and are
+	 * only allowed to move forward.
+	 */
 	slock_t		mutex_current;			/* protect current timestamp */
 	int64		current_timestamp;		/* latest snapshot timestamp */
 	slock_t		mutex_threshold;		/* protect threshold fields */
@@ -262,43 +264,6 @@ SnapMgrInit(void)
 		oldSnapshotControl->head_timestamp = 0;
 		oldSnapshotControl->count_used = 0;
 	}
-}
-
-/*
- * Get current timestamp for snapshots as int64 that never moves backward.
- */
-int64
-GetSnapshotCurrentTimestamp(void)
-{
-	int64		now = GetCurrentIntegerTimestamp();
-
-	/*
-	 * Don't let time move backward; if it hasn't advanced, use the old value.
-	 */
-	SpinLockAcquire(&oldSnapshotControl->mutex_current);
-	if (now <= oldSnapshotControl->current_timestamp)
-		now = oldSnapshotControl->current_timestamp;
-	else
-		oldSnapshotControl->current_timestamp = now;
-	SpinLockRelease(&oldSnapshotControl->mutex_current);
-
-	return now;
-}
-
-/*
- * Get timestamp through which vacuum can process based on last stored value
- * for threshold_timestamp.
- */
-int64
-GetSnapshotThresholdTimestamp(void)
-{
-	int64		threshold_timestamp;
-
-	SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
-	threshold_timestamp = oldSnapshotControl->threshold_timestamp;
-	SpinLockRelease(&oldSnapshotControl->mutex_threshold);
-
-	return threshold_timestamp;
 }
 
 /*
@@ -1245,33 +1210,6 @@ pg_export_snapshot(PG_FUNCTION_ARGS)
 
 
 /*
- * TransactionIdLimitedForOldSnapshots -- apply old snapshot limit, if any
- */
-TransactionId
-TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
-									Relation relation)
-{
-	if (TransactionIdIsNormal(recentXmin)
-		&& old_snapshot_threshold >= 0
-		&& RelationNeedsWAL(relation)
-		&& !IsCatalogRelation(relation)
-		&& !RelationIsAccessibleInLogicalDecoding(relation))
-	{
-		TransactionId xlimit;
-
-		xlimit = ShmemVariableCache->latestCompletedXid;
-		Assert(TransactionIdIsNormal(xlimit));
-		xlimit -= old_snapshot_threshold;
-		TransactionIdAdvance(xlimit);
-		if (NormalTransactionIdFollows(xlimit, recentXmin))
-			return xlimit;
-	}
-
-	return recentXmin;
-}
-
-
-/*
  * Parsing subroutines for ImportSnapshot: parse a line with the given
  * prefix followed by a value, and advance *s to the next line.  The
  * filename is provided for use in error messages.
@@ -1558,6 +1496,198 @@ ThereAreNoPriorRegisteredSnapshots(void)
 
 	return false;
 }
+
+
+/*
+ * TransactionIdLimitedForOldSnapshots -- apply old snapshot limit, if any
+ */
+TransactionId
+TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
+									Relation relation)
+{
+	if (TransactionIdIsNormal(recentXmin)
+		&& old_snapshot_threshold >= 0
+		&& RelationNeedsWAL(relation)
+		&& !IsCatalogRelation(relation)
+		&& !RelationIsAccessibleInLogicalDecoding(relation))
+	{
+		TransactionId xlimit;
+
+		xlimit = ShmemVariableCache->latestCompletedXid;
+		Assert(TransactionIdIsNormal(xlimit));
+		xlimit -= old_snapshot_threshold;
+		TransactionIdAdvance(xlimit);
+		if (NormalTransactionIdFollows(xlimit, recentXmin))
+			return xlimit;
+	}
+
+	return recentXmin;
+}
+
+static int64
+AlignTimestampToMinuteBoundary(int64 ts)
+{
+	int64		retval = ts + (USECS_PER_MINUTE - 1);
+
+	return retval - (retval % USECS_PER_MINUTE);
+}
+
+/*
+ * Take care of the circular buffer that maps time to xid.
+ */
+void
+MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
+{
+	int64		ts;
+
+	/*
+	 * We don't want to do something stupid with unusual values, but we don't
+	 * want to litter the log with warnings or break otherwise normal
+	 * processing for this feature; so if something seems unreasonable, just
+	 * log at DEBUG level and return without doing anything.
+	 */
+	if (whenTaken < 0)
+	{
+		elog(DEBUG1,
+			 "MaintainOldSnapshotTimeMapping called with negative whenTaken = %ld",
+			 (long) whenTaken);
+		return;
+	}
+	if (!TransactionIdIsNormal(xmin))
+	{
+		elog(DEBUG1,
+			 "MaintainOldSnapshotTimeMapping called with xmin = %lu",
+			 (unsigned long) xmin);
+		return;
+	}
+
+	ts = AlignTimestampToMinuteBoundary(whenTaken);
+
+	LWLockAcquire(OldSnapshotTimeMapLock, LW_EXCLUSIVE);
+
+	Assert(oldSnapshotControl->head_offset >= 0);
+	Assert(oldSnapshotControl->head_offset < XID_AGING_BUCKETS);
+	Assert((oldSnapshotControl->head_timestamp % USECS_PER_MINUTE) == 0);
+	Assert(oldSnapshotControl->count_used >= 0);
+	Assert(oldSnapshotControl->count_used <= XID_AGING_BUCKETS);
+
+	if (oldSnapshotControl->count_used == 0)
+	{
+		/* set up first entry for empty mapping */
+		oldSnapshotControl->head_offset = 0;
+		oldSnapshotControl->head_timestamp = ts;
+		oldSnapshotControl->count_used = 1;
+		oldSnapshotControl->xid_by_minute[0] = xmin;
+	}
+	else if (ts < oldSnapshotControl->head_timestamp)
+	{
+		/* old ts; log it at DEBUG */
+		LWLockRelease(OldSnapshotTimeMapLock);
+		elog(DEBUG1,
+			 "MaintainOldSnapshotTimeMapping called with old whenTaken = %ld",
+			 (long) whenTaken);
+		return;
+	}
+	else if (ts <= (oldSnapshotControl->head_timestamp +
+					((oldSnapshotControl->count_used - 1)
+					 * USECS_PER_MINUTE)))
+	{
+		/* existing mapping; advance xid if possible */
+		int		bucket = (oldSnapshotControl->head_offset
+						  + ((ts - oldSnapshotControl->head_timestamp)
+							 / USECS_PER_MINUTE))
+						 % XID_AGING_BUCKETS;
+
+		if (TransactionIdPrecedes(oldSnapshotControl->xid_by_minute[bucket], xmin))
+			oldSnapshotControl->xid_by_minute[bucket] = xmin;
+	}
+	else
+	{
+		/* We need a new bucket, but it might not be the very next one. */
+		int		advance = ((ts - oldSnapshotControl->head_timestamp)
+						   / USECS_PER_MINUTE);
+
+		oldSnapshotControl->head_timestamp = ts;
+
+		if (advance >= XID_AGING_BUCKETS)
+		{
+			/* Advance is so far that all old data is junk; start over. */
+			oldSnapshotControl->head_offset = 0;
+			oldSnapshotControl->count_used = 1;
+			oldSnapshotControl->xid_by_minute[0] = xmin;
+		}
+		else
+		{
+			/* Store the new value in one or more buckets. */
+			int i;
+
+			for (i = 0; i < advance; i++)
+			{
+				if (oldSnapshotControl->count_used == XID_AGING_BUCKETS)
+				{
+					/* Map full and new value replaces old head. */
+					int		old_head = oldSnapshotControl->head_offset;
+
+					if (old_head == (XID_AGING_BUCKETS - 1))
+						oldSnapshotControl->head_offset = 0;
+					else
+						oldSnapshotControl->head_offset = old_head + 1;
+					oldSnapshotControl->xid_by_minute[old_head] = xmin;
+				}
+				else
+				{
+					/* Extend map to unused entry. */
+					int		new_tail = (oldSnapshotControl->head_offset
+										+ oldSnapshotControl->count_used)
+									   % XID_AGING_BUCKETS;
+
+					oldSnapshotControl->count_used++;
+					oldSnapshotControl->xid_by_minute[new_tail] = xmin;
+				}
+			}
+		}
+	}
+
+	LWLockRelease(OldSnapshotTimeMapLock);
+}
+
+/*
+ * Get current timestamp for snapshots as int64 that never moves backward.
+ */
+int64
+GetSnapshotCurrentTimestamp(void)
+{
+	int64		now = GetCurrentIntegerTimestamp();
+
+	/*
+	 * Don't let time move backward; if it hasn't advanced, use the old value.
+	 */
+	SpinLockAcquire(&oldSnapshotControl->mutex_current);
+	if (now <= oldSnapshotControl->current_timestamp)
+		now = oldSnapshotControl->current_timestamp;
+	else
+		oldSnapshotControl->current_timestamp = now;
+	SpinLockRelease(&oldSnapshotControl->mutex_current);
+
+	return now;
+}
+
+/*
+ * Get timestamp through which vacuum can process based on last stored value
+ * for threshold_timestamp.
+ */
+int64
+GetSnapshotThresholdTimestamp(void)
+{
+	int64		threshold_timestamp;
+
+	SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
+	threshold_timestamp = oldSnapshotControl->threshold_timestamp;
+	SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+
+	return threshold_timestamp;
+}
+
 
 /*
  * Setup a snapshot that replaces normal catalog snapshots that allows catalog
