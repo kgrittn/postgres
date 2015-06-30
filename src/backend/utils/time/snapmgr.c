@@ -1498,6 +1498,54 @@ ThereAreNoPriorRegisteredSnapshots(void)
 }
 
 
+static int64
+AlignTimestampToMinuteBoundary(int64 ts)
+{
+	int64		retval = ts + (USECS_PER_MINUTE - 1);
+
+	return retval - (retval % USECS_PER_MINUTE);
+}
+
+/*
+ * Get current timestamp for snapshots as int64 that never moves backward.
+ */
+int64
+GetSnapshotCurrentTimestamp(void)
+{
+	int64		now = GetCurrentIntegerTimestamp();
+
+	/*
+	 * Don't let time move backward; if it hasn't advanced, use the old value.
+	 */
+	SpinLockAcquire(&oldSnapshotControl->mutex_current);
+	if (now <= oldSnapshotControl->current_timestamp)
+		now = oldSnapshotControl->current_timestamp;
+	else
+		oldSnapshotControl->current_timestamp = now;
+	SpinLockRelease(&oldSnapshotControl->mutex_current);
+
+	return now;
+}
+
+/*
+ * Get timestamp through which vacuum may have processed based on last stored
+ * value for threshold_timestamp.
+ *
+ * XXX: If we can trust a read of an int64 value to be atomic, we can skip the
+ * spinlock here.
+ */
+int64
+GetOldSnapshotThresholdTimestamp(void)
+{
+	int64		threshold_timestamp;
+
+	SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
+	threshold_timestamp = oldSnapshotControl->threshold_timestamp;
+	SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+
+	return threshold_timestamp;
+}
+
 /*
  * TransactionIdLimitedForOldSnapshots -- apply old snapshot limit, if any
  */
@@ -1511,25 +1559,55 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 		&& !IsCatalogRelation(relation)
 		&& !RelationIsAccessibleInLogicalDecoding(relation))
 	{
-		TransactionId xlimit;
+		int64		ts;
+		TransactionId xlimit = recentXmin;
+		bool		same_ts_as_threshold = false;
 
-		xlimit = ShmemVariableCache->latestCompletedXid;
+		ts = AlignTimestampToMinuteBoundary(GetSnapshotCurrentTimestamp())
+			 - (old_snapshot_threshold * USECS_PER_MINUTE);
+
+		/* Check for fast exit without LW locking. */
+		SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
+		if (ts == oldSnapshotControl->threshold_timestamp)
+		{
+			xlimit = oldSnapshotControl->threshold_xid;
+			same_ts_as_threshold = true;
+		}
+		SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+
+		if (!same_ts_as_threshold)
+		{
+			LWLockAcquire(OldSnapshotTimeMapLock, LW_SHARED);
+
+			if (oldSnapshotControl->count_used > 0
+				&& ts >= oldSnapshotControl->head_timestamp)
+			{
+				int		offset;
+
+				offset = ((ts - oldSnapshotControl->head_timestamp)
+						  / USECS_PER_MINUTE);
+				if (offset > oldSnapshotControl->count_used - 1)
+					offset = oldSnapshotControl->count_used - 1;
+				offset = (oldSnapshotControl->head_offset + offset)
+						% XID_AGING_BUCKETS;
+				xlimit = oldSnapshotControl->xid_by_minute[offset];
+
+				SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
+				oldSnapshotControl->threshold_timestamp = ts;
+				oldSnapshotControl->threshold_xid = xlimit;
+				SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+			}
+
+			LWLockRelease(OldSnapshotTimeMapLock);
+		}
+
 		Assert(TransactionIdIsNormal(xlimit));
-		xlimit -= old_snapshot_threshold;
-		TransactionIdAdvance(xlimit);
+
 		if (NormalTransactionIdFollows(xlimit, recentXmin))
 			return xlimit;
 	}
 
 	return recentXmin;
-}
-
-static int64
-AlignTimestampToMinuteBoundary(int64 ts)
-{
-	int64		retval = ts + (USECS_PER_MINUTE - 1);
-
-	return retval - (retval % USECS_PER_MINUTE);
 }
 
 /*
@@ -1649,43 +1727,6 @@ MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
 	}
 
 	LWLockRelease(OldSnapshotTimeMapLock);
-}
-
-/*
- * Get current timestamp for snapshots as int64 that never moves backward.
- */
-int64
-GetSnapshotCurrentTimestamp(void)
-{
-	int64		now = GetCurrentIntegerTimestamp();
-
-	/*
-	 * Don't let time move backward; if it hasn't advanced, use the old value.
-	 */
-	SpinLockAcquire(&oldSnapshotControl->mutex_current);
-	if (now <= oldSnapshotControl->current_timestamp)
-		now = oldSnapshotControl->current_timestamp;
-	else
-		oldSnapshotControl->current_timestamp = now;
-	SpinLockRelease(&oldSnapshotControl->mutex_current);
-
-	return now;
-}
-
-/*
- * Get timestamp through which vacuum can process based on last stored value
- * for threshold_timestamp.
- */
-int64
-GetSnapshotThresholdTimestamp(void)
-{
-	int64		threshold_timestamp;
-
-	SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
-	threshold_timestamp = oldSnapshotControl->threshold_timestamp;
-	SpinLockRelease(&oldSnapshotControl->mutex_threshold);
-
-	return threshold_timestamp;
 }
 
 

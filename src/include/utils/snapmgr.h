@@ -43,7 +43,7 @@
 		 && (snapshot)->satisfies == HeapTupleSatisfiesMVCC \
 		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
 		 && PageGetLSN(page) > (snapshot)->lsn \
-		 && (snapshot)->whenTaken < GetSnapshotThresholdTimestamp()) \
+		 && (snapshot)->whenTaken < GetOldSnapshotThresholdTimestamp()) \
 			ereport(ERROR, \
 					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
 					 errmsg("snapshot too old"))); \
@@ -56,7 +56,7 @@ extern int	old_snapshot_threshold;
 extern Size SnapMgrShmemSize(void);
 extern void SnapMgrInit(void);
 extern int64 GetSnapshotCurrentTimestamp(void);
-extern int64 GetSnapshotThresholdTimestamp(void);
+extern int64 GetOldSnapshotThresholdTimestamp(void);
 
 extern bool FirstSnapshotSet;
 
