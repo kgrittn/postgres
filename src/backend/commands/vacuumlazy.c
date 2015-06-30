@@ -271,8 +271,7 @@ lazy_vacuum_rel(Relation onerel, int options, VacuumParams *params,
 	possibly_freeable = vacrelstats->rel_pages - vacrelstats->nonempty_pages;
 	if (possibly_freeable > 0 &&
 		(possibly_freeable >= REL_TRUNCATE_MINIMUM ||
-		 possibly_freeable >= vacrelstats->rel_pages / REL_TRUNCATE_FRACTION) &&
-		old_snapshot_threshold < 0)
+		 possibly_freeable >= vacrelstats->rel_pages / REL_TRUNCATE_FRACTION))
 		lazy_truncate_heap(onerel, vacrelstats);
 
 	/* Vacuum the Free Space Map */
@@ -1556,6 +1555,9 @@ lazy_truncate_heap(Relation onerel, LVRelStats *vacrelstats)
  * Rescan end pages to verify that they are (still) empty of tuples.
  *
  * Returns number of nondeletable pages (last nonempty page + 1).
+ *
+ * FIXME:  Keep track of maximum LSN while scanning backward, keep last empty
+ *         page, and set its LSN to the max.
  */
 static BlockNumber
 count_nondeletable_pages(Relation onerel, LVRelStats *vacrelstats)
