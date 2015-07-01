@@ -102,7 +102,6 @@ _bt_search(Relation rel, int keysz, ScanKey scankey, bool nextkey,
 	/* If index is empty and access = BT_READ, no root page is created. */
 	if (!BufferIsValid(*bufP))
 	{
-		/* FIXME: old snapshot checking special case here? */
 		return (BTStack) NULL;
 	}
 
