@@ -1547,7 +1547,15 @@ GetOldSnapshotThresholdTimestamp(void)
 }
 
 /*
- * TransactionIdLimitedForOldSnapshots -- apply old snapshot limit, if any
+ * TransactionIdLimitedForOldSnapshots
+ *
+ * Apply old snapshot limit, if any.  This is intended to be called for page
+ * pruning and table vacuuming, to allow old_snapshot_threshold to override
+ * the normal global xmin value.  Actual testing for snapshot too old will be
+ * based on whether a snapshot timestamp is prior to the threshold timestamp
+ * set in this function.  Because the GUC is allowed to change, it cannot be
+ * directly used to determine when to throw the error -- it has to be based on
+ * what was set here.
  */
 TransactionId
 TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
