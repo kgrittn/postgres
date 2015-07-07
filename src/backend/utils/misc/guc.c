@@ -2556,7 +2556,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"old_snapshot_threshold", PGC_SIGHUP, RESOURCES_ASYNCHRONOUS,
+		{"old_snapshot_threshold", PGC_POSTMASTER, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Time before a snapshot is too old to read pages changed after the snapshot was taken."),
 			gettext_noop("A value of -1 disables this feature."),
 			GUC_UNIT_MIN
