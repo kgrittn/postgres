@@ -94,14 +94,18 @@ SET row_security TO ON;
 SELECT * FROM document WHERE f_leak(dtitle) ORDER BY did;
 SELECT * FROM document NATURAL JOIN category WHERE f_leak(dtitle) ORDER BY did;
 
-SELECT * FROM document TABLESAMPLE BERNOULLI (50) REPEATABLE(1) WHERE f_leak(dtitle) ORDER BY did;
+-- try a sampled version
+SELECT * FROM document TABLESAMPLE BERNOULLI(50) REPEATABLE(0)
+  WHERE f_leak(dtitle) ORDER BY did;
 
 -- viewpoint from rls_regress_user2
 SET SESSION AUTHORIZATION rls_regress_user2;
 SELECT * FROM document WHERE f_leak(dtitle) ORDER BY did;
 SELECT * FROM document NATURAL JOIN category WHERE f_leak(dtitle) ORDER BY did;
 
-SELECT * FROM document TABLESAMPLE BERNOULLI (50) REPEATABLE(1) WHERE f_leak(dtitle) ORDER BY did;
+-- try a sampled version
+SELECT * FROM document TABLESAMPLE BERNOULLI(50) REPEATABLE(0)
+  WHERE f_leak(dtitle) ORDER BY did;
 
 EXPLAIN (COSTS OFF) SELECT * FROM document WHERE f_leak(dtitle);
 EXPLAIN (COSTS OFF) SELECT * FROM document NATURAL JOIN category WHERE f_leak(dtitle);
@@ -1024,7 +1028,7 @@ COPY (SELECT * FROM copy_t ORDER BY a ASC) TO STDOUT WITH DELIMITER ','; --ok
 SET row_security TO FORCE;
 COPY (SELECT * FROM copy_t ORDER BY a ASC) TO STDOUT WITH DELIMITER ','; --ok
 
--- Check COPY TO as user without permissions.SET row_security TO OFF;
+-- Check COPY TO as user without permissions. SET row_security TO OFF;
 SET SESSION AUTHORIZATION rls_regress_user2;
 SET row_security TO OFF;
 COPY (SELECT * FROM copy_t ORDER BY a ASC) TO STDOUT WITH DELIMITER ','; --fail - insufficient to bypass rls
@@ -1032,6 +1036,54 @@ SET row_security TO ON;
 COPY (SELECT * FROM copy_t ORDER BY a ASC) TO STDOUT WITH DELIMITER ','; --fail - permission denied
 SET row_security TO FORCE;
 COPY (SELECT * FROM copy_t ORDER BY a ASC) TO STDOUT WITH DELIMITER ','; --fail - permission denied
+
+-- Check COPY relation TO; keep it just one row to avoid reordering issues
+RESET SESSION AUTHORIZATION;
+SET row_security TO ON;
+CREATE TABLE copy_rel_to (a integer, b text);
+CREATE POLICY p1 ON copy_rel_to USING (a % 2 = 0);
+
+ALTER TABLE copy_rel_to ENABLE ROW LEVEL SECURITY;
+
+GRANT ALL ON copy_rel_to TO rls_regress_user1, rls_regress_exempt_user;
+
+INSERT INTO copy_rel_to VALUES (1, md5('1'));
+
+-- Check COPY TO as Superuser/owner.
+RESET SESSION AUTHORIZATION;
+SET row_security TO OFF;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ',';
+SET row_security TO ON;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ',';
+SET row_security TO FORCE;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ',';
+
+-- Check COPY TO as user with permissions.
+SET SESSION AUTHORIZATION rls_regress_user1;
+SET row_security TO OFF;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ','; --fail - insufficient to bypass rls
+SET row_security TO ON;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ','; --ok
+SET row_security TO FORCE;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ','; --ok
+
+-- Check COPY TO as user with permissions and BYPASSRLS
+SET SESSION AUTHORIZATION rls_regress_exempt_user;
+SET row_security TO OFF;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ','; --ok
+SET row_security TO ON;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ','; --ok
+SET row_security TO FORCE;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ','; --ok
+
+-- Check COPY TO as user without permissions. SET row_security TO OFF;
+SET SESSION AUTHORIZATION rls_regress_user2;
+SET row_security TO OFF;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ','; --fail - permission denied
+SET row_security TO ON;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ','; --fail - permission denied
+SET row_security TO FORCE;
+COPY copy_rel_to TO STDOUT WITH DELIMITER ','; --fail - permission denied
 
 -- Check COPY FROM as Superuser/owner.
 RESET SESSION AUTHORIZATION;
@@ -1086,6 +1138,56 @@ COPY copy_t FROM STDIN; --fail - permission denied.
 
 RESET SESSION AUTHORIZATION;
 DROP TABLE copy_t;
+DROP TABLE copy_rel_to CASCADE;
+
+-- Check WHERE CURRENT OF
+SET SESSION AUTHORIZATION rls_regress_user0;
+
+CREATE TABLE current_check (currentid int, payload text, rlsuser text);
+GRANT ALL ON current_check TO PUBLIC;
+
+INSERT INTO current_check VALUES
+    (1, 'abc', 'rls_regress_user1'),
+    (2, 'bcd', 'rls_regress_user1'),
+    (3, 'cde', 'rls_regress_user1'),
+    (4, 'def', 'rls_regress_user1');
+
+CREATE POLICY p1 ON current_check FOR SELECT USING (currentid % 2 = 0);
+CREATE POLICY p2 ON current_check FOR DELETE USING (currentid = 4 AND rlsuser = current_user);
+CREATE POLICY p3 ON current_check FOR UPDATE USING (currentid = 4) WITH CHECK (rlsuser = current_user);
+
+ALTER TABLE current_check ENABLE ROW LEVEL SECURITY;
+
+SET SESSION AUTHORIZATION rls_regress_user1;
+
+-- Can SELECT even rows
+SELECT * FROM current_check;
+
+-- Cannot UPDATE row 2
+UPDATE current_check SET payload = payload || '_new' WHERE currentid = 2 RETURNING *;
+
+BEGIN;
+
+DECLARE current_check_cursor SCROLL CURSOR FOR SELECT * FROM current_check;
+-- Returns rows that can be seen according to SELECT policy, like plain SELECT
+-- above (even rows)
+FETCH ABSOLUTE 1 FROM current_check_cursor;
+-- Still cannot UPDATE row 2 through cursor
+UPDATE current_check SET payload = payload || '_new' WHERE CURRENT OF current_check_cursor RETURNING *;
+-- Can update row 4 through cursor, which is the next visible row
+FETCH RELATIVE 1 FROM current_check_cursor;
+UPDATE current_check SET payload = payload || '_new' WHERE CURRENT OF current_check_cursor RETURNING *;
+SELECT * FROM current_check;
+-- Plan should be a subquery TID scan
+EXPLAIN (COSTS OFF) UPDATE current_check SET payload = payload WHERE CURRENT OF current_check_cursor;
+-- Similarly can only delete row 4
+FETCH ABSOLUTE 1 FROM current_check_cursor;
+DELETE FROM current_check WHERE CURRENT OF current_check_cursor RETURNING *;
+FETCH RELATIVE 1 FROM current_check_cursor;
+DELETE FROM current_check WHERE CURRENT OF current_check_cursor RETURNING *;
+SELECT * FROM current_check;
+
+COMMIT;
 
 --
 -- Collation support

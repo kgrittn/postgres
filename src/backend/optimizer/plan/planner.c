@@ -505,14 +505,10 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 		if (rte->rtekind == RTE_RELATION)
 		{
 			if (rte->tablesample)
-			{
-				rte->tablesample->args = (List *)
-					preprocess_expression(root, (Node *) rte->tablesample->args,
+				rte->tablesample = (TableSampleClause *)
+					preprocess_expression(root,
+										  (Node *) rte->tablesample,
 										  EXPRKIND_TABLESAMPLE);
-				rte->tablesample->repeatable = (Node *)
-					preprocess_expression(root, rte->tablesample->repeatable,
-										  EXPRKIND_TABLESAMPLE);
-			}
 		}
 		else if (rte->rtekind == RTE_SUBQUERY)
 		{
@@ -574,13 +570,12 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 
 		if (contain_agg_clause(havingclause) ||
 			contain_volatile_functions(havingclause) ||
-			contain_subplans(havingclause) ||
-			parse->groupingSets)
+			contain_subplans(havingclause))
 		{
 			/* keep it in HAVING */
 			newHaving = lappend(newHaving, havingclause);
 		}
-		else if (parse->groupClause)
+		else if (parse->groupClause && !parse->groupingSets)
 		{
 			/* move it to WHERE */
 			parse->jointree->quals = (Node *)
@@ -697,11 +692,14 @@ preprocess_expression(PlannerInfo *root, Node *expr, int kind)
 	 * If the query has any join RTEs, replace join alias variables with
 	 * base-relation variables.  We must do this before sublink processing,
 	 * else sublinks expanded out from join aliases would not get processed.
-	 * We can skip it in non-lateral RTE functions and VALUES lists, however,
-	 * since they can't contain any Vars of the current query level.
+	 * We can skip it in non-lateral RTE functions, VALUES lists, and
+	 * TABLESAMPLE clauses, however, since they can't contain any Vars of the
+	 * current query level.
 	 */
 	if (root->hasJoinRTEs &&
-		!(kind == EXPRKIND_RTFUNC || kind == EXPRKIND_VALUES))
+		!(kind == EXPRKIND_RTFUNC ||
+		  kind == EXPRKIND_VALUES ||
+		  kind == EXPRKIND_TABLESAMPLE))
 		expr = flatten_join_alias_vars(root, expr);
 
 	/*
@@ -2402,13 +2400,8 @@ build_grouping_chain(PlannerInfo *root,
 	 * Prepare the grpColIdx for the real Agg node first, because we may need
 	 * it for sorting
 	 */
-	if (list_length(rollup_groupclauses) > 1)
-	{
-		Assert(rollup_lists && llast(rollup_lists));
-
-		top_grpColIdx =
-			remap_groupColIdx(root, llast(rollup_groupclauses));
-	}
+	if (parse->groupingSets)
+		top_grpColIdx = remap_groupColIdx(root, llast(rollup_groupclauses));
 
 	/*
 	 * If we need a Sort operation on the input, generate that.

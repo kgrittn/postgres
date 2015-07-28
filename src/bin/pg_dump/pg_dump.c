@@ -485,6 +485,11 @@ main(int argc, char **argv)
 
 			case 'Z':			/* Compression Level */
 				compressLevel = atoi(optarg);
+				if (compressLevel < 0 || compressLevel > 9)
+				{
+					write_msg(NULL, "compression level must be in range 0..9\n");
+					exit_nicely(1);
+				}
 				break;
 
 			case 0:
@@ -3007,10 +3012,10 @@ dumpPolicy(Archive *fout, DumpOptions *dopt, PolicyInfo *polinfo)
 		appendPQExpBuffer(query, " TO %s", polinfo->polroles);
 
 	if (polinfo->polqual != NULL)
-		appendPQExpBuffer(query, " USING %s", polinfo->polqual);
+		appendPQExpBuffer(query, " USING (%s)", polinfo->polqual);
 
 	if (polinfo->polwithcheck != NULL)
-		appendPQExpBuffer(query, " WITH CHECK %s", polinfo->polwithcheck);
+		appendPQExpBuffer(query, " WITH CHECK (%s)", polinfo->polwithcheck);
 
 	appendPQExpBuffer(query, ";\n");
 
