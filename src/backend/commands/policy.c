@@ -22,6 +22,7 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/objectaccess.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_type.h"
 #include "commands/policy.h"
@@ -48,7 +49,7 @@
 static void RangeVarCallbackForPolicy(const RangeVar *rv,
 						  Oid relid, Oid oldrelid, void *arg);
 static char parse_policy_command(const char *cmd_name);
-static ArrayType *policy_role_list_to_array(List *roles);
+static Datum *policy_role_list_to_array(List *roles, int *num_roles);
 
 /*
  * Callback to RangeVarGetRelidExtended().
@@ -130,30 +131,28 @@ parse_policy_command(const char *cmd_name)
 
 /*
  * policy_role_list_to_array
- *	 helper function to convert a list of RoleSpecs to an array of role ids.
+ *	 helper function to convert a list of RoleSpecs to an array of
+ *	 role id Datums.
  */
-static ArrayType *
-policy_role_list_to_array(List *roles)
+static Datum *
+policy_role_list_to_array(List *roles, int *num_roles)
 {
-	ArrayType  *role_ids;
-	Datum	   *temp_array;
+	Datum	   *role_oids;
 	ListCell   *cell;
-	int			num_roles;
 	int			i = 0;
 
 	/* Handle no roles being passed in as being for public */
 	if (roles == NIL)
 	{
-		temp_array = (Datum *) palloc(sizeof(Datum));
-		temp_array[0] = ObjectIdGetDatum(ACL_ID_PUBLIC);
+		*num_roles = 1;
+		role_oids = (Datum *) palloc(*num_roles * sizeof(Datum));
+		role_oids[0] = ObjectIdGetDatum(ACL_ID_PUBLIC);
 
-		role_ids = construct_array(temp_array, 1, OIDOID, sizeof(Oid), true,
-								   'i');
-		return role_ids;
+		return role_oids;
 	}
 
-	num_roles = list_length(roles);
-	temp_array = (Datum *) palloc(num_roles * sizeof(Datum));
+	*num_roles = list_length(roles);
+	role_oids = (Datum *) palloc(*num_roles * sizeof(Datum));
 
 	foreach(cell, roles)
 	{
@@ -164,24 +163,24 @@ policy_role_list_to_array(List *roles)
 		 */
 		if (spec->roletype == ROLESPEC_PUBLIC)
 		{
-			if (num_roles != 1)
+			if (*num_roles != 1)
+			{
 				ereport(WARNING,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("ignoring roles specified other than public"),
 					  errhint("All roles are members of the public role.")));
-			temp_array[0] = ObjectIdGetDatum(ACL_ID_PUBLIC);
-			num_roles = 1;
-			break;
+				*num_roles = 1;
+			}
+			role_oids[0] = ObjectIdGetDatum(ACL_ID_PUBLIC);
+
+			return role_oids;
 		}
 		else
-			temp_array[i++] =
+			role_oids[i++] =
 				ObjectIdGetDatum(get_rolespec_oid((Node *) spec, false));
 	}
 
-	role_ids = construct_array(temp_array, num_roles, OIDOID, sizeof(Oid), true,
-							   'i');
-
-	return role_ids;
+	return role_oids;
 }
 
 /*
@@ -463,6 +462,8 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	Relation	target_table;
 	Oid			table_id;
 	char		polcmd;
+	Datum	   *role_oids;
+	int			nitems = 0;
 	ArrayType  *role_ids;
 	ParseState *qual_pstate;
 	ParseState *with_check_pstate;
@@ -476,6 +477,7 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	bool		isnull[Natts_pg_policy];
 	ObjectAddress target;
 	ObjectAddress myself;
+	int			i;
 
 	/* Parse command */
 	polcmd = parse_policy_command(stmt->cmd);
@@ -498,9 +500,10 @@ CreatePolicy(CreatePolicyStmt *stmt)
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("only WITH CHECK expression allowed for INSERT")));
 
-
 	/* Collect role ids */
-	role_ids = policy_role_list_to_array(stmt->roles);
+	role_oids = policy_role_list_to_array(stmt->roles, &nitems);
+	role_ids = construct_array(role_oids, nitems, OIDOID,
+							   sizeof(Oid), true, 'i');
 
 	/* Parse the supplied clause */
 	qual_pstate = make_parsestate(NULL);
@@ -531,12 +534,12 @@ CreatePolicy(CreatePolicyStmt *stmt)
 
 	qual = transformWhereClause(qual_pstate,
 								copyObject(stmt->qual),
-								EXPR_KIND_WHERE,
+								EXPR_KIND_POLICY,
 								"POLICY");
 
 	with_check_qual = transformWhereClause(with_check_pstate,
 										   copyObject(stmt->with_check),
-										   EXPR_KIND_WHERE,
+										   EXPR_KIND_POLICY,
 										   "POLICY");
 
 	/* Fix up collation information */
@@ -614,6 +617,20 @@ CreatePolicy(CreatePolicyStmt *stmt)
 	recordDependencyOnExpr(&myself, with_check_qual,
 						   with_check_pstate->p_rtable, DEPENDENCY_NORMAL);
 
+	/* Register role dependencies */
+	target.classId = AuthIdRelationId;
+	target.objectSubId = 0;
+	for (i = 0; i < nitems; i++)
+	{
+		target.objectId = DatumGetObjectId(role_oids[i]);
+		/* no dependency if public */
+		if (target.objectId != ACL_ID_PUBLIC)
+			recordSharedDependencyOn(&myself, &target,
+									 SHARED_DEPENDENCY_POLICY);
+	}
+
+	InvokeObjectPostCreateHook(PolicyRelationId, policy_id, 0);
+
 	/* Invalidate Relation Cache */
 	CacheInvalidateRelcache(target_table);
 
@@ -641,6 +658,8 @@ AlterPolicy(AlterPolicyStmt *stmt)
 	Oid			policy_id;
 	Relation	target_table;
 	Oid			table_id;
+	Datum	   *role_oids = NULL;
+	int			nitems = 0;
 	ArrayType  *role_ids = NULL;
 	List	   *qual_parse_rtable = NIL;
 	List	   *with_check_parse_rtable = NIL;
@@ -658,10 +677,15 @@ AlterPolicy(AlterPolicyStmt *stmt)
 	Datum		cmd_datum;
 	char		polcmd;
 	bool		polcmd_isnull;
+	int			i;
 
 	/* Parse role_ids */
 	if (stmt->roles != NULL)
-		role_ids = policy_role_list_to_array(stmt->roles);
+	{
+		role_oids = policy_role_list_to_array(stmt->roles, &nitems);
+		role_ids = construct_array(role_oids, nitems, OIDOID,
+								   sizeof(Oid), true, 'i');
+	}
 
 	/* Get id of table.  Also handles permissions checks. */
 	table_id = RangeVarGetRelidExtended(stmt->table, AccessExclusiveLock,
@@ -683,7 +707,7 @@ AlterPolicy(AlterPolicyStmt *stmt)
 		addRTEtoQuery(qual_pstate, rte, false, true, true);
 
 		qual = transformWhereClause(qual_pstate, copyObject(stmt->qual),
-									EXPR_KIND_WHERE,
+									EXPR_KIND_POLICY,
 									"POLICY");
 
 		/* Fix up collation information */
@@ -706,7 +730,7 @@ AlterPolicy(AlterPolicyStmt *stmt)
 
 		with_check_qual = transformWhereClause(with_check_pstate,
 											   copyObject(stmt->with_check),
-											   EXPR_KIND_WHERE,
+											   EXPR_KIND_POLICY,
 											   "POLICY");
 
 		/* Fix up collation information */
@@ -824,6 +848,21 @@ AlterPolicy(AlterPolicyStmt *stmt)
 
 	recordDependencyOnExpr(&myself, with_check_qual, with_check_parse_rtable,
 						   DEPENDENCY_NORMAL);
+
+	/* Register role dependencies */
+	deleteSharedDependencyRecordsFor(PolicyRelationId, policy_id, 0);
+	target.classId = AuthIdRelationId;
+	target.objectSubId = 0;
+	for (i = 0; i < nitems; i++)
+	{
+		target.objectId = DatumGetObjectId(role_oids[i]);
+		/* no dependency if public */
+		if (target.objectId != ACL_ID_PUBLIC)
+			recordSharedDependencyOn(&myself, &target,
+									 SHARED_DEPENDENCY_POLICY);
+	}
+
+	InvokeObjectPostAlterHook(PolicyRelationId, policy_id, 0);
 
 	heap_freetuple(new_tuple);
 
@@ -1001,4 +1040,33 @@ get_relation_policy_oid(Oid relid, const char *policy_name, bool missing_ok)
 	heap_close(pg_policy_rel, AccessShareLock);
 
 	return policy_oid;
+}
+
+/*
+ * relation_has_policies - Determine if relation has any policies
+ */
+bool
+relation_has_policies(Relation rel)
+{
+	Relation	catalog;
+	ScanKeyData skey;
+	SysScanDesc sscan;
+	HeapTuple	policy_tuple;
+	bool		ret = false;
+
+	catalog = heap_open(PolicyRelationId, AccessShareLock);
+	ScanKeyInit(&skey,
+				Anum_pg_policy_polrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(RelationGetRelid(rel)));
+	sscan = systable_beginscan(catalog, PolicyPolrelidPolnameIndexId, true,
+							   NULL, 1, &skey);
+	policy_tuple = systable_getnext(sscan);
+	if (HeapTupleIsValid(policy_tuple))
+		ret = true;
+
+	systable_endscan(sscan);
+	heap_close(catalog, AccessShareLock);
+
+	return ret;
 }

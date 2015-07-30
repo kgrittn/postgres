@@ -1190,15 +1190,112 @@ SELECT * FROM current_check;
 COMMIT;
 
 --
+-- check pg_stats view filtering
+--
+SET row_security TO ON;
+SET SESSION AUTHORIZATION rls_regress_user0;
+ANALYZE current_check;
+-- Stats visible
+SELECT row_security_active('current_check');
+SELECT attname, most_common_vals FROM pg_stats
+  WHERE tablename = 'current_check'
+  ORDER BY 1;
+
+SET SESSION AUTHORIZATION rls_regress_user1;
+-- Stats not visible
+SELECT row_security_active('current_check');
+SELECT attname, most_common_vals FROM pg_stats
+  WHERE tablename = 'current_check'
+  ORDER BY 1;
+
+--
 -- Collation support
 --
 BEGIN;
-SET row_security = force;
+SET row_security TO FORCE;
 CREATE TABLE coll_t (c) AS VALUES ('bar'::text);
 CREATE POLICY coll_p ON coll_t USING (c < ('foo'::text COLLATE "C"));
 ALTER TABLE coll_t ENABLE ROW LEVEL SECURITY;
 SELECT (string_to_array(polqual, ':'))[7] AS inputcollid FROM pg_policy WHERE polrelid = 'coll_t'::regclass;
 SELECT * FROM coll_t;
+ROLLBACK;
+
+--
+-- Shared Object Dependencies
+--
+RESET SESSION AUTHORIZATION;
+BEGIN;
+CREATE ROLE alice;
+CREATE ROLE bob;
+CREATE TABLE tbl1 (c) AS VALUES ('bar'::text);
+GRANT SELECT ON TABLE tbl1 TO alice;
+CREATE POLICY P ON tbl1 TO alice, bob USING (true);
+SELECT refclassid::regclass, deptype
+  FROM pg_depend
+  WHERE classid = 'pg_policy'::regclass
+  AND refobjid = 'tbl1'::regclass;
+SELECT refclassid::regclass, deptype
+  FROM pg_shdepend
+  WHERE classid = 'pg_policy'::regclass
+  AND refobjid IN ('alice'::regrole, 'bob'::regrole);
+
+SAVEPOINT q;
+DROP ROLE alice; --fails due to dependency on POLICY p
+ROLLBACK TO q;
+
+ALTER POLICY p ON tbl1 TO bob USING (true);
+SAVEPOINT q;
+DROP ROLE alice; --fails due to dependency on GRANT SELECT
+ROLLBACK TO q;
+
+REVOKE ALL ON TABLE tbl1 FROM alice;
+SAVEPOINT q;
+DROP ROLE alice; --succeeds
+ROLLBACK TO q;
+
+SAVEPOINT q;
+DROP ROLE bob; --fails due to dependency on POLICY p
+ROLLBACK TO q;
+
+DROP POLICY p ON tbl1;
+SAVEPOINT q;
+DROP ROLE bob; -- succeeds
+ROLLBACK TO q;
+
+ROLLBACK; -- cleanup
+
+--
+-- Converting table to view
+--
+BEGIN;
+SET ROW_SECURITY = FORCE;
+CREATE TABLE t (c int);
+CREATE POLICY p ON t USING (c % 2 = 1);
+ALTER TABLE t ENABLE ROW LEVEL SECURITY;
+
+SAVEPOINT q;
+CREATE RULE "_RETURN" AS ON SELECT TO t DO INSTEAD
+  SELECT * FROM generate_series(1,5) t0(c); -- fails due to row level security enabled
+ROLLBACK TO q;
+
+ALTER TABLE t DISABLE ROW LEVEL SECURITY;
+SAVEPOINT q;
+CREATE RULE "_RETURN" AS ON SELECT TO t DO INSTEAD
+  SELECT * FROM generate_series(1,5) t0(c); -- fails due to policy p on t
+ROLLBACK TO q;
+
+DROP POLICY p ON t;
+CREATE RULE "_RETURN" AS ON SELECT TO t DO INSTEAD
+  SELECT * FROM generate_series(1,5) t0(c); -- succeeds
+ROLLBACK;
+
+--
+-- Policy expression handling
+--
+BEGIN;
+SET row_security = FORCE;
+CREATE TABLE t (c) AS VALUES ('bar'::text);
+CREATE POLICY p ON t USING (max(c)); -- fails: aggregate functions are not allowed in policy expressions
 ROLLBACK;
 
 --
