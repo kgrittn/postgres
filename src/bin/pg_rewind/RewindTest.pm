@@ -13,16 +13,18 @@ package RewindTest;
 #
 # 2. setup_cluster - creates a PostgreSQL cluster that runs as the master
 #
-# 3. create_standby - runs pg_basebackup to initialize a standby server, and
+# 3. start_master - starts the master server
+#
+# 4. create_standby - runs pg_basebackup to initialize a standby server, and
 #    sets it up to follow the master.
 #
-# 4. promote_standby - runs "pg_ctl promote" to promote the standby server.
+# 5. promote_standby - runs "pg_ctl promote" to promote the standby server.
 # The old master keeps running.
 #
-# 5. run_pg_rewind - stops the old master (if it's still running) and runs
+# 6. run_pg_rewind - stops the old master (if it's still running) and runs
 # pg_rewind to synchronize it with the now-promoted standby server.
 #
-# 6. clean_rewind_test - stops both servers used in the test, if they're
+# 7. clean_rewind_test - stops both servers used in the test, if they're
 # still running.
 #
 # The test script can use the helper functions master_psql and standby_psql
@@ -56,27 +58,19 @@ our @EXPORT = qw(
 
   init_rewind_test
   setup_cluster
+  start_master
   create_standby
   promote_standby
   run_pg_rewind
   clean_rewind_test
 );
 
-# A temporary directory created with 'tempdir' is deleted automatically at
-# the end of the tests. You can change it to a constant if you need to keep it
-# for debugging purposes,
-my $testroot = tempdir;
-
-our $test_master_datadir  = "$testroot/data_master";
-our $test_standby_datadir = "$testroot/data_standby";
-
-mkdir $testroot;
+our $test_master_datadir  = "$tmp_check/data_master";
+our $test_standby_datadir = "$tmp_check/data_standby";
 
 # Define non-conflicting ports for both nodes.
 my $port_master  = $ENV{PGPORT};
 my $port_standby = $port_master + 1;
-
-my $tempdir_short;
 
 my $connstr_master  = "port=$port_master";
 my $connstr_standby = "port=$port_standby";
@@ -171,8 +165,6 @@ sub append_to_file
 
 sub setup_cluster
 {
-	$tempdir_short = tempdir_short;
-
 	# Initialize master, data checksums are mandatory
 	remove_tree($test_master_datadir);
 	standard_initdb($test_master_datadir);
@@ -193,7 +185,10 @@ max_connections = 10
 
 	# Accept replication connections on master
 	configure_hba_for_replication $test_master_datadir;
+}
 
+sub start_master
+{
 	system_or_bail('pg_ctl' , '-w',
 				   '-D' , $test_master_datadir,
 				   '-l',  "$log_path/master.log",
@@ -267,9 +262,8 @@ sub run_pg_rewind
 
 	# Keep a temporary postgresql.conf for master node or it would be
 	# overwritten during the rewind.
-	copy(
-		"$test_master_datadir/postgresql.conf",
-		"$testroot/master-postgresql.conf.tmp");
+	copy("$test_master_datadir/postgresql.conf",
+		 "$tmp_check/master-postgresql.conf.tmp");
 
 	# Now run pg_rewind
 	if ($test_mode eq "local")
@@ -302,9 +296,8 @@ sub run_pg_rewind
 	}
 
 	# Now move back postgresql.conf with old settings
-	move(
-		"$testroot/master-postgresql.conf.tmp",
-		"$test_master_datadir/postgresql.conf");
+	move("$tmp_check/master-postgresql.conf.tmp",
+		 "$test_master_datadir/postgresql.conf");
 
 	# Plug-in rewound node to the now-promoted standby node
 	append_to_file(
