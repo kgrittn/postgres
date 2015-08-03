@@ -268,6 +268,7 @@ brinGetTupleForHeapBlock(BrinRevmap *revmap, BlockNumber heapBlk,
 		}
 		LockBuffer(*buf, mode);
 		page = BufferGetPage(*buf);
+		TestForOldSnapshot(snapshot, idxRel, page);
 
 		/* If we land on a revmap page, start over */
 		if (BRIN_IS_REGULAR_PAGE(page))
