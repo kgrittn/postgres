@@ -211,6 +211,7 @@ static Snapshot FirstXactSnapshot = NULL;
 static List *exportedSnapshots = NIL;
 
 /* Prototypes for local functions */
+static int64 AlignTimestampToMinuteBoundary(int64 ts);
 static Snapshot CopySnapshot(Snapshot snapshot);
 static void FreeSnapshot(Snapshot snapshot);
 static void SnapshotResetXmin(void);
