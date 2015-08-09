@@ -844,6 +844,37 @@ select * from
 where thousand = a.q1 and tenthous = b.q1 and a.q2 = 1 and b.q2 = 2;
 
 --
+-- test a corner case in which we shouldn't apply the star-schema optimization
+--
+
+explain (costs off)
+select t1.unique2, t1.stringu1, t2.unique1, t2.stringu2 from
+  tenk1 t1
+  inner join int4_tbl i1
+    left join (select v1.x2, v2.y1, 11 AS d1
+               from (values(1,0)) v1(x1,x2)
+               left join (values(3,1)) v2(y1,y2)
+               on v1.x1 = v2.y2) subq1
+    on (i1.f1 = subq1.x2)
+  on (t1.unique2 = subq1.d1)
+  left join tenk1 t2
+  on (subq1.y1 = t2.unique1)
+where t1.unique2 < 42 and t1.stringu1 > t2.stringu2;
+
+select t1.unique2, t1.stringu1, t2.unique1, t2.stringu2 from
+  tenk1 t1
+  inner join int4_tbl i1
+    left join (select v1.x2, v2.y1, 11 AS d1
+               from (values(1,0)) v1(x1,x2)
+               left join (values(3,1)) v2(y1,y2)
+               on v1.x1 = v2.y2) subq1
+    on (i1.f1 = subq1.x2)
+  on (t1.unique2 = subq1.d1)
+  left join tenk1 t2
+  on (subq1.y1 = t2.unique1)
+where t1.unique2 < 42 and t1.stringu1 > t2.stringu2;
+
+--
 -- test extraction of restriction OR clauses from join OR clause
 -- (we used to only do this for indexable clauses)
 --
@@ -1034,6 +1065,31 @@ select t1.* from
   left join int4_tbl i4
   on (i8.q2 = i4.f1);
 
+explain (verbose, costs off)
+select t1.* from
+  text_tbl t1
+  left join (select *, '***'::text as d1 from int8_tbl i8b1) b1
+    left join int8_tbl i8
+      left join (select *, null::int as d2 from int8_tbl i8b2, int4_tbl i4b2
+                 where q1 = f1) b2
+      on (i8.q1 = b2.q1)
+    on (b2.d2 = b1.q2)
+  on (t1.f1 = b1.d1)
+  left join int4_tbl i4
+  on (i8.q2 = i4.f1);
+
+select t1.* from
+  text_tbl t1
+  left join (select *, '***'::text as d1 from int8_tbl i8b1) b1
+    left join int8_tbl i8
+      left join (select *, null::int as d2 from int8_tbl i8b2, int4_tbl i4b2
+                 where q1 = f1) b2
+      on (i8.q1 = b2.q1)
+    on (b2.d2 = b1.q2)
+  on (t1.f1 = b1.d1)
+  left join int4_tbl i4
+  on (i8.q2 = i4.f1);
+
 --
 -- test ability to push constants through outer join clauses
 --
@@ -1188,6 +1244,46 @@ SELECT * FROM
     (SELECT q1, q2, COALESCE(dat1, q1) AS y
      FROM int8_tbl LEFT JOIN innertab ON q2 = id) ss2
   ON true;
+
+rollback;
+
+-- another join removal bug: we must clean up correctly when removing a PHV
+begin;
+
+create temp table uniquetbl (f1 text unique);
+
+explain (costs off)
+select t1.* from
+  uniquetbl as t1
+  left join (select *, '***'::text as d1 from uniquetbl) t2
+  on t1.f1 = t2.f1
+  left join uniquetbl t3
+  on t2.d1 = t3.f1;
+
+explain (costs off)
+select t0.*
+from
+ text_tbl t0
+ left join
+   (select case t1.ten when 0 then 'doh!'::text else null::text end as case1,
+           t1.stringu2
+     from tenk1 t1
+     join int4_tbl i4 ON i4.f1 = t1.unique2
+     left join uniquetbl u1 ON u1.f1 = t1.string4) ss
+  on t0.f1 = ss.case1
+where ss.stringu2 !~* ss.case1;
+
+select t0.*
+from
+ text_tbl t0
+ left join
+   (select case t1.ten when 0 then 'doh!'::text else null::text end as case1,
+           t1.stringu2
+     from tenk1 t1
+     join int4_tbl i4 ON i4.f1 = t1.unique2
+     left join uniquetbl u1 ON u1.f1 = t1.string4) ss
+  on t0.f1 = ss.case1
+where ss.stringu2 !~* ss.case1;
 
 rollback;
 
