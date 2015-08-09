@@ -26,6 +26,7 @@
 #include "optimizer/plancat.h"
 #include "storage/bufmgr.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 
 
 /* Working state for hashbuild and its callback */
@@ -252,6 +253,7 @@ hashgettuple(PG_FUNCTION_ARGS)
 		buf = so->hashso_curbuf;
 		Assert(BufferIsValid(buf));
 		page = BufferGetPage(buf);
+		TestForOldSnapshot(scan->xs_snapshot, rel, page);
 		maxoffnum = PageGetMaxOffsetNumber(page);
 		for (offnum = ItemPointerGetOffsetNumber(current);
 			 offnum <= maxoffnum;
