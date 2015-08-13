@@ -30,6 +30,15 @@ typedef void (*set_rel_pathlist_hook_type) (PlannerInfo *root,
 														RangeTblEntry *rte);
 extern PGDLLIMPORT set_rel_pathlist_hook_type set_rel_pathlist_hook;
 
+/* Hook for plugins to get control in add_paths_to_joinrel() */
+typedef void (*set_join_pathlist_hook_type) (PlannerInfo *root,
+														 RelOptInfo *joinrel,
+														 RelOptInfo *outerrel,
+														 RelOptInfo *innerrel,
+														 JoinType jointype,
+												   JoinPathExtraData *extra);
+extern PGDLLIMPORT set_join_pathlist_hook_type set_join_pathlist_hook;
+
 /* Hook for plugins to replace standard_join_search() */
 typedef RelOptInfo *(*join_search_hook_type) (PlannerInfo *root,
 														  int levels_needed,
@@ -137,7 +146,8 @@ extern bool have_relevant_eclass_joinclause(PlannerInfo *root,
 								RelOptInfo *rel1, RelOptInfo *rel2);
 extern bool has_relevant_eclass_joinclause(PlannerInfo *root,
 							   RelOptInfo *rel1);
-extern bool eclass_useful_for_merging(EquivalenceClass *eclass,
+extern bool eclass_useful_for_merging(PlannerInfo *root,
+						  EquivalenceClass *eclass,
 						  RelOptInfo *rel);
 extern bool is_redundant_derived_clause(RestrictInfo *rinfo, List *clauselist);
 

@@ -40,9 +40,8 @@ typedef struct
 	BTSpool    *spool;
 
 	/*
-	 * spool2 is needed only when the index is an unique index. Dead tuples
-	 * are put into spool2 instead of spool in order to avoid uniqueness
-	 * check.
+	 * spool2 is needed only when the index is a unique index. Dead tuples are
+	 * put into spool2 instead of spool in order to avoid uniqueness check.
 	 */
 	BTSpool    *spool2;
 	double		indtuples;
@@ -882,7 +881,7 @@ btvacuumpage(BTVacState *vstate, BlockNumber blkno, BlockNumber orig_blkno)
 	BlockNumber recurse_to;
 	Buffer		buf;
 	Page		page;
-	BTPageOpaque opaque;
+	BTPageOpaque opaque = NULL;
 
 restart:
 	delete_now = false;
@@ -901,9 +900,11 @@ restart:
 							 info->strategy);
 	LockBuffer(buf, BT_READ);
 	page = BufferGetPage(buf);
-	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
 	if (!PageIsNew(page))
+	{
 		_bt_checkpage(rel, buf);
+		opaque = (BTPageOpaque) PageGetSpecialPointer(page);
+	}
 
 	/*
 	 * If we are recursing, the only case we want to do anything with is a

@@ -151,7 +151,7 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 	if (wakeEvents & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE))
 	{
 		/* Need an event object to represent events on the socket */
-		int			flags = FD_CLOSE; /* always check for errors/EOF */
+		int			flags = FD_CLOSE;	/* always check for errors/EOF */
 
 		if (wakeEvents & WL_SOCKET_READABLE)
 			flags |= FD_READ;
@@ -265,13 +265,16 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 			elog(ERROR, "unexpected return code from WaitForMultipleObjects(): %lu", rc);
 
 		/* If we're not done, update cur_timeout for next iteration */
-		if (result == 0 && cur_timeout != INFINITE)
+		if (result == 0 && (wakeEvents & WL_TIMEOUT))
 		{
 			INSTR_TIME_SET_CURRENT(cur_time);
 			INSTR_TIME_SUBTRACT(cur_time, start_time);
 			cur_timeout = timeout - (long) INSTR_TIME_GET_MILLISEC(cur_time);
-			if (cur_timeout < 0)
-				cur_timeout = 0;
+			if (cur_timeout <= 0)
+			{
+				/* Timeout has expired, no need to continue looping */
+				result |= WL_TIMEOUT;
+			}
 		}
 	} while (result == 0);
 

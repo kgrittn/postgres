@@ -34,7 +34,7 @@
 
 
 /* txid will be signed int8 in database, so must limit to 63 bits */
-#define MAX_TXID   ((uint64) INT64_MAX)
+#define MAX_TXID   ((uint64) PG_INT64_MAX)
 
 /* Use unsigned variant internally */
 typedef uint64 txid;
@@ -142,8 +142,10 @@ cmp_txid(const void *aa, const void *bb)
 static void
 sort_snapshot(TxidSnapshot *snap)
 {
-	txid	last = 0;
-	int		nxip, idx1, idx2;
+	txid		last = 0;
+	int			nxip,
+				idx1,
+				idx2;
 
 	if (snap->nxip > 1)
 	{
@@ -332,8 +334,11 @@ parse_snapshot(const char *str)
 	return buf_finalize(buf);
 
 bad_format:
-	elog(ERROR, "invalid input for txid_snapshot: \"%s\"", str_start);
-	return NULL;
+	ereport(ERROR,
+			(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+			 errmsg("invalid input syntax for type txid_snapshot: \"%s\"",
+					str_start)));
+	return NULL;				/* keep compiler quiet */
 }
 
 /*
@@ -524,8 +529,10 @@ txid_snapshot_recv(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(snap);
 
 bad_format:
-	elog(ERROR, "invalid snapshot data");
-	return (Datum) NULL;
+	ereport(ERROR,
+			(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
+			 errmsg("invalid external txid_snapshot data")));
+	PG_RETURN_POINTER(NULL);	/* keep compiler quiet */
 }
 
 /*

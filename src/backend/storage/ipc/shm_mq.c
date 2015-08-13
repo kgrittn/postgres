@@ -317,7 +317,7 @@ shm_mq_set_handle(shm_mq_handle *mqh, BackgroundWorkerHandle *handle)
 shm_mq_result
 shm_mq_send(shm_mq_handle *mqh, Size nbytes, const void *data, bool nowait)
 {
-	shm_mq_iovec	iov;
+	shm_mq_iovec iov;
 
 	iov.data = data;
 	iov.len = nbytes;
@@ -385,7 +385,7 @@ shm_mq_sendv(shm_mq_handle *mqh, shm_mq_iovec *iov, int iovcnt, bool nowait)
 	offset = mqh->mqh_partial_bytes;
 	do
 	{
-		Size	chunksize;
+		Size		chunksize;
 
 		/* Figure out which bytes need to be sent next. */
 		if (offset >= iov[which_iov].len)
@@ -399,18 +399,18 @@ shm_mq_sendv(shm_mq_handle *mqh, shm_mq_iovec *iov, int iovcnt, bool nowait)
 
 		/*
 		 * We want to avoid copying the data if at all possible, but every
-		 * chunk of bytes we write into the queue has to be MAXALIGN'd,
-		 * except the last.  Thus, if a chunk other than the last one ends
-		 * on a non-MAXALIGN'd boundary, we have to combine the tail end of
-		 * its data with data from one or more following chunks until we
-		 * either reach the last chunk or accumulate a number of bytes which
-		 * is MAXALIGN'd.
+		 * chunk of bytes we write into the queue has to be MAXALIGN'd, except
+		 * the last.  Thus, if a chunk other than the last one ends on a
+		 * non-MAXALIGN'd boundary, we have to combine the tail end of its
+		 * data with data from one or more following chunks until we either
+		 * reach the last chunk or accumulate a number of bytes which is
+		 * MAXALIGN'd.
 		 */
 		if (which_iov + 1 < iovcnt &&
 			offset + MAXIMUM_ALIGNOF > iov[which_iov].len)
 		{
-			char	tmpbuf[MAXIMUM_ALIGNOF];
-			int		j = 0;
+			char		tmpbuf[MAXIMUM_ALIGNOF];
+			int			j = 0;
 
 			for (;;)
 			{
@@ -584,7 +584,7 @@ shm_mq_receive(shm_mq_handle *mqh, Size *nbytesp, void **datap, bool nowait)
 			if (mqh->mqh_partial_bytes + rb > sizeof(Size))
 				lengthbytes = sizeof(Size) - mqh->mqh_partial_bytes;
 			else
-				lengthbytes = rb - mqh->mqh_partial_bytes;
+				lengthbytes = rb;
 			memcpy(&mqh->mqh_buffer[mqh->mqh_partial_bytes], rawdata,
 				   lengthbytes);
 			mqh->mqh_partial_bytes += lengthbytes;
@@ -777,33 +777,37 @@ shm_mq_send_bytes(shm_mq_handle *mqh, Size nbytes, const void *data,
 			return SHM_MQ_DETACHED;
 		}
 
-		if (available == 0)
+		if (available == 0 && !mqh->mqh_counterparty_attached)
 		{
-			shm_mq_result res;
-
 			/*
 			 * The queue is full, so if the receiver isn't yet known to be
 			 * attached, we must wait for that to happen.
 			 */
-			if (!mqh->mqh_counterparty_attached)
+			if (nowait)
 			{
-				if (nowait)
+				if (shm_mq_get_receiver(mq) == NULL)
 				{
-					if (shm_mq_get_receiver(mq) == NULL)
-					{
-						*bytes_written = sent;
-						return SHM_MQ_WOULD_BLOCK;
-					}
-				}
-				else if (!shm_mq_wait_internal(mq, &mq->mq_receiver,
-											   mqh->mqh_handle))
-				{
-					mq->mq_detached = true;
 					*bytes_written = sent;
-					return SHM_MQ_DETACHED;
+					return SHM_MQ_WOULD_BLOCK;
 				}
-				mqh->mqh_counterparty_attached = true;
 			}
+			else if (!shm_mq_wait_internal(mq, &mq->mq_receiver,
+										   mqh->mqh_handle))
+			{
+				mq->mq_detached = true;
+				*bytes_written = sent;
+				return SHM_MQ_DETACHED;
+			}
+			mqh->mqh_counterparty_attached = true;
+
+			/*
+			 * The receiver may have read some data after attaching, so we
+			 * must not wait without rechecking the queue state.
+			 */
+		}
+		else if (available == 0)
+		{
+			shm_mq_result res;
 
 			/* Let the receiver know that we need them to read some data. */
 			res = shm_mq_notify_receiver(mq);
@@ -1047,7 +1051,7 @@ shm_mq_inc_bytes_read(volatile shm_mq *mq, Size n)
 
 /*
  * Get the number of bytes written.  The sender need not use this to access
- * the count of bytes written, but the reciever must.
+ * the count of bytes written, but the receiver must.
  */
 static uint64
 shm_mq_get_bytes_written(volatile shm_mq *mq, bool *detached)

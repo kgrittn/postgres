@@ -23,19 +23,19 @@
 
 typedef struct
 {
-	void (*comm_reset)(void);
-	int	(*flush)(void);
-	int	(*flush_if_writable)(void);
-	bool (*is_send_pending)(void);
-	int	(*putmessage)(char msgtype, const char *s, size_t len);
-	void (*putmessage_noblock)(char msgtype, const char *s, size_t len);
-	void (*startcopyout)(void);
-	void (*endcopyout)(bool errorAbort);
+	void		(*comm_reset) (void);
+	int			(*flush) (void);
+	int			(*flush_if_writable) (void);
+	bool		(*is_send_pending) (void);
+	int			(*putmessage) (char msgtype, const char *s, size_t len);
+	void		(*putmessage_noblock) (char msgtype, const char *s, size_t len);
+	void		(*startcopyout) (void);
+	void		(*endcopyout) (bool errorAbort);
 } PQcommMethods;
 
 extern PGDLLIMPORT PQcommMethods *PqCommMethods;
 
-#define pq_comm_reset()	(PqCommMethods->comm_reset())
+#define pq_comm_reset() (PqCommMethods->comm_reset())
 #define pq_flush() (PqCommMethods->flush())
 #define pq_flush_if_writable() (PqCommMethods->flush_if_writable())
 #define pq_is_send_pending() (PqCommMethods->is_send_pending())
@@ -59,6 +59,7 @@ extern int StreamServerPort(int family, char *hostName,
 extern int	StreamConnection(pgsocket server_fd, Port *port);
 extern void StreamClose(pgsocket sock);
 extern void TouchSocketFiles(void);
+extern void RemoveSocketFiles(void);
 extern void pq_init(void);
 extern int	pq_getbytes(char *s, size_t len);
 extern int	pq_getstring(StringInfo s);
@@ -79,8 +80,8 @@ extern char *ssl_key_file;
 extern char *ssl_ca_file;
 extern char *ssl_crl_file;
 
-extern int	(*pq_putmessage_hook)(char msgtype, const char *s, size_t len);
-extern int  (*pq_flush_hook)(void);
+extern int	(*pq_putmessage_hook) (char msgtype, const char *s, size_t len);
+extern int	(*pq_flush_hook) (void);
 
 extern int	secure_initialize(void);
 extern bool secure_loaded_verify_locations(void);

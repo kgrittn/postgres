@@ -47,6 +47,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_tablespace.h"
+#include "catalog/pg_transform.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_dict.h"
@@ -125,7 +126,7 @@ typedef struct
  * This constant table maps ObjectClasses to the corresponding catalog OIDs.
  * See also getObjectClass().
  */
-static const Oid object_classes[MAX_OCLASS] = {
+static const Oid object_classes[] = {
 	RelationRelationId,			/* OCLASS_CLASS */
 	ProcedureRelationId,		/* OCLASS_PROC */
 	TypeRelationId,				/* OCLASS_TYPE */
@@ -157,7 +158,8 @@ static const Oid object_classes[MAX_OCLASS] = {
 	DefaultAclRelationId,		/* OCLASS_DEFACL */
 	ExtensionRelationId,		/* OCLASS_EXTENSION */
 	EventTriggerRelationId,		/* OCLASS_EVENT_TRIGGER */
-	PolicyRelationId			/* OCLASS_POLICY */
+	PolicyRelationId,			/* OCLASS_POLICY */
+	TransformRelationId			/* OCLASS_TRANSFORM */
 };
 
 
@@ -212,8 +214,8 @@ deleteObjectsInList(ObjectAddresses *targetObjects, Relation *depRel,
 		{
 			const ObjectAddress *thisobj = &targetObjects->refs[i];
 			const ObjectAddressExtra *extra = &targetObjects->extras[i];
-			bool	original = false;
-			bool	normal = false;
+			bool		original = false;
+			bool		normal = false;
 
 			if (extra->flags & DEPFLAG_ORIGINAL)
 				original = true;
@@ -1265,6 +1267,10 @@ doDeletion(const ObjectAddress *object, int flags)
 			RemovePolicyById(object->objectId);
 			break;
 
+		case OCLASS_TRANSFORM:
+			DropTransformById(object->objectId);
+			break;
+
 		default:
 			elog(ERROR, "unrecognized object class: %u",
 				 object->classId);
@@ -1597,6 +1603,24 @@ find_expr_references_walker(Node *node,
 						add_object_address(OCLASS_TSDICT, objoid, 0,
 										   context->addrs);
 					break;
+
+				case REGNAMESPACEOID:
+					objoid = DatumGetObjectId(con->constvalue);
+					if (SearchSysCacheExists1(NAMESPACEOID,
+											  ObjectIdGetDatum(objoid)))
+						add_object_address(OCLASS_SCHEMA, objoid, 0,
+										   context->addrs);
+					break;
+
+					/*
+					 * Dependencies for regrole should be shared among all
+					 * databases, so explicitly inhibit to have dependencies.
+					 */
+				case REGROLEOID:
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("constant of the type \'regrole\' cannot be used here")));
+					break;
 			}
 		}
 		return false;
@@ -1887,6 +1911,14 @@ find_expr_references_walker(Node *node,
 								   context->addrs);
 		}
 	}
+	else if (IsA(node, TableSampleClause))
+	{
+		TableSampleClause *tsc = (TableSampleClause *) node;
+
+		add_object_address(OCLASS_PROC, tsc->tsmhandler, 0,
+						   context->addrs);
+		/* fall through to examine arguments */
+	}
 
 	return expression_tree_walker(node, find_expr_references_walker,
 								  (void *) context);
@@ -2013,6 +2045,12 @@ add_object_address(ObjectClass oclass, Oid objectId, int32 subId,
 				   ObjectAddresses *addrs)
 {
 	ObjectAddress *item;
+
+	/*
+	 * Make sure object_classes is kept up to date with the ObjectClass enum.
+	 */
+	StaticAssertStmt(lengthof(object_classes) == LAST_OCLASS + 1,
+					 "object_classes[] must cover all ObjectClasses");
 
 	/* enlarge array if needed */
 	if (addrs->numrefs >= addrs->maxrefs)
@@ -2373,6 +2411,9 @@ getObjectClass(const ObjectAddress *object)
 
 		case PolicyRelationId:
 			return OCLASS_POLICY;
+
+		case TransformRelationId:
+			return OCLASS_TRANSFORM;
 	}
 
 	/* shouldn't get here */

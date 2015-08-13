@@ -1,9 +1,10 @@
 use strict;
 use warnings;
+use Config;
 use TestLib;
 use Test::More tests => 17;
 
-my $tempdir = TestLib::tempdir;
+my $tempdir       = TestLib::tempdir;
 my $tempdir_short = TestLib::tempdir_short;
 
 program_help_ok('pg_ctl');
@@ -11,16 +12,23 @@ program_version_ok('pg_ctl');
 program_options_handling_ok('pg_ctl');
 
 command_exit_is([ 'pg_ctl', 'start', '-D', "$tempdir/nonexistent" ],
-				1, 'pg_ctl start with nonexistent directory');
+	1, 'pg_ctl start with nonexistent directory');
 
 command_ok([ 'pg_ctl', 'initdb', '-D', "$tempdir/data" ], 'pg_ctl initdb');
 command_ok(
-	[   "$ENV{top_builddir}/src/test/regress/pg_regress", '--config-auth',
+	[ $ENV{PG_REGRESS}, '--config-auth',
 		"$tempdir/data" ],
 	'configure authentication');
 open CONF, ">>$tempdir/data/postgresql.conf";
-print CONF "listen_addresses = ''\n";
-print CONF "unix_socket_directories = '$tempdir_short'\n";
+if (! $windows_os)
+{
+	print CONF "listen_addresses = ''\n";
+	print CONF "unix_socket_directories = '$tempdir_short'\n";
+}
+else
+{
+	print CONF "listen_addresses = '127.0.0.1'\n";
+}
 close CONF;
 command_ok([ 'pg_ctl', 'start', '-D', "$tempdir/data", '-w' ],
 	'pg_ctl start -w');
@@ -36,4 +44,4 @@ command_ok([ 'pg_ctl', 'restart', '-D', "$tempdir/data", '-w', '-m', 'fast' ],
 command_ok([ 'pg_ctl', 'restart', '-D', "$tempdir/data", '-w', '-m', 'fast' ],
 	'pg_ctl restart with server running');
 
-system_or_bail 'pg_ctl', '-s', 'stop', '-D', "$tempdir/data", '-m', 'fast';
+system_or_bail 'pg_ctl', 'stop', '-D', "$tempdir/data", '-m', 'fast';

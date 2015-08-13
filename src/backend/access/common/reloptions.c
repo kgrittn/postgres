@@ -211,6 +211,14 @@ static relopt_int intRelOpts[] =
 	},
 	{
 		{
+			"log_autovacuum_min_duration",
+			"Sets the minimum execution time above which autovacuum actions will be logged",
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST
+		},
+		-1, -1, INT_MAX
+	},
+	{
+		{
 			"pages_per_range",
 			"Number of pages that each page range covers in a BRIN index",
 			RELOPT_KIND_BRIN
@@ -476,7 +484,7 @@ allocate_reloption(bits32 kinds, int type, char *name, char *desc)
 			size = sizeof(relopt_string);
 			break;
 		default:
-			elog(ERROR, "unsupported option type");
+			elog(ERROR, "unsupported reloption type %d", type);
 			return NULL;		/* keep compiler quiet */
 	}
 
@@ -1008,7 +1016,8 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 				parsed = parse_bool(value, &option->values.bool_val);
 				if (validate && !parsed)
 					ereport(ERROR,
-					   (errmsg("invalid value for boolean option \"%s\": %s",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("invalid value for boolean option \"%s\": %s",
 							   option->gen->name, value)));
 			}
 			break;
@@ -1019,12 +1028,14 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 				parsed = parse_int(value, &option->values.int_val, 0, NULL);
 				if (validate && !parsed)
 					ereport(ERROR,
-					   (errmsg("invalid value for integer option \"%s\": %s",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("invalid value for integer option \"%s\": %s",
 							   option->gen->name, value)));
 				if (validate && (option->values.int_val < optint->min ||
 								 option->values.int_val > optint->max))
 					ereport(ERROR,
-						  (errmsg("value %s out of bounds for option \"%s\"",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						   errmsg("value %s out of bounds for option \"%s\"",
 								  value, option->gen->name),
 					 errdetail("Valid values are between \"%d\" and \"%d\".",
 							   optint->min, optint->max)));
@@ -1037,12 +1048,14 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 				parsed = parse_real(value, &option->values.real_val);
 				if (validate && !parsed)
 					ereport(ERROR,
-							(errmsg("invalid value for floating point option \"%s\": %s",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("invalid value for floating point option \"%s\": %s",
 									option->gen->name, value)));
 				if (validate && (option->values.real_val < optreal->min ||
 								 option->values.real_val > optreal->max))
 					ereport(ERROR,
-						  (errmsg("value %s out of bounds for option \"%s\"",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						   errmsg("value %s out of bounds for option \"%s\"",
 								  value, option->gen->name),
 					 errdetail("Valid values are between \"%f\" and \"%f\".",
 							   optreal->min, optreal->max)));
@@ -1160,7 +1173,7 @@ fillRelOptions(void *rdopts, Size basesize,
 						}
 						break;
 					default:
-						elog(ERROR, "unrecognized reloption type %c",
+						elog(ERROR, "unsupported reloption type %d",
 							 options[i].gen->type);
 						break;
 				}
@@ -1210,6 +1223,8 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 		offsetof(StdRdOptions, autovacuum) +offsetof(AutoVacOpts, multixact_freeze_max_age)},
 		{"autovacuum_multixact_freeze_table_age", RELOPT_TYPE_INT,
 		offsetof(StdRdOptions, autovacuum) +offsetof(AutoVacOpts, multixact_freeze_table_age)},
+		{"log_autovacuum_min_duration", RELOPT_TYPE_INT,
+		offsetof(StdRdOptions, autovacuum) +offsetof(AutoVacOpts, log_min_duration)},
 		{"autovacuum_vacuum_scale_factor", RELOPT_TYPE_REAL,
 		offsetof(StdRdOptions, autovacuum) +offsetof(AutoVacOpts, vacuum_scale_factor)},
 		{"autovacuum_analyze_scale_factor", RELOPT_TYPE_REAL,

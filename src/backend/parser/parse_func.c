@@ -1271,6 +1271,9 @@ func_get_detail(List *funcname,
 	FuncCandidateList raw_candidates;
 	FuncCandidateList best_candidate;
 
+	/* Passing NULL for argtypes is no longer allowed */
+	Assert(argtypes);
+
 	/* initialize output arguments to silence compiler warnings */
 	*funcid = InvalidOid;
 	*rettype = InvalidOid;
@@ -1860,7 +1863,7 @@ funcname_signature_string(const char *funcname, int nargs,
 			appendStringInfoString(&argbuf, ", ");
 		if (i >= numposargs)
 		{
-			appendStringInfo(&argbuf, "%s := ", (char *) lfirst(lc));
+			appendStringInfo(&argbuf, "%s => ", (char *) lfirst(lc));
 			lc = lnext(lc);
 		}
 		appendStringInfoString(&argbuf, format_type_be(argtypes[i]));
@@ -1898,6 +1901,9 @@ Oid
 LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool noError)
 {
 	FuncCandidateList clist;
+
+	/* Passing NULL for argtypes is no longer allowed */
+	Assert(argtypes);
 
 	clist = FuncnameGetCandidates(funcname, nargs, NIL, false, false, noError);
 

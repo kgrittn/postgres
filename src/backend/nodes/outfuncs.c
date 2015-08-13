@@ -337,6 +337,12 @@ _outModifyTable(StringInfo str, const ModifyTable *node)
 	WRITE_NODE_FIELD(fdwPrivLists);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_INT_FIELD(epqParam);
+	WRITE_ENUM_FIELD(onConflictAction, OnConflictAction);
+	WRITE_NODE_FIELD(arbiterIndexes);
+	WRITE_NODE_FIELD(onConflictSet);
+	WRITE_NODE_FIELD(onConflictWhere);
+	WRITE_UINT_FIELD(exclRelRTI);
+	WRITE_NODE_FIELD(exclRelTlist);
 }
 
 static void
@@ -439,6 +445,16 @@ _outSeqScan(StringInfo str, const SeqScan *node)
 }
 
 static void
+_outSampleScan(StringInfo str, const SampleScan *node)
+{
+	WRITE_NODE_TYPE("SAMPLESCAN");
+
+	_outScanInfo(str, (const Scan *) node);
+
+	WRITE_NODE_FIELD(tablesample);
+}
+
+static void
 _outIndexScan(StringInfo str, const IndexScan *node)
 {
 	WRITE_NODE_TYPE("INDEXSCAN");
@@ -450,6 +466,7 @@ _outIndexScan(StringInfo str, const IndexScan *node)
 	WRITE_NODE_FIELD(indexqualorig);
 	WRITE_NODE_FIELD(indexorderby);
 	WRITE_NODE_FIELD(indexorderbyorig);
+	WRITE_NODE_FIELD(indexorderbyops);
 	WRITE_ENUM_FIELD(indexorderdir, ScanDirection);
 }
 
@@ -568,8 +585,11 @@ _outForeignScan(StringInfo str, const ForeignScan *node)
 
 	_outScanInfo(str, (const Scan *) node);
 
+	WRITE_OID_FIELD(fs_server);
 	WRITE_NODE_FIELD(fdw_exprs);
 	WRITE_NODE_FIELD(fdw_private);
+	WRITE_NODE_FIELD(fdw_scan_tlist);
+	WRITE_BITMAPSET_FIELD(fs_relids);
 	WRITE_BOOL_FIELD(fsSystemCol);
 }
 
@@ -581,8 +601,11 @@ _outCustomScan(StringInfo str, const CustomScan *node)
 	_outScanInfo(str, (const Scan *) node);
 
 	WRITE_UINT_FIELD(flags);
+	WRITE_NODE_FIELD(custom_plans);
 	WRITE_NODE_FIELD(custom_exprs);
 	WRITE_NODE_FIELD(custom_private);
+	WRITE_NODE_FIELD(custom_scan_tlist);
+	WRITE_BITMAPSET_FIELD(custom_relids);
 	appendStringInfoString(str, " :methods ");
 	_outToken(str, node->methods->CustomName);
 	if (node->methods->TextOutCustomScan)
@@ -669,6 +692,9 @@ _outAgg(StringInfo str, const Agg *node)
 		appendStringInfo(str, " %u", node->grpOperators[i]);
 
 	WRITE_LONG_FIELD(numGroups);
+
+	WRITE_NODE_FIELD(groupingSets);
+	WRITE_NODE_FIELD(chain);
 }
 
 static void
@@ -989,6 +1015,18 @@ _outAggref(StringInfo str, const Aggref *node)
 	WRITE_BOOL_FIELD(aggstar);
 	WRITE_BOOL_FIELD(aggvariadic);
 	WRITE_CHAR_FIELD(aggkind);
+	WRITE_UINT_FIELD(agglevelsup);
+	WRITE_LOCATION_FIELD(location);
+}
+
+static void
+_outGroupingFunc(StringInfo str, const GroupingFunc *node)
+{
+	WRITE_NODE_TYPE("GROUPINGFUNC");
+
+	WRITE_NODE_FIELD(args);
+	WRITE_NODE_FIELD(refs);
+	WRITE_NODE_FIELD(cols);
 	WRITE_UINT_FIELD(agglevelsup);
 	WRITE_LOCATION_FIELD(location);
 }
@@ -1442,6 +1480,16 @@ _outCurrentOfExpr(StringInfo str, const CurrentOfExpr *node)
 }
 
 static void
+_outInferenceElem(StringInfo str, const InferenceElem *node)
+{
+	WRITE_NODE_TYPE("INFERENCEELEM");
+
+	WRITE_NODE_FIELD(expr);
+	WRITE_OID_FIELD(infercollid);
+	WRITE_OID_FIELD(inferopclass);
+}
+
+static void
 _outTargetEntry(StringInfo str, const TargetEntry *node)
 {
 	WRITE_NODE_TYPE("TARGETENTRY");
@@ -1485,6 +1533,21 @@ _outFromExpr(StringInfo str, const FromExpr *node)
 
 	WRITE_NODE_FIELD(fromlist);
 	WRITE_NODE_FIELD(quals);
+}
+
+static void
+_outOnConflictExpr(StringInfo str, const OnConflictExpr *node)
+{
+	WRITE_NODE_TYPE("ONCONFLICTEXPR");
+
+	WRITE_ENUM_FIELD(action, OnConflictAction);
+	WRITE_NODE_FIELD(arbiterElems);
+	WRITE_NODE_FIELD(arbiterWhere);
+	WRITE_OID_FIELD(constraint);
+	WRITE_NODE_FIELD(onConflictSet);
+	WRITE_NODE_FIELD(onConflictWhere);
+	WRITE_INT_FIELD(exclRelIndex);
+	WRITE_NODE_FIELD(exclRelTlist);
 }
 
 /*****************************************************************************
@@ -1622,6 +1685,7 @@ _outCustomPath(StringInfo str, const CustomPath *node)
 	_outPathInfo(str, (const Path *) node);
 
 	WRITE_UINT_FIELD(flags);
+	WRITE_NODE_FIELD(custom_paths);
 	WRITE_NODE_FIELD(custom_private);
 	appendStringInfoString(str, " :methods ");
 	_outToken(str, node->methods->CustomName);
@@ -1745,6 +1809,7 @@ _outPlannerInfo(StringInfo str, const PlannerInfo *node)
 	WRITE_NODE_FIELD(glob);
 	WRITE_UINT_FIELD(query_level);
 	WRITE_NODE_FIELD(plan_params);
+	WRITE_BITMAPSET_FIELD(outer_params);
 	WRITE_BITMAPSET_FIELD(all_baserels);
 	WRITE_BITMAPSET_FIELD(nullable_baserels);
 	WRITE_NODE_FIELD(join_rel_list);
@@ -1794,6 +1859,7 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_FLOAT_FIELD(rows, "%.0f");
 	WRITE_INT_FIELD(width);
 	WRITE_BOOL_FIELD(consider_startup);
+	WRITE_BOOL_FIELD(consider_param_startup);
 	WRITE_NODE_FIELD(reltargetlist);
 	WRITE_NODE_FIELD(pathlist);
 	WRITE_NODE_FIELD(ppilist);
@@ -1816,6 +1882,7 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_NODE_FIELD(subplan);
 	WRITE_NODE_FIELD(subroot);
 	WRITE_NODE_FIELD(subplan_params);
+	WRITE_OID_FIELD(serverid);
 	/* we don't try to print fdwroutine or fdw_private */
 	WRITE_NODE_FIELD(baserestrictinfo);
 	WRITE_NODE_FIELD(joininfo);
@@ -2334,8 +2401,10 @@ _outQuery(StringInfo str, const Query *node)
 	WRITE_NODE_FIELD(jointree);
 	WRITE_NODE_FIELD(targetList);
 	WRITE_NODE_FIELD(withCheckOptions);
+	WRITE_NODE_FIELD(onConflict);
 	WRITE_NODE_FIELD(returningList);
 	WRITE_NODE_FIELD(groupClause);
+	WRITE_NODE_FIELD(groupingSets);
 	WRITE_NODE_FIELD(havingQual);
 	WRITE_NODE_FIELD(windowClause);
 	WRITE_NODE_FIELD(distinctClause);
@@ -2352,7 +2421,8 @@ _outWithCheckOption(StringInfo str, const WithCheckOption *node)
 {
 	WRITE_NODE_TYPE("WITHCHECKOPTION");
 
-	WRITE_STRING_FIELD(viewname);
+	WRITE_ENUM_FIELD(kind, WCOKind);
+	WRITE_STRING_FIELD(relname);
 	WRITE_NODE_FIELD(qual);
 	WRITE_BOOL_FIELD(cascaded);
 }
@@ -2367,6 +2437,16 @@ _outSortGroupClause(StringInfo str, const SortGroupClause *node)
 	WRITE_OID_FIELD(sortop);
 	WRITE_BOOL_FIELD(nulls_first);
 	WRITE_BOOL_FIELD(hashable);
+}
+
+static void
+_outGroupingSet(StringInfo str, const GroupingSet *node)
+{
+	WRITE_NODE_TYPE("GROUPINGSET");
+
+	WRITE_ENUM_FIELD(kind, GroupingSetKind);
+	WRITE_NODE_FIELD(content);
+	WRITE_LOCATION_FIELD(location);
 }
 
 static void
@@ -2453,6 +2533,7 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 		case RTE_RELATION:
 			WRITE_OID_FIELD(relid);
 			WRITE_CHAR_FIELD(relkind);
+			WRITE_NODE_FIELD(tablesample);
 			break;
 		case RTE_SUBQUERY:
 			WRITE_NODE_FIELD(subquery);
@@ -2496,7 +2577,8 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 	WRITE_UINT_FIELD(requiredPerms);
 	WRITE_OID_FIELD(checkAsUser);
 	WRITE_BITMAPSET_FIELD(selectedCols);
-	WRITE_BITMAPSET_FIELD(modifiedCols);
+	WRITE_BITMAPSET_FIELD(insertedCols);
+	WRITE_BITMAPSET_FIELD(updatedCols);
 	WRITE_NODE_FIELD(securityQuals);
 }
 
@@ -2512,6 +2594,16 @@ _outRangeTblFunction(StringInfo str, const RangeTblFunction *node)
 	WRITE_NODE_FIELD(funccoltypmods);
 	WRITE_NODE_FIELD(funccolcollations);
 	WRITE_BITMAPSET_FIELD(funcparams);
+}
+
+static void
+_outTableSampleClause(StringInfo str, const TableSampleClause *node)
+{
+	WRITE_NODE_TYPE("TABLESAMPLECLAUSE");
+
+	WRITE_OID_FIELD(tsmhandler);
+	WRITE_NODE_FIELD(args);
+	WRITE_NODE_FIELD(repeatable);
 }
 
 static void
@@ -2766,6 +2858,18 @@ _outRangeFunction(StringInfo str, const RangeFunction *node)
 }
 
 static void
+_outRangeTableSample(StringInfo str, const RangeTableSample *node)
+{
+	WRITE_NODE_TYPE("RANGETABLESAMPLE");
+
+	WRITE_NODE_FIELD(relation);
+	WRITE_NODE_FIELD(method);
+	WRITE_NODE_FIELD(args);
+	WRITE_NODE_FIELD(repeatable);
+	WRITE_LOCATION_FIELD(location);
+}
+
+static void
 _outConstraint(StringInfo str, const Constraint *node)
 {
 	WRITE_NODE_TYPE("CONSTRAINT");
@@ -2922,6 +3026,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_SeqScan:
 				_outSeqScan(str, obj);
 				break;
+			case T_SampleScan:
+				_outSampleScan(str, obj);
+				break;
 			case T_IndexScan:
 				_outIndexScan(str, obj);
 				break;
@@ -3033,6 +3140,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_Aggref:
 				_outAggref(str, obj);
 				break;
+			case T_GroupingFunc:
+				_outGroupingFunc(str, obj);
+				break;
 			case T_WindowFunc:
 				_outWindowFunc(str, obj);
 				break;
@@ -3135,6 +3245,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_CurrentOfExpr:
 				_outCurrentOfExpr(str, obj);
 				break;
+			case T_InferenceElem:
+				_outInferenceElem(str, obj);
+				break;
 			case T_TargetEntry:
 				_outTargetEntry(str, obj);
 				break;
@@ -3147,7 +3260,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_FromExpr:
 				_outFromExpr(str, obj);
 				break;
-
+			case T_OnConflictExpr:
+				_outOnConflictExpr(str, obj);
+				break;
 			case T_Path:
 				_outPath(str, obj);
 				break;
@@ -3290,6 +3405,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_SortGroupClause:
 				_outSortGroupClause(str, obj);
 				break;
+			case T_GroupingSet:
+				_outGroupingSet(str, obj);
+				break;
 			case T_WindowClause:
 				_outWindowClause(str, obj);
 				break;
@@ -3310,6 +3428,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_RangeTblFunction:
 				_outRangeTblFunction(str, obj);
+				break;
+			case T_TableSampleClause:
+				_outTableSampleClause(str, obj);
 				break;
 			case T_A_Expr:
 				_outAExpr(str, obj);
@@ -3352,6 +3473,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_RangeFunction:
 				_outRangeFunction(str, obj);
+				break;
+			case T_RangeTableSample:
+				_outRangeTableSample(str, obj);
 				break;
 			case T_Constraint:
 				_outConstraint(str, obj);

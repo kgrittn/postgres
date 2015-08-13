@@ -40,6 +40,7 @@ Datum
 pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
 {
 	Name		name = PG_GETARG_NAME(0);
+	bool 		immediately_reserve = PG_GETARG_BOOL(1);
 	Datum		values[2];
 	bool		nulls[2];
 	TupleDesc	tupdesc;
@@ -59,9 +60,24 @@ pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
 	ReplicationSlotCreate(NameStr(*name), false, RS_PERSISTENT);
 
 	values[0] = NameGetDatum(&MyReplicationSlot->data.name);
-
 	nulls[0] = false;
-	nulls[1] = true;
+
+	if (immediately_reserve)
+	{
+		/* Reserve WAL as the user asked for it */
+		ReplicationSlotReserveWal();
+
+		/* Write this slot to disk */
+		ReplicationSlotMarkDirty();
+		ReplicationSlotSave();
+
+		values[1] = LSNGetDatum(MyReplicationSlot->data.restart_lsn);
+		nulls[1] = false;
+	}
+	else
+	{
+		nulls[1] = true;
+	}
 
 	tuple = heap_form_tuple(tupdesc, values, nulls);
 	result = HeapTupleGetDatum(tuple);
@@ -99,9 +115,9 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 	CheckLogicalDecodingRequirements();
 
 	/*
-	 * Acquire a logical decoding slot, this will check for conflicting
-	 * names. Initially create it as ephemeral - that allows us to nicely
-	 * handle errors during initialization because it'll get dropped if this
+	 * Acquire a logical decoding slot, this will check for conflicting names.
+	 * Initially create it as ephemeral - that allows us to nicely handle
+	 * errors during initialization because it'll get dropped if this
 	 * transaction fails. We'll make it persistent at the end.
 	 */
 	ReplicationSlotCreate(NameStr(*name), true, RS_EPHEMERAL);
@@ -158,7 +174,7 @@ pg_drop_replication_slot(PG_FUNCTION_ARGS)
 Datum
 pg_get_replication_slots(PG_FUNCTION_ARGS)
 {
-#define PG_GET_REPLICATION_SLOTS_COLS 8
+#define PG_GET_REPLICATION_SLOTS_COLS 10
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	TupleDesc	tupdesc;
 	Tuplestorestate *tupstore;
@@ -206,7 +222,8 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 		TransactionId xmin;
 		TransactionId catalog_xmin;
 		XLogRecPtr	restart_lsn;
-		bool		active;
+		XLogRecPtr	confirmed_flush_lsn;
+		pid_t		active_pid;
 		Oid			database;
 		NameData	slot_name;
 		NameData	plugin;
@@ -224,10 +241,11 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 			catalog_xmin = slot->data.catalog_xmin;
 			database = slot->data.database;
 			restart_lsn = slot->data.restart_lsn;
+			confirmed_flush_lsn = slot->data.confirmed_flush;
 			namecpy(&slot_name, &slot->data.name);
 			namecpy(&plugin, &slot->data.plugin);
 
-			active = slot->active;
+			active_pid = slot->active_pid;
 		}
 		SpinLockRelease(&slot->mutex);
 
@@ -251,7 +269,12 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 		else
 			values[i++] = database;
 
-		values[i++] = BoolGetDatum(active);
+		values[i++] = BoolGetDatum(active_pid != 0);
+
+		if (active_pid != 0)
+			values[i++] = Int32GetDatum(active_pid);
+		else
+			nulls[i++] = true;
 
 		if (xmin != InvalidTransactionId)
 			values[i++] = TransactionIdGetDatum(xmin);
@@ -263,8 +286,13 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 		else
 			nulls[i++] = true;
 
-		if (restart_lsn != InvalidTransactionId)
+		if (restart_lsn != InvalidXLogRecPtr)
 			values[i++] = LSNGetDatum(restart_lsn);
+		else
+			nulls[i++] = true;
+
+		if (confirmed_flush_lsn != InvalidXLogRecPtr)
+			values[i++] = LSNGetDatum(confirmed_flush_lsn);
 		else
 			nulls[i++] = true;
 

@@ -96,6 +96,10 @@
 #ifndef S_LOCK_H
 #define S_LOCK_H
 
+#ifdef FRONTEND
+#error "s_lock.h may not be included from frontend code"
+#endif
+
 #ifdef HAVE_SPINLOCKS	/* skip spinlocks if requested */
 
 #if defined(__GNUC__) || defined(__INTEL_COMPILER)
@@ -356,8 +360,8 @@ tas(volatile slock_t *lock)
 /*
  * Solaris has always run sparc processors in TSO (total store) mode, but
  * linux didn't use to and the *BSDs still don't. So, be careful about
- * acquire/release semantics. The CPU will treat superflous membars as NOPs,
- * so it's just code space.
+ * acquire/release semantics. The CPU will treat superfluous membars as
+ * NOPs, so it's just code space.
  */
 #define HAS_TEST_AND_SET
 
@@ -380,12 +384,12 @@ tas(volatile slock_t *lock)
 :		"=r"(_res), "+m"(*lock)
 :		"r"(lock)
 :		"memory");
-#if defined(__sparcv7)
+#if defined(__sparcv7) || defined(__sparc_v7__)
 	/*
 	 * No stbar or membar available, luckily no actually produced hardware
 	 * requires a barrier.
 	 */
-#elif defined(__sparcv8)
+#elif defined(__sparcv8) || defined(__sparc_v8__)
 	/* stbar is available (and required for both PSO, RMO), membar isn't */
 	__asm__ __volatile__ ("stbar	 \n":::"memory");
 #else
@@ -398,13 +402,13 @@ tas(volatile slock_t *lock)
 	return (int) _res;
 }
 
-#if defined(__sparcv7)
+#if defined(__sparcv7) || defined(__sparc_v7__)
 /*
  * No stbar or membar available, luckily no actually produced hardware
  * requires a barrier.  We fall through to the default gcc definition of
  * S_UNLOCK in this case.
  */
-#elif defined(__sparcv8)
+#elif defined(__sparcv8) || defined(__sparc_v8__)
 /* stbar is available (and required for both PSO, RMO), membar isn't */
 #define S_UNLOCK(lock)	\
 do \
@@ -806,7 +810,7 @@ typedef unsigned int slock_t;
 /* On IA64, it's a win to use a non-locking test before the xchg proper */
 #define TAS_SPIN(lock)	(*(lock) ? 1 : TAS(lock))
 #define S_UNLOCK(lock)	\
-	do { _Asm_sched_fence(); (*(lock)) = 0; } while (0)
+	do { _Asm_mf(); (*(lock)) = 0; } while (0)
 
 #endif	/* HPUX on IA64, non gcc */
 

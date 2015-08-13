@@ -40,11 +40,11 @@ typedef struct BrinSpecialSpace
  * See comments above GinPageOpaqueData.
  */
 #define BrinPageType(page)		\
-	(((BrinSpecialSpace *)  	\
+	(((BrinSpecialSpace *)		\
 	  PageGetSpecialPointer(page))->vector[MAXALIGN(1) / sizeof(uint16) - 1])
 
 #define BrinPageFlags(page)		\
-	(((BrinSpecialSpace *)  	\
+	(((BrinSpecialSpace *)		\
 	  PageGetSpecialPointer(page))->vector[MAXALIGN(1) / sizeof(uint16) - 2])
 
 /* special space on all BRIN pages stores a "type" identifier */
@@ -52,6 +52,7 @@ typedef struct BrinSpecialSpace
 #define		BRIN_PAGETYPE_REVMAP		0xF092
 #define		BRIN_PAGETYPE_REGULAR		0xF093
 
+#define BRIN_IS_META_PAGE(page) (BrinPageType(page) == BRIN_PAGETYPE_META)
 #define BRIN_IS_REVMAP_PAGE(page) (BrinPageType(page) == BRIN_PAGETYPE_REVMAP)
 #define BRIN_IS_REGULAR_PAGE(page) (BrinPageType(page) == BRIN_PAGETYPE_REGULAR)
 

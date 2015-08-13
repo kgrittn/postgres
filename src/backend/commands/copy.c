@@ -847,7 +847,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 			FirstLowInvalidHeapAttributeNumber;
 
 			if (is_from)
-				rte->modifiedCols = bms_add_member(rte->modifiedCols, attno);
+				rte->insertedCols = bms_add_member(rte->insertedCols, attno);
 			else
 				rte->selectedCols = bms_add_member(rte->selectedCols, attno);
 		}
@@ -861,8 +861,8 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		 * RLS (returns RLS_ENABLED) or not for this COPY statement.
 		 *
 		 * If the relation has a row security policy and we are to apply it
-		 * then perform a "query" copy and allow the normal query processing to
-		 * handle the policies.
+		 * then perform a "query" copy and allow the normal query processing
+		 * to handle the policies.
 		 *
 		 * If RLS is not enabled for this, then just fall through to the
 		 * normal non-filtering relation handling.
@@ -877,7 +877,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 			if (is_from)
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("COPY FROM not supported with row level security."),
+				  errmsg("COPY FROM not supported with row level security."),
 						 errhint("Use direct INSERT statements instead.")));
 
 			/* Build target list */
@@ -896,18 +896,27 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 			target->val = (Node *) cr;
 			target->location = 1;
 
-			/* Build FROM clause */
-			from = stmt->relation;
+			/*
+			 * Build RangeVar for from clause, fully qualified based on the
+			 * relation which we have opened and locked.
+			 */
+			from = makeRangeVar(get_namespace_name(RelationGetNamespace(rel)),
+								RelationGetRelationName(rel), -1);
 
 			/* Build query */
 			select = makeNode(SelectStmt);
 			select->targetList = list_make1(target);
 			select->fromClause = list_make1(from);
 
-			query = (Node*) select;
+			query = (Node *) select;
 
-			/* Close the handle to the relation as it is no longer needed. */
-			heap_close(rel, (is_from ? RowExclusiveLock : AccessShareLock));
+			/*
+			 * Close the relation for now, but keep the lock on it to prevent
+			 * changes between now and when we start the query-based COPY.
+			 *
+			 * We'll reopen it later as part of the query-based COPY.
+			 */
+			heap_close(rel, NoLock);
 			rel = NULL;
 		}
 	}
@@ -924,9 +933,10 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	{
 		Assert(rel);
 
-		/* check read-only transaction */
+		/* check read-only transaction and parallel mode */
 		if (XactReadOnly && !rel->rd_islocaltemp)
 			PreventCommandIfReadOnly("COPY FROM");
+		PreventCommandIfParallelMode("COPY FROM");
 
 		cstate = BeginCopyFrom(rel, stmt->filename, stmt->is_program,
 							   stmt->attlist, stmt->options);
@@ -1406,27 +1416,28 @@ BeginCopy(bool is_from,
 		plan = planner(query, 0, NULL);
 
 		/*
-		 * If we were passed in a relid, make sure we got the same one back
-		 * after planning out the query.  It's possible that it changed between
-		 * when we checked the policies on the table and decided to use a query
-		 * and now.
+		 * With row level security and a user using "COPY relation TO", we
+		 * have to convert the "COPY relation TO" to a query-based COPY (eg:
+		 * "COPY (SELECT * FROM relation) TO"), to allow the rewriter to add
+		 * in any RLS clauses.
+		 *
+		 * When this happens, we are passed in the relid of the originally
+		 * found relation (which we have locked).  As the planner will look up
+		 * the relation again, we double-check here to make sure it found the
+		 * same one that we have locked.
 		 */
 		if (queryRelId != InvalidOid)
 		{
-			Oid relid = linitial_oid(plan->relationOids);
-
 			/*
-			 * There should only be one relationOid in this case, since we will
-			 * only get here when we have changed the command for the user from
-			 * a "COPY relation TO" to "COPY (SELECT * FROM relation) TO", to
-			 * allow row level security policies to be applied.
+			 * Note that with RLS involved there may be multiple relations,
+			 * and while the one we need is almost certainly first, we don't
+			 * make any guarantees of that in the planner, so check the whole
+			 * list and make sure we find the original relation.
 			 */
-			Assert(list_length(plan->relationOids) == 1);
-
-			if (relid != queryRelId)
+			if (!list_member_oid(plan->relationOids, queryRelId))
 				ereport(ERROR,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-						 errmsg("relation referenced by COPY statement has changed")));
+				errmsg("relation referenced by COPY statement has changed")));
 		}
 
 		/*
@@ -1592,10 +1603,12 @@ ClosePipeToProgram(CopyState cstate)
 	pclose_rc = ClosePipeStream(cstate->copy_file);
 	if (pclose_rc == -1)
 		ereport(ERROR,
-				(errmsg("could not close pipe to external command: %m")));
+				(errcode_for_file_access(),
+				 errmsg("could not close pipe to external command: %m")));
 	else if (pclose_rc != 0)
 		ereport(ERROR,
-				(errmsg("program \"%s\" failed",
+				(errcode(ERRCODE_EXTERNAL_ROUTINE_EXCEPTION),
+				 errmsg("program \"%s\" failed",
 						cstate->filename),
 				 errdetail_internal("%s", wait_result_to_str(pclose_rc))));
 }
@@ -1692,7 +1705,8 @@ BeginCopyTo(Relation rel,
 			cstate->copy_file = OpenPipeStream(cstate->filename, PG_BINARY_W);
 			if (cstate->copy_file == NULL)
 				ereport(ERROR,
-						(errmsg("could not execute command \"%s\": %m",
+						(errcode_for_file_access(),
+						 errmsg("could not execute command \"%s\": %m",
 								cstate->filename)));
 		}
 		else
@@ -1719,7 +1733,10 @@ BeginCopyTo(Relation rel,
 								cstate->filename)));
 
 			if (fstat(fileno(cstate->copy_file), &st))
-				elog(ERROR, "could not stat file \"%s\": %m", cstate->filename);
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not stat file \"%s\": %m",
+								cstate->filename)));
 
 			if (S_ISDIR(st.st_mode))
 				ereport(ERROR,
@@ -2260,13 +2277,13 @@ CopyFrom(CopyState cstate)
 	{
 		if (!ThereAreNoPriorRegisteredSnapshots() || !ThereAreNoReadyPortals())
 			ereport(ERROR,
-					(ERRCODE_INVALID_TRANSACTION_STATE,
+					(errcode(ERRCODE_INVALID_TRANSACTION_STATE),
 					 errmsg("cannot perform FREEZE because of prior transaction activity")));
 
 		if (cstate->rel->rd_createSubid != GetCurrentSubTransactionId() &&
 		 cstate->rel->rd_newRelfilenodeSubid != GetCurrentSubTransactionId())
 			ereport(ERROR,
-					(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 					 errmsg("cannot perform FREEZE because the table was not created or truncated in the current subtransaction")));
 
 		hi_options |= HEAP_INSERT_FROZEN;
@@ -2283,7 +2300,7 @@ CopyFrom(CopyState cstate)
 					  1,		/* dummy rangetable index */
 					  0);
 
-	ExecOpenIndices(resultRelInfo);
+	ExecOpenIndices(resultRelInfo, false);
 
 	estate->es_result_relations = resultRelInfo;
 	estate->es_num_result_relations = 1;
@@ -2438,7 +2455,8 @@ CopyFrom(CopyState cstate)
 
 				if (resultRelInfo->ri_NumIndices > 0)
 					recheckIndexes = ExecInsertIndexTuples(slot, &(tuple->t_self),
-														   estate);
+														 estate, false, NULL,
+														   NIL);
 
 				/* AFTER ROW INSERT Triggers */
 				ExecARInsertTriggers(estate, resultRelInfo, tuple,
@@ -2552,7 +2570,7 @@ CopyFromInsertBatch(CopyState cstate, EState *estate, CommandId mycid,
 			ExecStoreTuple(bufferedTuples[i], myslot, InvalidBuffer, false);
 			recheckIndexes =
 				ExecInsertIndexTuples(myslot, &(bufferedTuples[i]->t_self),
-									  estate);
+									  estate, false, NULL, NIL);
 			ExecARInsertTriggers(estate, resultRelInfo,
 								 bufferedTuples[i],
 								 recheckIndexes);
@@ -2725,7 +2743,8 @@ BeginCopyFrom(Relation rel,
 			cstate->copy_file = OpenPipeStream(cstate->filename, PG_BINARY_R);
 			if (cstate->copy_file == NULL)
 				ereport(ERROR,
-						(errmsg("could not execute command \"%s\": %m",
+						(errcode_for_file_access(),
+						 errmsg("could not execute command \"%s\": %m",
 								cstate->filename)));
 		}
 		else
@@ -2740,7 +2759,10 @@ BeginCopyFrom(Relation rel,
 								cstate->filename)));
 
 			if (fstat(fileno(cstate->copy_file), &st))
-				elog(ERROR, "could not stat file \"%s\": %m", cstate->filename);
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not stat file \"%s\": %m",
+								cstate->filename)));
 
 			if (S_ISDIR(st.st_mode))
 				ereport(ERROR,
@@ -3344,7 +3366,7 @@ CopyReadLineText(CopyState cstate)
 			 * just use the char as a toggle. If they are different, we need
 			 * to ensure that we only take account of an escape inside a
 			 * quoted field and immediately preceding a quote char, and not
-			 * the second in a escape-escape sequence.
+			 * the second in an escape-escape sequence.
 			 */
 			if (in_quote && c == escapec)
 				last_was_esc = !last_was_esc;

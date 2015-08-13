@@ -93,11 +93,6 @@ typedef struct
 #endif
 
 /*
- * SSL renegotiations
- */
-extern int	ssl_renegotiation_limit;
-
-/*
  * This is used by the postmaster in its communication with frontends.  It
  * contains all state information needed during this communication before the
  * backend is run.  The Port structure is kept in malloc'd memory and is
@@ -207,11 +202,16 @@ typedef struct Port
  * SSL implementation (e.g. be-secure-openssl.c)
  */
 extern void be_tls_init(void);
-extern int be_tls_open_server(Port *port);
+extern int	be_tls_open_server(Port *port);
 extern void be_tls_close(Port *port);
 extern ssize_t be_tls_read(Port *port, void *ptr, size_t len, int *waitfor);
 extern ssize_t be_tls_write(Port *port, void *ptr, size_t len, int *waitfor);
 
+extern int	be_tls_get_cipher_bits(Port *port);
+extern bool be_tls_get_compression(Port *port);
+extern void be_tls_get_version(Port *port, char *ptr, size_t len);
+extern void be_tls_get_cipher(Port *port, char *ptr, size_t len);
+extern void be_tls_get_peerdn_name(Port *port, char *ptr, size_t len);
 #endif
 
 extern ProtocolVersion FrontendProtocol;

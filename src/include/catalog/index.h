@@ -81,6 +81,8 @@ extern void index_drop(Oid indexId, bool concurrent);
 
 extern IndexInfo *BuildIndexInfo(Relation index);
 
+extern void BuildSpeculativeIndexInfo(Relation index, IndexInfo *ii);
+
 extern void FormIndexDatum(IndexInfo *indexInfo,
 			   TupleTableSlot *slot,
 			   EState *estate,
@@ -103,6 +105,7 @@ extern double IndexBuildHeapRangeScan(Relation heapRelation,
 						Relation indexRelation,
 						IndexInfo *indexInfo,
 						bool allow_sync,
+						bool anyvisible,
 						BlockNumber start_blockno,
 						BlockNumber end_blockno,
 						IndexBuildCallback callback,
@@ -113,16 +116,16 @@ extern void validate_index(Oid heapId, Oid indexId, Snapshot snapshot);
 extern void index_set_state_flags(Oid indexId, IndexStateFlagsAction action);
 
 extern void reindex_index(Oid indexId, bool skip_constraint_checks,
-			  char relpersistence);
+			  char relpersistence, int options);
 
 /* Flag bits for reindex_relation(): */
 #define REINDEX_REL_PROCESS_TOAST			0x01
 #define REINDEX_REL_SUPPRESS_INDEX_USE		0x02
 #define REINDEX_REL_CHECK_CONSTRAINTS		0x04
 #define REINDEX_REL_FORCE_INDEXES_UNLOGGED	0x08
-#define REINDEX_REL_FORCE_INDEXES_PERMANENT	0x10
+#define REINDEX_REL_FORCE_INDEXES_PERMANENT 0x10
 
-extern bool reindex_relation(Oid relid, int flags);
+extern bool reindex_relation(Oid relid, int flags, int options);
 
 extern bool ReindexIsProcessingHeap(Oid heapOid);
 extern bool ReindexIsProcessingIndex(Oid indexOid);

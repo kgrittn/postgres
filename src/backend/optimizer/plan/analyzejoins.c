@@ -240,10 +240,10 @@ join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo)
 	{
 		PlaceHolderInfo *phinfo = (PlaceHolderInfo *) lfirst(l);
 
-		if (bms_is_subset(phinfo->ph_needed, joinrelids))
-			continue;			/* PHV is not used above the join */
 		if (bms_overlap(phinfo->ph_lateral, innerrel->relids))
 			return false;		/* it references innerrel laterally */
+		if (bms_is_subset(phinfo->ph_needed, joinrelids))
+			continue;			/* PHV is not used above the join */
 		if (!bms_overlap(phinfo->ph_eval_at, innerrel->relids))
 			continue;			/* it definitely doesn't reference innerrel */
 		if (bms_is_subset(phinfo->ph_eval_at, innerrel->relids))
@@ -439,41 +439,39 @@ remove_rel_from_query(PlannerInfo *root, int relid, Relids joinrelids)
 		sjinfo->syn_righthand = bms_del_member(sjinfo->syn_righthand, relid);
 	}
 
+	/* There shouldn't be any LATERAL info to translate, as yet */
+	Assert(root->lateral_info_list == NIL);
+
 	/*
-	 * Likewise remove references from LateralJoinInfo data structures.
+	 * Likewise remove references from PlaceHolderVar data structures,
+	 * removing any no-longer-needed placeholders entirely.
 	 *
-	 * If we are deleting a LATERAL subquery, we can forget its
-	 * LateralJoinInfos altogether.  Otherwise, make sure the target is not
-	 * included in any lateral_lhs set.  (It probably can't be, since that
-	 * should have precluded deciding to remove it; but let's cope anyway.)
+	 * Removal is a bit tricker than it might seem: we can remove PHVs that
+	 * are used at the target rel and/or in the join qual, but not those that
+	 * are used at join partner rels or above the join.  It's not that easy to
+	 * distinguish PHVs used at partner rels from those used in the join qual,
+	 * since they will both have ph_needed sets that are subsets of
+	 * joinrelids.  However, a PHV used at a partner rel could not have the
+	 * target rel in ph_eval_at, so we check that while deciding whether to
+	 * remove or just update the PHV.  There is no corresponding test in
+	 * join_is_removable because it doesn't need to distinguish those cases.
 	 */
-	for (l = list_head(root->lateral_info_list); l != NULL; l = nextl)
-	{
-		LateralJoinInfo *ljinfo = (LateralJoinInfo *) lfirst(l);
-
-		nextl = lnext(l);
-		ljinfo->lateral_rhs = bms_del_member(ljinfo->lateral_rhs, relid);
-		if (bms_is_empty(ljinfo->lateral_rhs))
-			root->lateral_info_list = list_delete_ptr(root->lateral_info_list,
-													  ljinfo);
-		else
-		{
-			ljinfo->lateral_lhs = bms_del_member(ljinfo->lateral_lhs, relid);
-			Assert(!bms_is_empty(ljinfo->lateral_lhs));
-		}
-	}
-
-	/*
-	 * Likewise remove references from PlaceHolderVar data structures.
-	 */
-	foreach(l, root->placeholder_list)
+	for (l = list_head(root->placeholder_list); l != NULL; l = nextl)
 	{
 		PlaceHolderInfo *phinfo = (PlaceHolderInfo *) lfirst(l);
 
-		phinfo->ph_eval_at = bms_del_member(phinfo->ph_eval_at, relid);
-		Assert(!bms_is_empty(phinfo->ph_eval_at));
+		nextl = lnext(l);
 		Assert(!bms_is_member(relid, phinfo->ph_lateral));
-		phinfo->ph_needed = bms_del_member(phinfo->ph_needed, relid);
+		if (bms_is_subset(phinfo->ph_needed, joinrelids) &&
+			bms_is_member(relid, phinfo->ph_eval_at))
+			root->placeholder_list = list_delete_ptr(root->placeholder_list,
+													 phinfo);
+		else
+		{
+			phinfo->ph_eval_at = bms_del_member(phinfo->ph_eval_at, relid);
+			Assert(!bms_is_empty(phinfo->ph_eval_at));
+			phinfo->ph_needed = bms_del_member(phinfo->ph_needed, relid);
+		}
 	}
 
 	/*
@@ -581,6 +579,7 @@ query_supports_distinctness(Query *query)
 {
 	if (query->distinctClause != NIL ||
 		query->groupClause != NIL ||
+		query->groupingSets != NIL ||
 		query->hasAggs ||
 		query->havingQual ||
 		query->setOperations)
@@ -649,10 +648,10 @@ query_is_distinct_for(Query *query, List *colnos, List *opids)
 	}
 
 	/*
-	 * Similarly, GROUP BY guarantees uniqueness if all the grouped columns
-	 * appear in colnos and operator semantics match.
+	 * Similarly, GROUP BY without GROUPING SETS guarantees uniqueness if all
+	 * the grouped columns appear in colnos and operator semantics match.
 	 */
-	if (query->groupClause)
+	if (query->groupClause && !query->groupingSets)
 	{
 		foreach(l, query->groupClause)
 		{
@@ -667,6 +666,27 @@ query_is_distinct_for(Query *query, List *colnos, List *opids)
 		}
 		if (l == NULL)			/* had matches for all? */
 			return true;
+	}
+	else if (query->groupingSets)
+	{
+		/*
+		 * If we have grouping sets with expressions, we probably don't have
+		 * uniqueness and analysis would be hard. Punt.
+		 */
+		if (query->groupClause)
+			return false;
+
+		/*
+		 * If we have no groupClause (therefore no grouping expressions), we
+		 * might have one or many empty grouping sets. If there's just one,
+		 * then we're returning only one row and are certainly unique. But
+		 * otherwise, we know we're certainly not unique.
+		 */
+		if (list_length(query->groupingSets) == 1 &&
+			((GroupingSet *) linitial(query->groupingSets))->kind == GROUPING_SET_EMPTY)
+			return true;
+		else
+			return false;
 	}
 	else
 	{

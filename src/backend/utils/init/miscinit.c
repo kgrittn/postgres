@@ -199,8 +199,8 @@ InitPostmasterChild(void)
 	/*
 	 * If possible, make this process a group leader, so that the postmaster
 	 * can signal any child processes too. Not all processes will have
-	 * children, but for consistency we , but for consistency we make all
-	 * postmaster child processes do this.
+	 * children, but for consistency we make all postmaster child processes do
+	 * this.
 	 */
 #ifdef HAVE_SETSID
 	if (setsid() < 0)
@@ -246,6 +246,7 @@ SwitchToSharedLatch(void)
 	Assert(MyProc != NULL);
 
 	MyLatch = &MyProc->procLatch;
+
 	/*
 	 * Set the shared latch as the local one might have been set. This
 	 * shouldn't normally be necessary as code is supposed to check the
@@ -340,7 +341,7 @@ GetAuthenticatedUserId(void)
  * GetUserIdAndSecContext/SetUserIdAndSecContext - get/set the current user ID
  * and the SecurityRestrictionContext flags.
  *
- * Currently there are two valid bits in SecurityRestrictionContext:
+ * Currently there are three valid bits in SecurityRestrictionContext:
  *
  * SECURITY_LOCAL_USERID_CHANGE indicates that we are inside an operation
  * that is temporarily changing CurrentUserId via these functions.  This is
@@ -357,6 +358,9 @@ GetAuthenticatedUserId(void)
  * these restrictions are fairly draconian, we apply them only in contexts
  * where the called functions are really supposed to be side-effect-free
  * anyway, such as VACUUM/ANALYZE/REINDEX.
+ *
+ * SECURITY_ROW_LEVEL_DISABLED indicates that we are inside an operation that
+ * needs to bypass row level security checks, for example FK checks.
  *
  * Unlike GetUserId, GetUserIdAndSecContext does *not* Assert that the current
  * value of CurrentUserId is valid; nor does SetUserIdAndSecContext require
@@ -398,6 +402,15 @@ bool
 InSecurityRestrictedOperation(void)
 {
 	return (SecurityRestrictionContext & SECURITY_RESTRICTED_OPERATION) != 0;
+}
+
+/*
+ * InRowLevelSecurityDisabled - are we inside a RLS-disabled operation?
+ */
+bool
+InRowLevelSecurityDisabled(void)
+{
+	return (SecurityRestrictionContext & SECURITY_ROW_LEVEL_DISABLED) != 0;
 }
 
 
@@ -648,23 +661,29 @@ SetCurrentRoleId(Oid roleid, bool is_superuser)
 
 
 /*
- * Get user name from user oid
+ * Get user name from user oid, returns NULL for nonexistent roleid if noerr
+ * is true.
  */
 char *
-GetUserNameFromId(Oid roleid)
+GetUserNameFromId(Oid roleid, bool noerr)
 {
 	HeapTuple	tuple;
 	char	   *result;
 
 	tuple = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleid));
 	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("invalid role OID: %u", roleid)));
-
-	result = pstrdup(NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname));
-
-	ReleaseSysCache(tuple);
+	{
+		if (!noerr)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("invalid role OID: %u", roleid)));
+		result = NULL;
+	}
+	else
+	{
+		result = pstrdup(NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname));
+		ReleaseSysCache(tuple);
+	}
 	return result;
 }
 
@@ -999,7 +1018,11 @@ CreateLockFile(const char *filename, bool amPostmaster,
 	if (lock_files == NIL)
 		on_proc_exit(UnlinkLockFiles, 0);
 
-	lock_files = lappend(lock_files, pstrdup(filename));
+	/*
+	 * Use lcons so that the lock files are unlinked in reverse order of
+	 * creation; this is critical!
+	 */
+	lock_files = lcons(pstrdup(filename), lock_files);
 }
 
 /*

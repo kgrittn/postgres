@@ -381,7 +381,7 @@ b
       <entry><type>hstore</type></entry>
       <entry>delete pair with matching key</entry>
       <entry><literal>delete('a=&gt;1,b=&gt;2','b')</literal></entry>
-      <entry><literal>"a"=>"1"</literal></entry>
+      <entry><literal>"a"=&gt;"1"</literal></entry>
      </row>
 
      <row>
@@ -389,7 +389,7 @@ b
       <entry><type>hstore</type></entry>
       <entry>delete pairs with matching keys</entry>
       <entry><literal>delete('a=&gt;1,b=&gt;2,c=&gt;3',ARRAY['a','b'])</literal></entry>
-      <entry><literal>"c"=>"3"</literal></entry>
+      <entry><literal>"c"=&gt;"3"</literal></entry>
      </row>
 
      <row>
@@ -397,7 +397,7 @@ b
       <entry><type>hstore</type></entry>
       <entry>delete pairs matching those in the second argument</entry>
       <entry><literal>delete('a=&gt;1,b=&gt;2','a=&gt;4,b=&gt;2'::hstore)</literal></entry>
-      <entry><literal>"a"=>"1"</literal></entry>
+      <entry><literal>"a"=&gt;"1"</literal></entry>
      </row>
 
      <row>
@@ -594,6 +594,25 @@ ALTER TABLE tablename ALTER hstorecol TYPE hstore USING hstorecol || '';
    but does not result in bloating the table with old row versions.
   </para>
 
+ </sect2>
+
+ <sect2>
+  <title>Transforms</title>
+
+  <para>
+   Additional extensions are available that implement transforms for
+   the <type>hstore</type> type for the languages PL/Perl and PL/Python.  The
+   extensions for PL/Perl are called <literal>hstore_plperl</literal>
+   and <literal>hstore_plperlu</literal>, for trusted and untrusted PL/Perl.
+   If you install these transforms and specify them when creating a
+   function, <type>hstore</type> values are mapped to Perl hashes.  The
+   extensions for PL/Python are
+   called <literal>hstore_plpythonu</literal>, <literal>hstore_plpython2u</literal>,
+   and <literal>hstore_plpython3u</literal>
+   (see <xref linkend="plpython-python23"> for the PL/Python naming
+   convention).  If you use them, <type>hstore</type> values are mapped to
+   Python dictionaries.
+  </para>
  </sect2>
 
  <sect2>

@@ -28,9 +28,6 @@
 
 #include "postgres.h"
 
-#include <unistd.h>
-#include <sys/stat.h>
-
 #include "miscadmin.h"
 
 #include "access/xact.h"
@@ -39,6 +36,7 @@
 #include "replication/decode.h"
 #include "replication/logical.h"
 #include "replication/reorderbuffer.h"
+#include "replication/origin.h"
 #include "replication/snapbuild.h"
 
 #include "storage/proc.h"
@@ -148,7 +146,7 @@ StartupDecodingContext(List *output_plugin_options,
 	 * replication slots.
 	 *
 	 * We can only do so if we're outside of a transaction (i.e. the case when
-	 * streaming changes via walsender), otherwise a already setup
+	 * streaming changes via walsender), otherwise an already setup
 	 * snapshot/xid would end up being ignored. That's not a particularly
 	 * bothersome restriction since the SQL interface can't be used for
 	 * streaming anyway.
@@ -163,6 +161,11 @@ StartupDecodingContext(List *output_plugin_options,
 	ctx->slot = slot;
 
 	ctx->reader = XLogReaderAllocate(read_page, ctx);
+	if (!ctx->reader)
+		ereport(ERROR,
+				(errcode(ERRCODE_OUT_OF_MEMORY),
+				 errmsg("out of memory")));
+
 	ctx->reader->private_data = ctx;
 
 	ctx->reorder = ReorderBufferAllocate();
@@ -219,16 +222,16 @@ CreateInitDecodingContext(char *plugin,
 
 	/* first some sanity checks that are unlikely to be violated */
 	if (slot == NULL)
-		elog(ERROR, "cannot perform logical decoding without a acquired slot");
+		elog(ERROR, "cannot perform logical decoding without an acquired slot");
 
 	if (plugin == NULL)
 		elog(ERROR, "cannot initialize logical decoding without a specified plugin");
 
 	/* Make sure the passed slot is suitable. These are user facing errors. */
-	if (slot->data.database == InvalidOid)
+	if (SlotIsPhysical(slot))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("cannot use physical replication slot for logical decoding")));
+		errmsg("cannot use physical replication slot for logical decoding")));
 
 	if (slot->data.database != MyDatabaseId)
 		ereport(ERROR,
@@ -247,52 +250,7 @@ CreateInitDecodingContext(char *plugin,
 	StrNCpy(NameStr(slot->data.plugin), plugin, NAMEDATALEN);
 	SpinLockRelease(&slot->mutex);
 
-	/*
-	 * The replication slot mechanism is used to prevent removal of required
-	 * WAL. As there is no interlock between this and checkpoints required WAL
-	 * could be removed before ReplicationSlotsComputeRequiredLSN() has been
-	 * called to prevent that. In the very unlikely case that this happens
-	 * we'll just retry.
-	 */
-	while (true)
-	{
-		XLogSegNo	segno;
-
-		/*
-		 * Let's start with enough information if we can, so log a standby
-		 * snapshot and start decoding at exactly that position.
-		 */
-		if (!RecoveryInProgress())
-		{
-			XLogRecPtr	flushptr;
-
-			/* start at current insert position */
-			slot->data.restart_lsn = GetXLogInsertRecPtr();
-
-			/* make sure we have enough information to start */
-			flushptr = LogStandbySnapshot();
-
-			/* and make sure it's fsynced to disk */
-			XLogFlush(flushptr);
-		}
-		else
-			slot->data.restart_lsn = GetRedoRecPtr();
-
-		/* prevent WAL removal as fast as possible */
-		ReplicationSlotsComputeRequiredLSN();
-
-		/*
-		 * If all required WAL is still there, great, otherwise retry. The
-		 * slot should prevent further removal of WAL, unless there's a
-		 * concurrent ReplicationSlotsComputeRequiredLSN() after we've written
-		 * the new restart_lsn above, so normally we should never need to loop
-		 * more than twice.
-		 */
-		XLByteToSeg(slot->data.restart_lsn, segno);
-		if (XLogGetLastRemovedSegno() < segno)
-			break;
-	}
-
+	ReplicationSlotReserveWal();
 
 	/* ----
 	 * This is a bit tricky: We need to determine a safe xmin horizon to start
@@ -371,10 +329,10 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 
 	/* first some sanity checks that are unlikely to be violated */
 	if (slot == NULL)
-		elog(ERROR, "cannot perform logical decoding without a acquired slot");
+		elog(ERROR, "cannot perform logical decoding without an acquired slot");
 
 	/* make sure the passed slot is suitable, these are user facing errors */
-	if (slot->data.database == InvalidOid)
+	if (SlotIsPhysical(slot))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 (errmsg("cannot use physical replication slot for logical decoding"))));
@@ -400,11 +358,12 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 		 * decoding. Clients have to be able to do that to support synchronous
 		 * replication.
 		 */
-		start_lsn = slot->data.confirmed_flush;
 		elog(DEBUG1, "cannot stream from %X/%X, minimum is %X/%X, forwarding",
 			 (uint32) (start_lsn >> 32), (uint32) start_lsn,
 			 (uint32) (slot->data.confirmed_flush >> 32),
 			 (uint32) slot->data.confirmed_flush);
+
+		start_lsn = slot->data.confirmed_flush;
 	}
 
 	ctx = StartupDecodingContext(output_plugin_options,
@@ -430,7 +389,7 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 }
 
 /*
- * Returns true if an consistent initial decoding snapshot has been built.
+ * Returns true if a consistent initial decoding snapshot has been built.
  */
 bool
 DecodingContextReady(LogicalDecodingContext *ctx)
@@ -713,6 +672,34 @@ change_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
+}
+
+bool
+filter_by_origin_cb_wrapper(LogicalDecodingContext *ctx, RepOriginId origin_id)
+{
+	LogicalErrorCallbackState state;
+	ErrorContextCallback errcallback;
+	bool		ret;
+
+	/* Push callback + info on the error context stack */
+	state.ctx = ctx;
+	state.callback_name = "shutdown";
+	state.report_location = InvalidXLogRecPtr;
+	errcallback.callback = output_plugin_error_callback;
+	errcallback.arg = (void *) &state;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	/* set output state */
+	ctx->accept_writes = false;
+
+	/* do the actual work: call callback */
+	ret = ctx->callbacks.filter_by_origin_cb(ctx, origin_id);
+
+	/* Pop the error context stack */
+	error_context_stack = errcallback.previous;
+
+	return ret;
 }
 
 /*

@@ -18,10 +18,15 @@
 extern void transformAggregateCall(ParseState *pstate, Aggref *agg,
 					   List *args, List *aggorder,
 					   bool agg_distinct);
+
+extern Node *transformGroupingFunc(ParseState *pstate, GroupingFunc *g);
+
 extern void transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 						WindowDef *windef);
 
 extern void parseCheckAggregates(ParseState *pstate, Query *qry);
+
+extern List *expand_grouping_sets(List *groupingSets, int limit);
 
 extern int	get_aggregate_argtypes(Aggref *aggref, Oid *inputTypes);
 
@@ -30,19 +35,23 @@ extern Oid resolve_aggregate_transtype(Oid aggfuncid,
 							Oid *inputTypes,
 							int numArguments);
 
-extern void build_aggregate_fnexprs(Oid *agg_input_types,
+extern void build_aggregate_transfn_expr(Oid *agg_input_types,
 						int agg_num_inputs,
 						int agg_num_direct_inputs,
-						int num_finalfn_inputs,
 						bool agg_variadic,
 						Oid agg_state_type,
-						Oid agg_result_type,
 						Oid agg_input_collation,
 						Oid transfn_oid,
 						Oid invtransfn_oid,
-						Oid finalfn_oid,
 						Expr **transfnexpr,
-						Expr **invtransfnexpr,
+						Expr **invtransfnexpr);
+
+extern void build_aggregate_finalfn_expr(Oid *agg_input_types,
+						int num_finalfn_inputs,
+						Oid agg_state_type,
+						Oid agg_result_type,
+						Oid agg_input_collation,
+						Oid finalfn_oid,
 						Expr **finalfnexpr);
 
 #endif   /* PARSE_AGG_H */

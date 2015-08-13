@@ -15,9 +15,6 @@
 
 #include "postgres.h"
 
-/* See sortsupport.h */
-#define SORTSUPPORT_INCLUDE_DEFINITIONS
-
 #include "access/nbtree.h"
 #include "fmgr.h"
 #include "utils/lsyscache.h"
@@ -102,8 +99,8 @@ FinishSortSupportFunction(Oid opfamily, Oid opcintype, SortSupport ssup)
 	if (OidIsValid(sortSupportFunction))
 	{
 		/*
-		 * The sort support function can provide a comparator, but it can
-		 * also choose not to so (e.g. based on the selected collation).
+		 * The sort support function can provide a comparator, but it can also
+		 * choose not to so (e.g. based on the selected collation).
 		 */
 		OidFunctionCall1(sortSupportFunction, PointerGetDatum(ssup));
 	}

@@ -68,6 +68,7 @@ static void brinsummarize(Relation index, Relation heapRel,
 static void form_and_insert_tuple(BrinBuildState *state);
 static void union_tuples(BrinDesc *bdesc, BrinMemTuple *a,
 			 BrinTuple *b);
+static void brin_vacuum_scan(Relation idxrel, BufferAccessStrategy strategy);
 
 
 /*
@@ -105,11 +106,6 @@ brininsert(PG_FUNCTION_ARGS)
 		BrinMemTuple *dtup;
 		BlockNumber heapBlk;
 		int			keyno;
-#ifdef USE_ASSERT_CHECKING
-		BrinTuple  *tmptup;
-		BrinMemTuple *tmpdtup;
-		Size 		tmpsiz;
-#endif
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -137,45 +133,6 @@ brininsert(PG_FUNCTION_ARGS)
 
 		dtup = brin_deform_tuple(bdesc, brtup);
 
-#ifdef USE_ASSERT_CHECKING
-		{
-			/*
-			 * When assertions are enabled, we use this as an opportunity to
-			 * test the "union" method, which would otherwise be used very
-			 * rarely: first create a placeholder tuple, and addValue the
-			 * value we just got into it.  Then union the existing index tuple
-			 * with the updated placeholder tuple.  The tuple resulting from
-			 * that union should be identical to the one resulting from the
-			 * regular operation (straight addValue) below.
-			 *
-			 * Here we create the tuple to compare with; the actual comparison
-			 * is below.
-			 */
-			tmptup = brin_form_placeholder_tuple(bdesc, heapBlk, &tmpsiz);
-			tmpdtup = brin_deform_tuple(bdesc, tmptup);
-			for (keyno = 0; keyno < bdesc->bd_tupdesc->natts; keyno++)
-			{
-				BrinValues *bval;
-				FmgrInfo   *addValue;
-
-				bval = &tmpdtup->bt_columns[keyno];
-				addValue = index_getprocinfo(idxRel, keyno + 1,
-											 BRIN_PROCNUM_ADDVALUE);
-				FunctionCall4Coll(addValue,
-								  idxRel->rd_indcollation[keyno],
-								  PointerGetDatum(bdesc),
-								  PointerGetDatum(bval),
-								  values[keyno],
-								  nulls[keyno]);
-			}
-
-			union_tuples(bdesc, tmpdtup, brtup);
-
-			tmpdtup->bt_placeholder = dtup->bt_placeholder;
-			tmptup = brin_form_tuple(bdesc, heapBlk, tmpdtup, &tmpsiz);
-		}
-#endif
-
 		/*
 		 * Compare the key values of the new tuple to the stored index values;
 		 * our deformed tuple will get updated if the new tuple doesn't fit
@@ -201,20 +158,6 @@ brininsert(PG_FUNCTION_ARGS)
 			/* if that returned true, we need to insert the updated tuple */
 			need_insert |= DatumGetBool(result);
 		}
-
-#ifdef USE_ASSERT_CHECKING
-		{
-			/*
-			 * Now we can compare the tuple produced by the union function
-			 * with the one from plain addValue.
-			 */
-			BrinTuple  *cmptup;
-			Size		cmpsz;
-
-			cmptup = brin_form_tuple(bdesc, heapBlk, dtup, &cmpsz);
-			Assert(brin_tuples_equal(tmptup, tmpsiz, cmptup, cmpsz));
-		}
-#endif
 
 		if (!need_insert)
 		{
@@ -323,8 +266,6 @@ brinbeginscan(PG_FUNCTION_ARGS)
  * If a TID from the revmap is read as InvalidTID, we know that range is
  * unsummarized.  Pages in those ranges need to be returned regardless of scan
  * keys.
- *
- * XXX see _bt_first on what to do about sk_subtype.
  */
 Datum
 bringetbitmap(PG_FUNCTION_ARGS)
@@ -340,7 +281,6 @@ bringetbitmap(PG_FUNCTION_ARGS)
 	BlockNumber nblocks;
 	BlockNumber heapBlk;
 	int			totalpages = 0;
-	int			keyno;
 	FmgrInfo   *consistentFn;
 	MemoryContext oldcxt;
 	MemoryContext perRangeCxt;
@@ -359,18 +299,11 @@ bringetbitmap(PG_FUNCTION_ARGS)
 	heap_close(heapRel, AccessShareLock);
 
 	/*
-	 * Obtain consistent functions for all indexed column.  Maybe it'd be
-	 * possible to do this lazily only the first time we see a scan key that
-	 * involves each particular attribute.
+	 * Make room for the consistent support procedures of indexed columns.  We
+	 * don't look them up here; we do that lazily the first time we see a scan
+	 * key reference each of them.  We rely on zeroing fn_oid to InvalidOid.
 	 */
-	consistentFn = palloc(sizeof(FmgrInfo) * bdesc->bd_tupdesc->natts);
-	for (keyno = 0; keyno < bdesc->bd_tupdesc->natts; keyno++)
-	{
-		FmgrInfo   *tmp;
-
-		tmp = index_getprocinfo(idxRel, keyno + 1, BRIN_PROCNUM_CONSISTENT);
-		fmgr_info_copy(&consistentFn[keyno], tmp, CurrentMemoryContext);
-	}
+	consistentFn = palloc0(sizeof(FmgrInfo) * bdesc->bd_tupdesc->natts);
 
 	/*
 	 * Setup and use a per-range memory context, which is reset every time we
@@ -418,7 +351,6 @@ bringetbitmap(PG_FUNCTION_ARGS)
 		else
 		{
 			BrinMemTuple *dtup;
-			int			keyno;
 
 			dtup = brin_deform_tuple(bdesc, tup);
 			if (dtup->bt_placeholder)
@@ -431,6 +363,8 @@ bringetbitmap(PG_FUNCTION_ARGS)
 			}
 			else
 			{
+				int			keyno;
+
 				/*
 				 * Compare scan keys with summary values stored for the range.
 				 * If scan keys are matched, the page range must be added to
@@ -454,7 +388,18 @@ bringetbitmap(PG_FUNCTION_ARGS)
 					 */
 					Assert((key->sk_flags & SK_ISNULL) ||
 						   (key->sk_collation ==
-					   bdesc->bd_tupdesc->attrs[keyattno - 1]->attcollation));
+					  bdesc->bd_tupdesc->attrs[keyattno - 1]->attcollation));
+
+					/* First time this column? look up consistent function */
+					if (consistentFn[keyattno - 1].fn_oid == InvalidOid)
+					{
+						FmgrInfo   *tmp;
+
+						tmp = index_getprocinfo(idxRel, keyattno,
+												BRIN_PROCNUM_CONSISTENT);
+						fmgr_info_copy(&consistentFn[keyattno - 1], tmp,
+									   CurrentMemoryContext);
+					}
 
 					/*
 					 * Check whether the scan key is consistent with the page
@@ -520,6 +465,14 @@ brinrescan(PG_FUNCTION_ARGS)
 
 	/* other arguments ignored */
 
+	/*
+	 * Other index AMs preprocess the scan keys at this point, or sometime
+	 * early during the scan; this lets them optimize by removing redundant
+	 * keys, or doing early returns when they are impossible to satisfy; see
+	 * _bt_preprocess_keys for an example.  Something like that could be added
+	 * here someday, too.
+	 */
+
 	if (scankey && scan->numberOfKeys > 0)
 		memmove(scan->keyData, scankey,
 				scan->numberOfKeys * sizeof(ScanKeyData));
@@ -579,10 +532,10 @@ brinbuildCallback(Relation index,
 	thisblock = ItemPointerGetBlockNumber(&htup->t_self);
 
 	/*
-	 * If we're in a block that belongs to a future range, summarize what we've
-	 * got and start afresh.  Note the scan might have skipped many pages,
-	 * if they were devoid of live tuples; make sure to insert index tuples
-	 * for those too.
+	 * If we're in a block that belongs to a future range, summarize what
+	 * we've got and start afresh.  Note the scan might have skipped many
+	 * pages, if they were devoid of live tuples; make sure to insert index
+	 * tuples for those too.
 	 */
 	while (thisblock > state->bs_currRangeStart + state->bs_pagesPerRange - 1)
 	{
@@ -716,7 +669,6 @@ brinbuild(PG_FUNCTION_ARGS)
 Datum
 brinbuildempty(PG_FUNCTION_ARGS)
 {
-
 	Relation	index = (Relation) PG_GETARG_POINTER(0);
 	Buffer		metabuf;
 
@@ -745,14 +697,14 @@ brinbuildempty(PG_FUNCTION_ARGS)
  *
  * XXX we could mark item tuples as "dirty" (when a minimum or maximum heap
  * tuple is deleted), meaning the need to re-run summarization on the affected
- * range.  Need to an extra flag in mmtuples for that.
+ * range.  Would need to add an extra flag in brintuples for that.
  */
 Datum
 brinbulkdelete(PG_FUNCTION_ARGS)
 {
 	/* other arguments are not currently used */
 	IndexBulkDeleteResult *stats =
-		(IndexBulkDeleteResult *) PG_GETARG_POINTER(1);
+	(IndexBulkDeleteResult *) PG_GETARG_POINTER(1);
 
 	/* allocate stats if first time through, else re-use existing struct */
 	if (stats == NULL)
@@ -770,7 +722,7 @@ brinvacuumcleanup(PG_FUNCTION_ARGS)
 {
 	IndexVacuumInfo *info = (IndexVacuumInfo *) PG_GETARG_POINTER(0);
 	IndexBulkDeleteResult *stats =
-		(IndexBulkDeleteResult *) PG_GETARG_POINTER(1);
+	(IndexBulkDeleteResult *) PG_GETARG_POINTER(1);
 	Relation	heapRel;
 
 	/* No-op in ANALYZE ONLY mode */
@@ -784,6 +736,8 @@ brinvacuumcleanup(PG_FUNCTION_ARGS)
 
 	heapRel = heap_open(IndexGetRelation(RelationGetRelid(info->index), false),
 						AccessShareLock);
+
+	brin_vacuum_scan(info->index, info->strategy);
 
 	brinsummarize(info->index, heapRel,
 				  &stats->num_index_tuples, &stats->num_index_tuples);
@@ -956,7 +910,7 @@ terminate_brin_buildstate(BrinBuildState *state)
 
 		page = BufferGetPage(state->bs_currentInsertBuf);
 		RecordPageWithFreeSpace(state->bs_irel,
-								BufferGetBlockNumber(state->bs_currentInsertBuf),
+							BufferGetBlockNumber(state->bs_currentInsertBuf),
 								PageGetFreeSpace(page));
 		ReleaseBuffer(state->bs_currentInsertBuf);
 	}
@@ -1000,9 +954,13 @@ summarize_range(IndexInfo *indexInfo, BrinBuildState *state, Relation heapRel,
 	 * Execute the partial heap scan covering the heap blocks in the specified
 	 * page range, summarizing the heap tuples in it.  This scan stops just
 	 * short of brinbuildCallback creating the new index entry.
+	 *
+	 * Note that it is critical we use the "any visible" mode of
+	 * IndexBuildHeapRangeScan here: otherwise, we would miss tuples inserted
+	 * by transactions that are still in progress, among other corner cases.
 	 */
 	state->bs_currRangeStart = heapBlk;
-	IndexBuildHeapRangeScan(heapRel, state->bs_irel, indexInfo, false,
+	IndexBuildHeapRangeScan(heapRel, state->bs_irel, indexInfo, false, true,
 							heapBlk, state->bs_pagesPerRange,
 							brinbuildCallback, (void *) state);
 
@@ -1107,36 +1065,6 @@ brinsummarize(Relation index, Relation heapRel, double *numSummarized,
 				state = initialize_brin_buildstate(index, revmap,
 												   pagesPerRange);
 				indexInfo = BuildIndexInfo(index);
-
-				/*
-				 * We only have ShareUpdateExclusiveLock on the table, and
-				 * therefore other sessions may insert tuples into the range
-				 * we're going to scan.  This is okay, because we take
-				 * additional precautions to avoid losing the additional
-				 * tuples; see comments in summarize_range.  Set the
-				 * concurrent flag, which causes IndexBuildHeapRangeScan to
-				 * use a snapshot other than SnapshotAny, and silences
-				 * warnings emitted there.
-				 */
-				indexInfo->ii_Concurrent = true;
-
-				/*
-				 * If using transaction-snapshot mode, it would be possible
-				 * for another transaction to insert a tuple that's not
-				 * visible to our snapshot if we have already acquired one,
-				 * when in snapshot-isolation mode; therefore, disallow this
-				 * from running in such a transaction unless a snapshot hasn't
-				 * been acquired yet.
-				 *
-				 * This code is called by VACUUM and
-				 * brin_summarize_new_values. Have the error message mention
-				 * the latter because VACUUM cannot run in a transaction and
-				 * thus cannot cause this issue.
-				 */
-				if (IsolationUsesXactSnapshot() && FirstSnapshotSet)
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_TRANSACTION_STATE),
-							 errmsg("brin_summarize_new_values() cannot run in a transaction that has already obtained a snapshot")));
 			}
 			summarize_range(indexInfo, state, heapRel, heapBlk);
 
@@ -1160,7 +1088,10 @@ brinsummarize(Relation index, Relation heapRel, double *numSummarized,
 	/* free resources */
 	brinRevmapTerminate(revmap);
 	if (state)
+	{
 		terminate_brin_buildstate(state);
+		pfree(indexInfo);
+	}
 }
 
 /*
@@ -1221,4 +1152,44 @@ union_tuples(BrinDesc *bdesc, BrinMemTuple *a, BrinTuple *b)
 	}
 
 	MemoryContextDelete(cxt);
+}
+
+/*
+ * brin_vacuum_scan
+ *		Do a complete scan of the index during VACUUM.
+ *
+ * This routine scans the complete index looking for uncatalogued index pages,
+ * i.e. those that might have been lost due to a crash after index extension
+ * and such.
+ */
+static void
+brin_vacuum_scan(Relation idxrel, BufferAccessStrategy strategy)
+{
+	bool		vacuum_fsm = false;
+	BlockNumber blkno;
+
+	/*
+	 * Scan the index in physical order, and clean up any possible mess in
+	 * each page.
+	 */
+	for (blkno = 0; blkno < RelationGetNumberOfBlocks(idxrel); blkno++)
+	{
+		Buffer		buf;
+
+		CHECK_FOR_INTERRUPTS();
+
+		buf = ReadBufferExtended(idxrel, MAIN_FORKNUM, blkno,
+								 RBM_NORMAL, strategy);
+
+		vacuum_fsm |= brin_page_cleanup(idxrel, buf);
+
+		ReleaseBuffer(buf);
+	}
+
+	/*
+	 * If we made any change to the FSM, make sure the new info is visible all
+	 * the way to the top.
+	 */
+	if (vacuum_fsm)
+		FreeSpaceMapVacuum(idxrel);
 }

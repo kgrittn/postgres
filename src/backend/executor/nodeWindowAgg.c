@@ -2057,6 +2057,7 @@ ExecEndWindowAgg(WindowAggState *node)
 void
 ExecReScanWindowAgg(WindowAggState *node)
 {
+	PlanState  *outerPlan = outerPlanState(node);
 	ExprContext *econtext = node->ss.ps.ps_ExprContext;
 
 	node->all_done = false;
@@ -2082,8 +2083,8 @@ ExecReScanWindowAgg(WindowAggState *node)
 	 * if chgParam of subnode is not null then plan will be re-scanned by
 	 * first ExecProcNode.
 	 */
-	if (node->ss.ps.lefttree->chgParam == NULL)
-		ExecReScan(node->ss.ps.lefttree);
+	if (outerPlan->chgParam == NULL)
+		ExecReScan(outerPlan);
 }
 
 /*
@@ -2217,20 +2218,16 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 											   numArguments);
 
 	/* build expression trees using actual argument & result types */
-	build_aggregate_fnexprs(inputTypes,
-							numArguments,
-							0,	/* no ordered-set window functions yet */
-							peraggstate->numFinalArgs,
-							false,		/* no variadic window functions yet */
-							aggtranstype,
-							wfunc->wintype,
-							wfunc->inputcollid,
-							transfn_oid,
-							invtransfn_oid,
-							finalfn_oid,
-							&transfnexpr,
-							&invtransfnexpr,
-							&finalfnexpr);
+	build_aggregate_transfn_expr(inputTypes,
+								 numArguments,
+								 0,	/* no ordered-set window functions yet */
+								 false,		/* no variadic window functions yet */
+								 wfunc->wintype,
+								 wfunc->inputcollid,
+								 transfn_oid,
+								 invtransfn_oid,
+								 &transfnexpr,
+								 &invtransfnexpr);
 
 	/* set up infrastructure for calling the transfn(s) and finalfn */
 	fmgr_info(transfn_oid, &peraggstate->transfn);
@@ -2244,6 +2241,13 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 
 	if (OidIsValid(finalfn_oid))
 	{
+		build_aggregate_finalfn_expr(inputTypes,
+									 peraggstate->numFinalArgs,
+									 aggtranstype,
+									 wfunc->wintype,
+									 wfunc->inputcollid,
+									 finalfn_oid,
+									 &finalfnexpr);
 		fmgr_info(finalfn_oid, &peraggstate->finalfn);
 		fmgr_info_set_expr((Node *) finalfnexpr, &peraggstate->finalfn);
 	}

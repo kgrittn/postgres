@@ -51,14 +51,14 @@ filemap_create(void)
 }
 
 /*
- * Callback for processing remote file list.
+ * Callback for processing source file list.
  *
  * This is called once for every file in the source server. We decide what
  * action needs to be taken for the file, depending on whether the file
  * exists in the target and whether the size matches.
  */
 void
-process_remote_file(const char *path, file_type_t type, size_t newsize,
+process_source_file(const char *path, file_type_t type, size_t newsize,
 					const char *link_target)
 {
 	bool		exists;
@@ -79,6 +79,14 @@ process_remote_file(const char *path, file_type_t type, size_t newsize,
 		return;
 
 	/*
+	 * Pretend that pg_xlog is a directory, even if it's really a symlink.
+	 * We don't want to mess with the symlink itself, nor complain if it's a
+	 * symlink in source but not in target or vice versa.
+	 */
+	if (strcmp(path, "pg_xlog") == 0 && type == FILE_TYPE_SYMLINK)
+		type = FILE_TYPE_DIRECTORY;
+
+	/*
 	 * Skip temporary files, .../pgsql_tmp/... and .../pgsql_tmp.* in source.
 	 * This has the effect that all temporary files in the destination will be
 	 * removed.
@@ -93,11 +101,11 @@ process_remote_file(const char *path, file_type_t type, size_t newsize,
 	 * regular file
 	 */
 	if (type != FILE_TYPE_REGULAR && isRelDataFile(path))
-		pg_fatal("data file in source \"%s\" is not a regular file\n", path);
+		pg_fatal("data file \"%s\" in source is not a regular file\n", path);
 
 	snprintf(localpath, sizeof(localpath), "%s/%s", datadir_target, path);
 
-	/* Does the corresponding local file exist? */
+	/* Does the corresponding file exist in the target data dir? */
 	if (lstat(localpath, &statbuf) < 0)
 	{
 		if (errno != ENOENT)
@@ -112,9 +120,9 @@ process_remote_file(const char *path, file_type_t type, size_t newsize,
 	switch (type)
 	{
 		case FILE_TYPE_DIRECTORY:
-			if (exists && !S_ISDIR(statbuf.st_mode))
+			if (exists && !S_ISDIR(statbuf.st_mode) && strcmp(path, "pg_xlog") != 0)
 			{
-				/* it's a directory in target, but not in source. Strange.. */
+				/* it's a directory in source, but not in target. Strange.. */
 				pg_fatal("\"%s\" is not a directory\n", localpath);
 			}
 
@@ -135,7 +143,7 @@ process_remote_file(const char *path, file_type_t type, size_t newsize,
 				)
 			{
 				/*
-				 * It's a symbolic link in target, but not in source.
+				 * It's a symbolic link in source, but not in target.
 				 * Strange..
 				 */
 				pg_fatal("\"%s\" is not a symbolic link\n", localpath);
@@ -185,18 +193,19 @@ process_remote_file(const char *path, file_type_t type, size_t newsize,
 				 *
 				 * If it's smaller in the target, it means that it has been
 				 * truncated in the target, or enlarged in the source, or
-				 * both. If it was truncated locally, we need to copy the
-				 * missing tail from the remote system. If it was enlarged in
-				 * the remote system, there will be WAL records in the remote
-				 * system for the new blocks, so we wouldn't need to copy them
-				 * here. But we don't know which scenario we're dealing with,
-				 * and there's no harm in copying the missing blocks now, so
-				 * do it now.
+				 * both. If it was truncated in the target, we need to copy
+				 * the missing tail from the source system. If it was enlarged
+				 * in the source system, there will be WAL records in the
+				 * source system for the new blocks, so we wouldn't need to
+				 * copy them here. But we don't know which scenario we're
+				 * dealing with, and there's no harm in copying the missing
+				 * blocks now, so do it now.
 				 *
-				 * If it's the same size, do nothing here. Any locally
-				 * modified blocks will be copied based on parsing the local
-				 * WAL, and any remotely modified blocks will be updated after
-				 * rewinding, when the remote WAL is replayed.
+				 * If it's the same size, do nothing here. Any blocks modified
+				 * in the target will be copied based on parsing the target
+				 * system's WAL, and any blocks modified in the source will be
+				 * updated after rewinding, when the source system's WAL is
+				 * replayed.
 				 */
 				oldsize = statbuf.st_size;
 				if (oldsize < newsize)
@@ -233,14 +242,15 @@ process_remote_file(const char *path, file_type_t type, size_t newsize,
 }
 
 /*
- * Callback for processing local file list.
+ * Callback for processing target file list.
  *
- * All remote files must be already processed before calling this. This only
- * marks local files that didn't exist in the remote system for deletion.
+ * All source files must be already processed before calling this. This only
+ * marks target data directory's files that didn't exist in the source for
+ * deletion.
  */
 void
-process_local_file(const char *path, file_type_t type, size_t oldsize,
-				   const char *link_target)
+process_target_file(const char *path, file_type_t type, size_t oldsize,
+					const char *link_target)
 {
 	bool		exists;
 	char		localpath[MAXPGPATH];
@@ -254,7 +264,7 @@ process_local_file(const char *path, file_type_t type, size_t oldsize,
 	if (lstat(localpath, &statbuf) < 0)
 	{
 		if (errno != ENOENT)
-			pg_fatal("could not stat file \"%s\": %s",
+			pg_fatal("could not stat file \"%s\": %s\n",
 					 localpath, strerror(errno));
 
 		exists = false;
@@ -266,7 +276,7 @@ process_local_file(const char *path, file_type_t type, size_t oldsize,
 		if (map->nlist == 0)
 		{
 			/* should not happen */
-			pg_fatal("remote file list is empty\n");
+			pg_fatal("source file list is empty\n");
 		}
 
 		filemap_list_to_array(map);
@@ -283,12 +293,18 @@ process_local_file(const char *path, file_type_t type, size_t oldsize,
 		strcmp(path, "postmaster.opts") == 0)
 		return;
 
+	/*
+	 * Like in process_source_file, pretend that xlog is always a  directory.
+	 */
+	if (strcmp(path, "pg_xlog") == 0 && type == FILE_TYPE_SYMLINK)
+		type = FILE_TYPE_DIRECTORY;
+
 	key.path = (char *) path;
 	key_ptr = &key;
 	exists = (bsearch(&key_ptr, map->array, map->narray, sizeof(file_entry_t *),
 					  path_cmp) != NULL);
 
-	/* Remove any file or folder that doesn't exist in the remote system. */
+	/* Remove any file or folder that doesn't exist in the source system. */
 	if (!exists)
 	{
 		entry = pg_malloc(sizeof(file_entry_t));
@@ -313,16 +329,16 @@ process_local_file(const char *path, file_type_t type, size_t oldsize,
 	else
 	{
 		/*
-		 * We already handled all files that exist in the remote system in
-		 * process_remote_file().
+		 * We already handled all files that exist in the source system in
+		 * process_source_file().
 		 */
 	}
 }
 
 /*
- * This callback gets called while we read the old WAL, for every block that
- * have changed in the local system. It makes note of all the changed blocks
- * in the pagemap of the file.
+ * This callback gets called while we read the WAL in the target, for every
+ * block that have changed in the target system. It makes note of all the
+ * changed blocks in the pagemap of the file.
  */
 void
 process_block_change(ForkNumber forknum, RelFileNode rnode, BlockNumber blkno)
@@ -352,7 +368,7 @@ process_block_change(ForkNumber forknum, RelFileNode rnode, BlockNumber blkno)
 		entry = *e;
 	else
 		entry = NULL;
-	free(path);
+	pfree(path);
 
 	if (entry)
 	{
@@ -368,6 +384,7 @@ process_block_change(ForkNumber forknum, RelFileNode rnode, BlockNumber blkno)
 				break;
 
 			case FILE_ACTION_COPY_TAIL:
+
 				/*
 				 * skip the modified block if it is part of the "tail" that
 				 * we're copying anyway.
@@ -388,9 +405,9 @@ process_block_change(ForkNumber forknum, RelFileNode rnode, BlockNumber blkno)
 	{
 		/*
 		 * If we don't have any record of this file in the file map, it means
-		 * that it's a relation that doesn't exist in the remote system, and
-		 * it was subsequently removed in the local system, too. We can safely
-		 * ignore it.
+		 * that it's a relation that doesn't exist in the source system, and
+		 * it was subsequently removed in the target system, too. We can
+		 * safely ignore it.
 		 */
 	}
 }
@@ -527,7 +544,7 @@ print_filemap(void)
  * Does it look like a relation data file?
  *
  * For our purposes, only files belonging to the main fork are considered
- * relation files. Other forks are alwayes copied in toto, because we cannot
+ * relation files. Other forks are always copied in toto, because we cannot
  * reliably track changes to them, because WAL only contains block references
  * for the main fork.
  */

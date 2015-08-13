@@ -138,10 +138,10 @@ typedef struct Counters
 {
 	int64		calls;			/* # of times executed */
 	double		total_time;		/* total execution time, in msec */
-	double      min_time;       /* minimim execution time in msec */
-	double      max_time;       /* maximum execution time in msec */
-	double      mean_time;      /* mean execution time in msec */
-	double      sum_var_time;   /* sum of variances in execution time in msec */
+	double		min_time;		/* minimim execution time in msec */
+	double		max_time;		/* maximum execution time in msec */
+	double		mean_time;		/* mean execution time in msec */
+	double		sum_var_time;	/* sum of variances in execution time in msec */
 	int64		rows;			/* total # of retrieved or affected rows */
 	int64		shared_blks_hit;	/* # of shared buffer hits */
 	int64		shared_blks_read;		/* # of shared disk blocks read */
@@ -1233,10 +1233,10 @@ pgss_store(const char *query, uint32 queryId,
 		else
 		{
 			/*
-			 * Welford's method for accurately computing variance.
-			 * See <http://www.johndcook.com/blog/standard_deviation/>
+			 * Welford's method for accurately computing variance. See
+			 * <http://www.johndcook.com/blog/standard_deviation/>
 			 */
-			double old_mean = e->counters.mean_time;
+			double		old_mean = e->counters.mean_time;
 
 			e->counters.mean_time +=
 				(total_time - old_mean) / e->counters.calls;
@@ -1574,10 +1574,11 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			values[i++] = Float8GetDatumFast(tmp.min_time);
 			values[i++] = Float8GetDatumFast(tmp.max_time);
 			values[i++] = Float8GetDatumFast(tmp.mean_time);
+
 			/*
 			 * Note we are calculating the population variance here, not the
-			 * sample variance, as we have data for the whole population,
-			 * so Bessel's correction is not used, and we don't divide by
+			 * sample variance, as we have data for the whole population, so
+			 * Bessel's correction is not used, and we don't divide by
 			 * tmp.calls - 1.
 			 */
 			if (tmp.calls > 1)
@@ -2266,8 +2267,10 @@ JumbleQuery(pgssJumbleState *jstate, Query *query)
 	JumbleRangeTable(jstate, query->rtable);
 	JumbleExpr(jstate, (Node *) query->jointree);
 	JumbleExpr(jstate, (Node *) query->targetList);
+	JumbleExpr(jstate, (Node *) query->onConflict);
 	JumbleExpr(jstate, (Node *) query->returningList);
 	JumbleExpr(jstate, (Node *) query->groupClause);
+	JumbleExpr(jstate, (Node *) query->groupingSets);
 	JumbleExpr(jstate, query->havingQual);
 	JumbleExpr(jstate, (Node *) query->windowClause);
 	JumbleExpr(jstate, (Node *) query->distinctClause);
@@ -2296,6 +2299,7 @@ JumbleRangeTable(pgssJumbleState *jstate, List *rtable)
 		{
 			case RTE_RELATION:
 				APP_JUMB(rte->relid);
+				JumbleExpr(jstate, (Node *) rte->tablesample);
 				break;
 			case RTE_SUBQUERY:
 				JumbleQuery(jstate, rte->subquery);
@@ -2399,6 +2403,13 @@ JumbleExpr(pgssJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, (Node *) expr->aggorder);
 				JumbleExpr(jstate, (Node *) expr->aggdistinct);
 				JumbleExpr(jstate, (Node *) expr->aggfilter);
+			}
+			break;
+		case T_GroupingFunc:
+			{
+				GroupingFunc *grpnode = (GroupingFunc *) node;
+
+				JumbleExpr(jstate, (Node *) grpnode->refs);
 			}
 			break;
 		case T_WindowFunc:
@@ -2636,6 +2647,15 @@ JumbleExpr(pgssJumbleState *jstate, Node *node)
 				APP_JUMB(ce->cursor_param);
 			}
 			break;
+		case T_InferenceElem:
+			{
+				InferenceElem *ie = (InferenceElem *) node;
+
+				APP_JUMB(ie->infercollid);
+				APP_JUMB(ie->inferopclass);
+				JumbleExpr(jstate, ie->expr);
+			}
+			break;
 		case T_TargetEntry:
 			{
 				TargetEntry *tle = (TargetEntry *) node;
@@ -2672,10 +2692,30 @@ JumbleExpr(pgssJumbleState *jstate, Node *node)
 				JumbleExpr(jstate, from->quals);
 			}
 			break;
+		case T_OnConflictExpr:
+			{
+				OnConflictExpr *conf = (OnConflictExpr *) node;
+
+				APP_JUMB(conf->action);
+				JumbleExpr(jstate, (Node *) conf->arbiterElems);
+				JumbleExpr(jstate, conf->arbiterWhere);
+				JumbleExpr(jstate, (Node *) conf->onConflictSet);
+				JumbleExpr(jstate, conf->onConflictWhere);
+				APP_JUMB(conf->constraint);
+				APP_JUMB(conf->exclRelIndex);
+				JumbleExpr(jstate, (Node *) conf->exclRelTlist);
+			}
+			break;
 		case T_List:
 			foreach(temp, (List *) node)
 			{
 				JumbleExpr(jstate, (Node *) lfirst(temp));
+			}
+			break;
+		case T_IntList:
+			foreach(temp, (List *) node)
+			{
+				APP_JUMB(lfirst_int(temp));
 			}
 			break;
 		case T_SortGroupClause:
@@ -2686,6 +2726,13 @@ JumbleExpr(pgssJumbleState *jstate, Node *node)
 				APP_JUMB(sgc->eqop);
 				APP_JUMB(sgc->sortop);
 				APP_JUMB(sgc->nulls_first);
+			}
+			break;
+		case T_GroupingSet:
+			{
+				GroupingSet *gsnode = (GroupingSet *) node;
+
+				JumbleExpr(jstate, (Node *) gsnode->content);
 			}
 			break;
 		case T_WindowClause:
@@ -2724,6 +2771,15 @@ JumbleExpr(pgssJumbleState *jstate, Node *node)
 				RangeTblFunction *rtfunc = (RangeTblFunction *) node;
 
 				JumbleExpr(jstate, rtfunc->funcexpr);
+			}
+			break;
+		case T_TableSampleClause:
+			{
+				TableSampleClause *tsc = (TableSampleClause *) node;
+
+				APP_JUMB(tsc->tsmhandler);
+				JumbleExpr(jstate, (Node *) tsc->args);
+				JumbleExpr(jstate, (Node *) tsc->repeatable);
 			}
 			break;
 		default:

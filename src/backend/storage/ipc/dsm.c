@@ -225,7 +225,7 @@ dsm_cleanup_using_control_segment(dsm_handle old_control_handle)
 	/*
 	 * Try to attach the segment.  If this fails, it probably just means that
 	 * the operating system has been rebooted and the segment no longer
-	 * exists, or an unrelated proces has used the same shm ID.  So just fall
+	 * exists, or an unrelated process has used the same shm ID.  So just fall
 	 * out quietly.
 	 */
 	if (!dsm_impl_op(DSM_OP_ATTACH, old_control_handle, 0, &impl_private,
@@ -502,6 +502,7 @@ dsm_create(Size size, int flags)
 	{
 		if ((flags & DSM_CREATE_NULL_IF_MAXSEGMENTS) != 0)
 		{
+			LWLockRelease(DynamicSharedMemoryControlLock);
 			dsm_impl_op(DSM_OP_DESTROY, seg->handle, 0, &seg->impl_private,
 						&seg->mapped_address, &seg->mapped_size, WARNING);
 			if (seg->resowner != NULL)

@@ -39,6 +39,7 @@
 #include "executor/nodeNestloop.h"
 #include "executor/nodeRecursiveunion.h"
 #include "executor/nodeResult.h"
+#include "executor/nodeSamplescan.h"
 #include "executor/nodeSeqscan.h"
 #include "executor/nodeSetOp.h"
 #include "executor/nodeSort.h"
@@ -154,6 +155,10 @@ ExecReScan(PlanState *node)
 
 		case T_SeqScanState:
 			ExecReScanSeqScan((SeqScanState *) node);
+			break;
+
+		case T_SampleScanState:
+			ExecReScanSampleScan((SampleScanState *) node);
 			break;
 
 		case T_IndexScanState:
@@ -405,10 +410,10 @@ ExecSupportsMarkRestore(Path *pathnode)
 			 * that does, we presently come here only for ResultPath nodes,
 			 * which represent Result plans without a child plan.  So there is
 			 * nothing to recurse to and we can just say "false".  (This means
-			 * that Result's support for mark/restore is in fact dead code.
-			 * We keep it since it's not much code, and someday the planner
-			 * might be smart enough to use it.  That would require making
-			 * this function smarter too, of course.)
+			 * that Result's support for mark/restore is in fact dead code. We
+			 * keep it since it's not much code, and someday the planner might
+			 * be smart enough to use it.  That would require making this
+			 * function smarter too, of course.)
 			 */
 			Assert(IsA(pathnode, ResultPath));
 			return false;
@@ -462,6 +467,10 @@ ExecSupportsBackwardScan(Plan *node)
 		case T_ValuesScan:
 		case T_CteScan:
 			return TargetListSupportsBackwardScan(node->targetlist);
+
+		case T_SampleScan:
+			/* Simplify life for tablesample methods by disallowing this */
+			return false;
 
 		case T_IndexScan:
 			return IndexSupportsBackwardScan(((IndexScan *) node)->indexid) &&

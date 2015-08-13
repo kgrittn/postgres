@@ -1028,6 +1028,8 @@ arrayexpr_cleanup_fn(PredIterInfo info)
  * "foo" is NULL, which we can take as equivalent to FALSE because we know
  * we are within an AND/OR subtree of a WHERE clause.  (Again, "foo" is
  * already known immutable, so the clause will certainly always fail.)
+ * Also, if the clause is just "foo" (meaning it's a boolean variable),
+ * the predicate is implied since the clause can't be true if "foo" is NULL.
  *
  * Finally, if both clauses are binary operator expressions, we may be able
  * to prove something using the system's knowledge about operators; those
@@ -1060,6 +1062,8 @@ predicate_implied_by_simple_clause(Expr *predicate, Node *clause)
 			if (is_funcclause(clause) &&
 				list_member_strip(((FuncExpr *) clause)->args, nonnullarg) &&
 				func_strict(((FuncExpr *) clause)->funcid))
+				return true;
+			if (equal(clause, nonnullarg))
 				return true;
 		}
 		return false;			/* we can't succeed below... */
@@ -1248,7 +1252,7 @@ list_member_strip(List *list, Expr *datum)
  * Define "operator implication tables" for btree operators ("strategies"),
  * and similar tables for refutation.
  *
- * The strategy numbers defined by btree indexes (see access/skey.h) are:
+ * The strategy numbers defined by btree indexes (see access/stratnum.h) are:
  *		1 <		2 <=	3 =		4 >=	5 >
  * and in addition we use 6 to represent <>.  <> is not a btree-indexable
  * operator, but we assume here that if an equality operator of a btree

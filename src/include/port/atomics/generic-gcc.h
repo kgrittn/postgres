@@ -57,6 +57,7 @@
 #		define pg_write_barrier_impl()		__atomic_thread_fence(__ATOMIC_RELEASE)
 #endif
 
+
 #ifdef HAVE_ATOMICS
 
 /* generic gcc based atomic flag implementation */
@@ -103,11 +104,6 @@ typedef struct pg_atomic_uint64
 
 #endif /* defined(HAVE_GCC__ATOMIC_INT64_CAS) || defined(HAVE_GCC__SYNC_INT64_CAS) */
 
-/*
- * Implementation follows. Inlined or directly included from atomics.c
- */
-#if defined(PG_USE_INLINE) || defined(ATOMICS_INCLUDE_DEFINITIONS)
-
 #ifdef PG_HAVE_ATOMIC_FLAG_SUPPORT
 
 #if defined(HAVE_GCC__SYNC_CHAR_TAS) || defined(HAVE_GCC__SYNC_INT32_TAS)
@@ -117,7 +113,7 @@ typedef struct pg_atomic_uint64
 static inline bool
 pg_atomic_test_set_flag_impl(volatile pg_atomic_flag *ptr)
 {
-	/* NB: only a acquire barrier, not a full one */
+	/* NB: only an acquire barrier, not a full one */
 	/* some platform only support a 1 here */
 	return __sync_lock_test_and_set(&ptr->value, 1) == 0;
 }
@@ -230,7 +226,5 @@ pg_atomic_fetch_add_u64_impl(volatile pg_atomic_uint64 *ptr, int64 add_)
 #endif
 
 #endif /* !defined(PG_DISABLE_64_BIT_ATOMICS) */
-
-#endif /* defined(PG_USE_INLINE) || defined(ATOMICS_INCLUDE_DEFINITIONS) */
 
 #endif /* defined(HAVE_ATOMICS) */

@@ -14,6 +14,10 @@
 #ifndef LWLOCK_H
 #define LWLOCK_H
 
+#ifdef FRONTEND
+#error "lwlock.h may not be included from frontend code"
+#endif
+
 #include "lib/ilist.h"
 #include "storage/s_lock.h"
 #include "port/atomics.h"
@@ -134,8 +138,9 @@ extern PGDLLIMPORT LWLockPadded *MainLWLockArray;
 #define ReplicationSlotControlLock		(&MainLWLockArray[37].lock)
 #define CommitTsControlLock			(&MainLWLockArray[38].lock)
 #define CommitTsLock				(&MainLWLockArray[39].lock)
+#define ReplicationOriginLock		(&MainLWLockArray[40].lock)
 
-#define NUM_INDIVIDUAL_LWLOCKS		40
+#define NUM_INDIVIDUAL_LWLOCKS		41
 
 /*
  * It's a bit odd to declare NUM_BUFFER_PARTITIONS and NUM_LOCK_PARTITIONS
@@ -181,10 +186,10 @@ extern bool LWLockAcquire(LWLock *lock, LWLockMode mode);
 extern bool LWLockConditionalAcquire(LWLock *lock, LWLockMode mode);
 extern bool LWLockAcquireOrWait(LWLock *lock, LWLockMode mode);
 extern void LWLockRelease(LWLock *lock);
+extern void LWLockReleaseClearVar(LWLock *lock, uint64 *valptr, uint64 val);
 extern void LWLockReleaseAll(void);
 extern bool LWLockHeldByMe(LWLock *lock);
 
-extern bool LWLockAcquireWithVar(LWLock *lock, uint64 *valptr, uint64 val);
 extern bool LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval);
 extern void LWLockUpdateVar(LWLock *lock, uint64 *valptr, uint64 value);
 

@@ -3248,6 +3248,39 @@ $$ language plpgsql;
 
 select compos();
 
+-- RETURN variable is a different code path ...
+create or replace function compos() returns compostype as $$
+declare x int := 42;
+begin
+  return x;
+end;
+$$ language plpgsql;
+
+select * from compos();
+
+drop function compos();
+
+-- test: invalid use of composite variable in scalar-returning function
+create or replace function compos() returns int as $$
+declare
+  v compostype;
+begin
+  v := (1, 'hello');
+  return v;
+end;
+$$ language plpgsql;
+
+select compos();
+
+-- test: invalid use of composite expression in scalar-returning function
+create or replace function compos() returns int as $$
+begin
+  return (1, 'hello')::compostype;
+end;
+$$ language plpgsql;
+
+select compos();
+
 drop function compos();
 drop type compostype;
 
@@ -3772,6 +3805,36 @@ rollback;
 
 drop function error2(p_name_table text);
 drop function error1(text);
+
+-- Test for proper handling of cast-expression caching
+
+create function sql_to_date(integer) returns date as $$
+select $1::text::date
+$$ language sql immutable strict;
+
+create cast (integer as date) with function sql_to_date(integer) as assignment;
+
+create function cast_invoker(integer) returns date as $$
+begin
+  return $1;
+end$$ language plpgsql;
+
+select cast_invoker(20150717);
+select cast_invoker(20150718);  -- second call crashed in pre-release 9.5
+
+begin;
+select cast_invoker(20150717);
+select cast_invoker(20150718);
+savepoint s1;
+select cast_invoker(20150718);
+select cast_invoker(-1); -- fails
+rollback to savepoint s1;
+select cast_invoker(20150719);
+select cast_invoker(20150720);
+commit;
+
+drop function cast_invoker(integer);
+drop function sql_to_date(integer) cascade;
 
 -- Test for consistent reporting of error context
 
