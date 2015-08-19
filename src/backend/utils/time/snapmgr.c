@@ -438,7 +438,7 @@ GetNonHistoricCatalogSnapshot(Oid relid)
  * cycles we spent tracking such fine details would be well-spent.
  */
 void
-InvalidateCatalogSnapshot()
+InvalidateCatalogSnapshot(void)
 {
 	CatalogSnapshotStale = true;
 }
