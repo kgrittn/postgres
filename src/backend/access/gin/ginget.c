@@ -335,8 +335,7 @@ restartScanEntry:
 		 * for the entry type.
 		 */
 		btreeEntry.findItem(&btreeEntry, stackEntry);
-		if (collectMatchBitmap(&btreeEntry, stackEntry, entry, snapshot)
-			== false)
+		if (!collectMatchBitmap(&btreeEntry, stackEntry, entry, snapshot))
 		{
 			/*
 			 * GIN tree was seriously restructured, so we will cleanup all
