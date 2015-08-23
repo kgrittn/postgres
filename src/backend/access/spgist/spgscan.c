@@ -22,6 +22,7 @@
 #include "utils/datum.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 
 
 typedef void (*storeRes_func) (SpGistScanOpaque so, ItemPointer heapPtr,
@@ -319,7 +320,7 @@ spgLeafTest(Relation index, SpGistScanOpaque so,
  */
 static void
 spgWalk(Relation index, SpGistScanOpaque so, bool scanWholeIndex,
-		storeRes_func storeRes)
+		storeRes_func storeRes, Snapshot snapshot)
 {
 	Buffer		buffer = InvalidBuffer;
 	bool		reportedSome = false;
@@ -360,6 +361,7 @@ redirect:
 		/* else new pointer points to the same page, no work needed */
 
 		page = BufferGetPage(buffer);
+		TestForOldSnapshot(snapshot, index, page);
 
 		isnull = SpGistPageStoresNulls(page) ? true : false;
 
@@ -584,7 +586,7 @@ spggetbitmap(PG_FUNCTION_ARGS)
 	so->tbm = tbm;
 	so->ntids = 0;
 
-	spgWalk(scan->indexRelation, so, true, storeBitmap);
+	spgWalk(scan->indexRelation, so, true, storeBitmap, scan->xs_snapshot);
 
 	PG_RETURN_INT64(so->ntids);
 }
@@ -645,7 +647,8 @@ spggettuple(PG_FUNCTION_ARGS)
 		}
 		so->iPtr = so->nPtrs = 0;
 
-		spgWalk(scan->indexRelation, so, false, storeGettuple);
+		spgWalk(scan->indexRelation, so, false, storeGettuple,
+				scan->xs_snapshot);
 
 		if (so->nPtrs == 0)
 			break;				/* must have completed scan */
