@@ -15,6 +15,7 @@
 
 #include "fmgr.h"
 #include "catalog/catalog.h"
+#include "utils/rel.h"
 #include "utils/resowner.h"
 #include "utils/snapshot.h"
 #include "utils/tqual.h"
@@ -43,6 +44,8 @@
 		 && (snapshot)->satisfies == HeapTupleSatisfiesMVCC \
 		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
 		 && PageGetLSN(page) > (snapshot)->lsn \
+		 && !IsCatalogRelation(relation) \
+		 && !RelationIsAccessibleInLogicalDecoding(relation) \
 		 && (snapshot)->whenTaken < GetOldSnapshotThresholdTimestamp()) \
 			ereport(ERROR, \
 					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
