@@ -2886,6 +2886,10 @@ include_dir 'conf.d'
         You should also consider setting <varname>hot_standby_feedback</>
         on standby server(s) as an alternative to using this parameter.
        </para>
+       <para>
+        This does not prevent cleanup of dead rows which have reached the age
+        specified by <varname>old_snapshot_threshold</>.
+       </para>
       </listitem>
      </varlistentry>
 
@@ -3032,6 +3036,16 @@ include_dir 'conf.d'
         If cascaded replication is in use the feedback is passed upstream
         until it eventually reaches the primary.  Standbys make no other use
         of feedback they receive other than to pass upstream.
+       </para>
+       <para>
+        This setting does not override the behavior of
+        <varname>old_snapshot_threshold</> on the primary; a snapshot on the
+        standby which exceeds the primary's age threshold can become invalid,
+        resulting in cancellation of transactions on the standby.  This is
+        because <varname>old_snapshot_threshold</> is intended to provide an
+        absolute limit on the time which dead rows can contribute to bloat,
+        which would otherwise be violated because of the configuration of a
+        standby.
        </para>
       </listitem>
      </varlistentry>
