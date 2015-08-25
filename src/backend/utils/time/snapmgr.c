@@ -1601,10 +1601,13 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 						% XID_AGING_BUCKETS;
 				xlimit = oldSnapshotControl->xid_by_minute[offset];
 
-				SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
-				oldSnapshotControl->threshold_timestamp = ts;
-				oldSnapshotControl->threshold_xid = xlimit;
-				SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+				if (NormalTransactionIdFollows(xlimit, recentXmin))
+				{
+					SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
+					oldSnapshotControl->threshold_timestamp = ts;
+					oldSnapshotControl->threshold_xid = xlimit;
+					SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+				}
 			}
 
 			LWLockRelease(OldSnapshotTimeMapLock);
