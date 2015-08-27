@@ -135,7 +135,7 @@ sub tempdir_short
 # --config-auth).
 sub standard_initdb
 {
-	my $pgdata = shift;
+	my ($pgdata, $confappend) = @_;
 	system_or_bail('initdb', '-D', "$pgdata", '-A' , 'trust', '-N');
 	system_or_bail($ENV{PG_REGRESS}, '--config-auth', $pgdata);
 
@@ -151,6 +151,11 @@ sub standard_initdb
 	{
 		print CONF "unix_socket_directories = '$tempdir_short'\n";
 		print CONF "listen_addresses = ''\n";
+	}
+	if (defined $confappend and length $confappend)
+	{
+		print CONF "\n# Added by test\n";
+		print CONF "$confappend\n";
 	}
 	close CONF;
 
@@ -182,11 +187,11 @@ my ($test_server_datadir, $test_server_logfile);
 # Initialize a new cluster for testing in given directory, and start it.
 sub start_test_server
 {
-	my ($tempdir) = @_;
+	my ($tempdir, $confappend) = @_;
 	my $ret;
 
 	print("### Starting test server in $tempdir\n");
-	standard_initdb "$tempdir/pgdata";
+	standard_initdb "$tempdir/pgdata", $confappend;
 
 	$ret = system_log('pg_ctl', '-D', "$tempdir/pgdata", '-w', '-l',
 	  "$log_path/postmaster.log", '-o', "--fsync=off --log-statement=all",
