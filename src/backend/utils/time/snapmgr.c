@@ -1554,9 +1554,7 @@ GetOldSnapshotThresholdTimestamp(void)
  * pruning and table vacuuming, to allow old_snapshot_threshold to override
  * the normal global xmin value.  Actual testing for snapshot too old will be
  * based on whether a snapshot timestamp is prior to the threshold timestamp
- * set in this function.  Because the GUC is allowed to change, it cannot be
- * directly used to determine when to throw the error -- it has to be based on
- * what was set here.
+ * set in this function.
  */
 TransactionId
 TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
@@ -1612,8 +1610,6 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 
 			LWLockRelease(OldSnapshotTimeMapLock);
 		}
-
-		Assert(TransactionIdIsNormal(xlimit));
 
 		if (NormalTransactionIdFollows(xlimit, recentXmin))
 			return xlimit;
