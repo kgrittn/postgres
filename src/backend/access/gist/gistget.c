@@ -23,7 +23,6 @@
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
-#include "utils/snapmgr.h"
 
 /*
  * gistkillitems() -- set LP_DEAD state for items an indexscan caller has

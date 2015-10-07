@@ -18,7 +18,6 @@
 #include "access/xloginsert.h"
 #include "miscadmin.h"
 #include "utils/rel.h"
-#include "utils/snapmgr.h"
 
 static void ginFindParents(GinBtree btree, GinBtreeStack *stack);
 static bool ginPlaceToPage(GinBtree btree, GinBtreeStack *stack,

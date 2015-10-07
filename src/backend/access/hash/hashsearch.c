@@ -19,7 +19,6 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "utils/rel.h"
-#include "utils/snapmgr.h"
 
 
 /*

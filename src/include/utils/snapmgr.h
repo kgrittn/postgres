@@ -14,38 +14,9 @@
 #define SNAPMGR_H
 
 #include "fmgr.h"
-#include "catalog/catalog.h"
-#include "utils/rel.h"
+#include "utils/relcache.h"
 #include "utils/resowner.h"
 #include "utils/snapshot.h"
-#include "utils/tqual.h"
-
-/*
- * Check whether the given snapshot is too old to have safely read the given
- * page from the given table.  If so, throw a "snapshot too old" error.
- *
- * This test generally needs to be performed after every BufferGetPage() call
- * that is executed as part of a scan.  It is not needed for calls made for
- * modifying the page (for example, to position to the right place to insert a
- * new index tuple or for vacuuming).
- *
- * This is a macro for speed; keep the tests that are fastest and/or most
- * likely to exclude a page from old snapshot testing near the front.
- */
-#define TestForOldSnapshot(snapshot, relation, page) \
-	do { \
-		if (old_snapshot_threshold >= 0 \
-		 && (snapshot) != NULL \
-		 && (snapshot)->satisfies == HeapTupleSatisfiesMVCC \
-		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
-		 && PageGetLSN(page) > (snapshot)->lsn \
-		 && !IsCatalogRelation(relation) \
-		 && !RelationIsAccessibleInLogicalDecoding(relation) \
-		 && (snapshot)->whenTaken < GetOldSnapshotThresholdTimestamp()) \
-			ereport(ERROR, \
-					(errcode(ERRCODE_SNAPSHOT_TOO_OLD), \
-					 errmsg("snapshot too old"))); \
-	} while (0)
 
 
 /* GUC variables */

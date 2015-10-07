@@ -22,7 +22,6 @@
 #include "utils/datum.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
-#include "utils/snapmgr.h"
 
 
 typedef void (*storeRes_func) (SpGistScanOpaque so, ItemPointer heapPtr,

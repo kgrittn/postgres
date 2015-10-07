@@ -19,7 +19,7 @@
 #include "miscadmin.h"
 #include "utils/datum.h"
 #include "utils/memutils.h"
-#include "utils/snapmgr.h"
+#include "utils/rel.h"
 
 /* GUC parameter */
 int			GinFuzzySearchLimit = 0;

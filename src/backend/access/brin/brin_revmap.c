@@ -31,7 +31,6 @@
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "utils/rel.h"
-#include "utils/snapmgr.h"
 
 
 /*
