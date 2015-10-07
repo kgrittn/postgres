@@ -2564,7 +2564,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_MIN
 		},
 		&old_snapshot_threshold,
-		-1, -1, MAX_OLD_SNAPSHOT_THRESHOLD,
+		-1, -1, MINS_PER_HOUR * HOURS_PER_DAY * 60,
 		NULL, NULL, NULL
 	},
 

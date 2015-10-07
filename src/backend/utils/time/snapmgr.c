@@ -88,8 +88,8 @@ typedef struct OldSnapshotControlData
 	 *
 	 * Use a circular buffer with a head offset, a length, and a timestamp
 	 * corresponding to the xid at the head offset.  A length of zero means
-	 * that there are no times stored; a length of XID_AGING_BUCKETS means
-	 * that the buffer is full and the head must be advanced to add new
+	 * that there are no times stored; a length of old_snapshot_threshold
+	 * means that the buffer is full and the head must be advanced to add new
 	 * entries.  Use timestamps aligned to minute boundaries, since that seems
 	 * less surprising than aligning based on the first usage timestamp.
 	 *
@@ -110,7 +110,7 @@ typedef struct OldSnapshotControlData
 	int			head_offset;		/* subscript of oldest tracked time */
 	int64		head_timestamp;		/* time corresponding to head xid */
 	int			count_used;			/* how many slots are in use */
-	TransactionId xid_by_minute[XID_AGING_BUCKETS];
+	TransactionId xid_by_minute[FLEXIBLE_ARRAY_MEMBER];
 }	OldSnapshotControlData;
 
 typedef struct OldSnapshotControlData *OldSnapshotControl;
@@ -236,7 +236,14 @@ typedef struct SerializedSnapshotData
 Size
 SnapMgrShmemSize(void)
 {
-	return sizeof(OldSnapshotControlData);
+	Size		size;
+
+	size = offsetof(OldSnapshotControlData, xid_by_minute);
+	if (old_snapshot_threshold > 0)
+		size = add_size(size, mul_size(sizeof(TransactionId),
+									   old_snapshot_threshold));
+
+	return size;
 }
 
 /*
@@ -252,7 +259,7 @@ SnapMgrInit(void)
 	 */
 	oldSnapshotControl = (OldSnapshotControl)
 		ShmemInitStruct("OldSnapshotControlData",
-						sizeof(OldSnapshotControlData), &found);
+						SnapMgrShmemSize(), &found);
 
 	if (!found)
 	{
@@ -1499,6 +1506,12 @@ ThereAreNoPriorRegisteredSnapshots(void)
 }
 
 
+/*
+ * Return an int64 timestamp which is exactly on a minute boundary.
+ *
+ * If the argument is already aligned, return that value, otherwise move to
+ * the next minute boundary following the given time.
+ */
 static int64
 AlignTimestampToMinuteBoundary(int64 ts)
 {
@@ -1596,7 +1609,7 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 				if (offset > oldSnapshotControl->count_used - 1)
 					offset = oldSnapshotControl->count_used - 1;
 				offset = (oldSnapshotControl->head_offset + offset)
-						% XID_AGING_BUCKETS;
+						% old_snapshot_threshold;
 				xlimit = oldSnapshotControl->xid_by_minute[offset];
 
 				if (NormalTransactionIdFollows(xlimit, recentXmin))
@@ -1627,6 +1640,13 @@ MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
 	int64		ts;
 
 	/*
+	 * Fast exit when old_snapshot_threshold is not used or when snapshots
+	 * should immediately be considered "old" (for testing purposes).
+	 */
+	if (old_snapshot_threshold <= 0)
+		return;
+
+	/*
 	 * We don't want to do something stupid with unusual values, but we don't
 	 * want to litter the log with warnings or break otherwise normal
 	 * processing for this feature; so if something seems unreasonable, just
@@ -1652,10 +1672,10 @@ MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
 	LWLockAcquire(OldSnapshotTimeMapLock, LW_EXCLUSIVE);
 
 	Assert(oldSnapshotControl->head_offset >= 0);
-	Assert(oldSnapshotControl->head_offset < XID_AGING_BUCKETS);
+	Assert(oldSnapshotControl->head_offset < old_snapshot_threshold);
 	Assert((oldSnapshotControl->head_timestamp % USECS_PER_MINUTE) == 0);
 	Assert(oldSnapshotControl->count_used >= 0);
-	Assert(oldSnapshotControl->count_used <= XID_AGING_BUCKETS);
+	Assert(oldSnapshotControl->count_used <= old_snapshot_threshold);
 
 	if (oldSnapshotControl->count_used == 0)
 	{
@@ -1682,7 +1702,7 @@ MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
 		int		bucket = (oldSnapshotControl->head_offset
 						  + ((ts - oldSnapshotControl->head_timestamp)
 							 / USECS_PER_MINUTE))
-						 % XID_AGING_BUCKETS;
+						 % old_snapshot_threshold;
 
 		if (TransactionIdPrecedes(oldSnapshotControl->xid_by_minute[bucket], xmin))
 			oldSnapshotControl->xid_by_minute[bucket] = xmin;
@@ -1695,7 +1715,7 @@ MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
 
 		oldSnapshotControl->head_timestamp = ts;
 
-		if (advance >= XID_AGING_BUCKETS)
+		if (advance >= old_snapshot_threshold)
 		{
 			/* Advance is so far that all old data is junk; start over. */
 			oldSnapshotControl->head_offset = 0;
@@ -1709,12 +1729,12 @@ MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
 
 			for (i = 0; i < advance; i++)
 			{
-				if (oldSnapshotControl->count_used == XID_AGING_BUCKETS)
+				if (oldSnapshotControl->count_used == old_snapshot_threshold)
 				{
 					/* Map full and new value replaces old head. */
 					int		old_head = oldSnapshotControl->head_offset;
 
-					if (old_head == (XID_AGING_BUCKETS - 1))
+					if (old_head == (old_snapshot_threshold - 1))
 						oldSnapshotControl->head_offset = 0;
 					else
 						oldSnapshotControl->head_offset = old_head + 1;
@@ -1725,7 +1745,7 @@ MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
 					/* Extend map to unused entry. */
 					int		new_tail = (oldSnapshotControl->head_offset
 										+ oldSnapshotControl->count_used)
-									   % XID_AGING_BUCKETS;
+									   % old_snapshot_threshold;
 
 					oldSnapshotControl->count_used++;
 					oldSnapshotControl->xid_by_minute[new_tail] = xmin;

@@ -21,26 +21,21 @@
 #include "utils/tqual.h"
 
 /*
- * We keep a circular buffer of what transaction ID was next to assign by time
- * with roughly one minute granularity, to support generation of "snapshot too
- * old" errors.  Define the number of buckets.
- */
-#define XID_AGING_BUCKETS (MINS_PER_HOUR * HOURS_PER_DAY * 60)
-
-/*
- * At least for now, the maximum number of minutes for the GUC controlling the
- * "snapshot too old" error is the same as the number of aging buckets; but
- * let's use a different define in case the implementation changes.
- */
-#define MAX_OLD_SNAPSHOT_THRESHOLD XID_AGING_BUCKETS
-
-/*
+ * Check whether the given snapshot is too old to have safely read the given
+ * page from the given table.  If so, throw a "snapshot too old" error.
+ *
+ * This test generally needs to be performed after every BufferGetPage() call
+ * that is executed as part of a scan.  It is not needed for calls made for
+ * modifying the page (for example, to position to the right place to insert a
+ * new index tuple or for vacuuming).
+ *
  * This is a macro for speed; keep the tests that are fastest and/or most
  * likely to exclude a page from old snapshot testing near the front.
  */
 #define TestForOldSnapshot(snapshot, relation, page) \
 	do { \
-		if ((snapshot) != NULL \
+		if (old_snapshot_threshold >= 0 \
+		 && (snapshot) != NULL \
 		 && (snapshot)->satisfies == HeapTupleSatisfiesMVCC \
 		 && !XLogRecPtrIsInvalid((snapshot)->lsn) \
 		 && PageGetLSN(page) > (snapshot)->lsn \
