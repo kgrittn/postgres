@@ -86,12 +86,13 @@ typedef struct OldSnapshotControlData
 	/*
 	 * Keep one xid per minute for old snapshot error handling.
 	 *
-	 * Use a circular buffer with a head offset, a length, and a timestamp
-	 * corresponding to the xid at the head offset.  A length of zero means
-	 * that there are no times stored; a length of old_snapshot_threshold
-	 * means that the buffer is full and the head must be advanced to add new
-	 * entries.  Use timestamps aligned to minute boundaries, since that seems
-	 * less surprising than aligning based on the first usage timestamp.
+	 * Use a circular buffer with a head offset, a count of entries currently
+	 * used, and a timestamp corresponding to the xid at the head offset.  A
+	 * count_used value of zero means that there are no times stored; a
+	 * count_used value of old_snapshot_threshold means that the buffer is
+	 * full and the head must be advanced to add new entries.  Use timestamps
+	 * aligned to minute boundaries, since that seems less surprising than
+	 * aligning based on the first usage timestamp.
 	 *
 	 * It is OK if the xid for a given time slot is from earlier than
 	 * calculated by adding the number of minutes corresponding to the
