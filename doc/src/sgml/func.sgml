@@ -3600,6 +3600,28 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
     </para>
    </tip>
 
+   <caution>
+    <para>
+     While most regular-expression searches can be executed very quickly,
+     regular expressions can be contrived that take arbitrary amounts of
+     time and memory to process.  Be wary of accepting regular-expression
+     search patterns from hostile sources.  If you must do so, it is
+     advisable to impose a statement timeout.
+    </para>
+
+    <para>
+     Searches using <function>SIMILAR TO</function> patterns have the same
+     security hazards, since <function>SIMILAR TO</function> provides many
+     of the same capabilities as <acronym>POSIX</acronym>-style regular
+     expressions.
+    </para>
+
+    <para>
+     <function>LIKE</function> searches, being much simpler than the other
+     two options, are safer to use with possibly-hostile pattern sources.
+    </para>
+   </caution>
+
   <sect2 id="functions-like">
    <title><function>LIKE</function></title>
 
@@ -4669,7 +4691,7 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
        <entry> <literal>\e</> </entry>
        <entry> the character whose collating-sequence name
        is <literal>ESC</>,
-       or failing that, the character with octal value 033 </entry>
+       or failing that, the character with octal value <literal>033</> </entry>
        </row>
 
        <row>
@@ -4695,15 +4717,17 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
        <row>
        <entry> <literal>\u</><replaceable>wxyz</> </entry>
        <entry> (where <replaceable>wxyz</> is exactly four hexadecimal digits)
-       the UTF16 (Unicode, 16-bit) character <literal>U+</><replaceable>wxyz</>
-       in the local byte ordering </entry>
+       the character whose hexadecimal value is
+       <literal>0x</><replaceable>wxyz</>
+       </entry>
        </row>
 
        <row>
        <entry> <literal>\U</><replaceable>stuvwxyz</> </entry>
        <entry> (where <replaceable>stuvwxyz</> is exactly eight hexadecimal
        digits)
-       reserved for a hypothetical Unicode extension to 32 bits
+       the character whose hexadecimal value is
+       <literal>0x</><replaceable>stuvwxyz</>
        </entry>
        </row>
 
@@ -4750,6 +4774,17 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
     Hexadecimal digits are <literal>0</>-<literal>9</>,
     <literal>a</>-<literal>f</>, and <literal>A</>-<literal>F</>.
     Octal digits are <literal>0</>-<literal>7</>.
+   </para>
+
+   <para>
+    Numeric character-entry escapes specifying values outside the ASCII range
+    (0-127) have meanings dependent on the database encoding.  When the
+    encoding is UTF-8, escape values are equivalent to Unicode code points,
+    for example <literal>\u1234</> means the character <literal>U+1234</>.
+    For other multibyte encodings, character-entry escapes usually just
+    specify the concatenation of the byte values for the character.  If the
+    escape value does not correspond to any legal character in the database
+    encoding, no error will be raised, but it will never match any data.
    </para>
 
    <para>
@@ -6117,12 +6152,14 @@ SELECT regexp_matches('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
 
      <listitem>
       <para>
-       <literal>V</literal> effectively
+       <literal>V</literal> with <function>to_char</function>
        multiplies the input values by
        <literal>10^<replaceable>n</replaceable></literal>, where
        <replaceable>n</replaceable> is the number of digits following
-       <literal>V</literal>.
-       <function>to_char</function> does not support the use of
+       <literal>V</literal>.  <literal>V</literal> with
+       <function>to_number</function> divides in a similar manner.
+       <function>to_char</function> and <function>to_number</function>
+       do not support the use of
        <literal>V</literal> combined with a decimal point
        (e.g., <literal>99.9V99</literal> is not allowed).
       </para>
@@ -6299,7 +6336,7 @@ SELECT regexp_matches('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
        </row>
        <row>
         <entry><literal>to_char(485, 'L999')</literal></entry>
-        <entry><literal>'DM&nbsp;485</literal></entry>
+        <entry><literal>'DM&nbsp;485'</literal></entry>
        </row>
        <row>
         <entry><literal>to_char(485, 'RN')</literal></entry>
@@ -10296,38 +10333,42 @@ table2-mapping
        <row>
         <entry><literal>@&gt;</literal></entry>
         <entry><type>jsonb</type></entry>
-        <entry>Does the left JSON value contain within it the right value?</entry>
+        <entry>Does the left JSON value contain the right JSON
+        path/value entries at the top level?</entry>
         <entry><literal>'{"a":1, "b":2}'::jsonb &#64;&gt; '{"b":2}'::jsonb</literal></entry>
        </row>
        <row>
         <entry><literal>&lt;@</literal></entry>
         <entry><type>jsonb</type></entry>
-        <entry>Is the left JSON value contained within the right value?</entry>
+        <entry>Are the left JSON path/value entries contained at the top level within
+        the right JSON value?</entry>
         <entry><literal>'{"b":2}'::jsonb &lt;@ '{"a":1, "b":2}'::jsonb</literal></entry>
        </row>
        <row>
         <entry><literal>?</literal></entry>
         <entry><type>text</type></entry>
-        <entry>Does the key/element <emphasis>string</emphasis> exist within
-        the JSON value?</entry>
+        <entry>Does the <emphasis>string</emphasis> exist as a top-level
+        key within the JSON value?</entry>
         <entry><literal>'{"a":1, "b":2}'::jsonb ? 'b'</literal></entry>
        </row>
        <row>
         <entry><literal>?|</literal></entry>
         <entry><type>text[]</type></entry>
-        <entry>Do any of these key/element <emphasis>strings</emphasis> exist?</entry>
+        <entry>Do any of these array <emphasis>strings</emphasis>
+        exist as top-level keys?</entry>
         <entry><literal>'{"a":1, "b":2, "c":3}'::jsonb ?| array['b', 'c']</literal></entry>
        </row>
        <row>
         <entry><literal>?&amp;</literal></entry>
         <entry><type>text[]</type></entry>
-        <entry>Do all of these key/element <emphasis>strings</emphasis> exist?</entry>
+        <entry>Do all of these array <emphasis>strings</emphasis> exist
+        as top-level keys?</entry>
         <entry><literal>'["a", "b"]'::jsonb ?&amp; array['a', 'b']</literal></entry>
        </row>
        <row>
         <entry><literal>||</literal></entry>
         <entry><type>jsonb</type></entry>
-        <entry>Concatentate two jsonb values into a new jsonb value</entry>
+        <entry>Concatenate two <type>jsonb</type> values into a new <type>jsonb</type> value</entry>
         <entry><literal>'["a", "b"]'::jsonb || '["c", "d"]'::jsonb</literal></entry>
        </row>
        <row>
@@ -10986,7 +11027,7 @@ table2-mapping
       If the argument to <literal>json_strip_nulls</> contains duplicate
       field names in any object, the result could be semantically somewhat
       different, depending on the order in which they occur. This is not an
-      issue for <literal>jsonb_strip_nulls</> since jsonb values never have
+      issue for <literal>jsonb_strip_nulls</> since <type>jsonb</type> values never have
       duplicate object field names.
     </para>
   </note>
@@ -13433,7 +13474,7 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
        <type>integer</type>
       </entry>
       <entry>
-       Integer bitmask indicating which arguments are not being included in the current
+       Integer bit mask indicating which arguments are not being included in the current
        grouping set
       </entry>
      </row>
@@ -16633,7 +16674,7 @@ SELECT set_config('log_statement_stats', 'off', false);
         </entry>
        <entry><type>boolean</type></entry>
        <entry>Cancel a backend's current query.  This is also allowed if the
-        calling role is a member of the role whose backend is being cancelled,
+        calling role is a member of the role whose backend is being canceled,
         however only superusers can cancel superuser backends.
         </entry>
       </row>
@@ -18600,7 +18641,7 @@ CREATE EVENT TRIGGER test_event_trigger_for_drops
         <literal><function>pg_event_trigger_table_rewrite_oid()</function></literal>
        </entry>
        <entry><type>Oid</type></entry>
-       <entry>The Oid of the table about to be rewritten.</entry>
+       <entry>The OID of the table about to be rewritten.</entry>
       </row>
 
       <row>
