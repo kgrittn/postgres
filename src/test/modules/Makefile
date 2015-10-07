@@ -8,6 +8,7 @@ SUBDIRS = \
 		  brin \
 		  commit_ts \
 		  dummy_seclabel \
+		  sto \
 		  test_ddl_deparse \
 		  test_extensions \
 		  test_parser \
