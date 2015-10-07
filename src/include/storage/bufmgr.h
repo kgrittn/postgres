@@ -159,6 +159,10 @@ extern PGDLLIMPORT int32 *LocalRefCount;
  * modifying the page (for example, to position to the right place to insert a
  * new index tuple or for vacuuming).
  *
+ * Note that a NULL snapshot argument is allowed and causes a fast return
+ * without error; this is to support call sites which can be called from
+ * either scans or index modification areas.
+ *
  * This is a macro for speed; keep the tests that are fastest and/or most
  * likely to exclude a page from old snapshot testing near the front.
  */
