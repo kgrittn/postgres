@@ -22,6 +22,7 @@
 /* GUC variables */
 extern int	old_snapshot_threshold;
 
+
 extern Size SnapMgrShmemSize(void);
 extern void SnapMgrInit(void);
 extern int64 GetSnapshotCurrentTimestamp(void);
