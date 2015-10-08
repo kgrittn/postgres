@@ -51,16 +51,16 @@ sub select_scalar_ok
 	is($actual_value, $expected_value, "SELECT scalar value");
 }
 
-sub fetch_first_ok
+sub select_ok
 {
 	my ($dbh) = @_;
-	select_scalar_ok($dbh, 'FETCH FIRST FROM cursor1', '1');
+	select_scalar_ok($dbh, 'select c from t order by c limit 1', '1');
 }
 
 sub snapshot_too_old_ok
 {
 	my ($dbh) = @_;
-	my $actual_value = $dbh->selectrow_array('FETCH FIRST FROM cursor1');
+	my $actual_value = $dbh->selectrow_array('select c from t order by c limit 1');
 	is($dbh->state, '72000', 'expect "snapshot too old" error');
 }
 
@@ -85,34 +85,35 @@ $conn1->do(qq(INSERT INTO t SELECT generate_series(1, 1000)));
 $conn1->do(qq(VACUUM ANALYZE t));
 $conn1->do(qq(CREATE TABLE u (c int NOT NULL)));
 
-# Open long-lived cursor
+# Open long-lived snapshot
 $conn1->begin_work;
-$conn1->do(qq(DECLARE cursor1 CURSOR FOR SELECT c FROM t));
+$conn1->do(qq(set transaction isolation level REPEATABLE READ));
+$conn1->do(qq(SELECT c FROM t));
 
 # Bump the last-used transaction number.
 $conn2->do(qq(INSERT INTO u VALUES (1)));
 
 # Confirm immediate fetch works.
-fetch_first_ok($conn1);
+select_ok($conn1);
 
 # Confirm delayed fetch works with no modifications.
 log_sleep_to_new_minute;
-fetch_first_ok($conn1);
+select_ok($conn1);
 
 # Try again to confirm no pruning affect.
-fetch_first_ok($conn1);
+select_ok($conn1);
 
 # Confirm that fetch immediately after update is OK.
 # This assumes that they happen within one minute of each other.
 # Still using same snapshot, so value shouldn't change.
 $conn2->do(qq(UPDATE t SET c = 1001 WHERE c = 1));
-fetch_first_ok($conn1);
-
+select_ok($conn1);
 # Try again to confirm no pruning affect.
-$conn2->do(qq(VACUUM ANALYZE t));
-fetch_first_ok($conn1);
+select_ok($conn1);
 
 # Passage of time should now make this get the "snapshot too old" error.
+$conn2->do(qq(VACUUM ANALYZE t));
+log_sleep_to_new_minute;
 log_sleep_to_new_minute;
 snapshot_too_old_ok($conn1);
 $conn1->rollback;
