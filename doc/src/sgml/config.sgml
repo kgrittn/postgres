@@ -1949,6 +1949,10 @@ include_dir 'conf.d'
        <term><varname>old_snapshot_threshold</varname> (<type>integer</type>)
        <indexterm>
         <primary><varname>old_snapshot_threshold</> configuration parameter</primary>
+       </indexterm>
+       </term>
+       <listitem>
+        <para>
          Sets the minimum time that a snapshot can be used without risk of a
          <literal>snapshot too old</> error occurring when using the snapshot.
          This parameter can only be set at server start.
@@ -1973,6 +1977,9 @@ include_dir 'conf.d'
          useful for testing.  While a setting as high as <literal>60d</> is
          allowed, please note that in many workloads extreme bloat or
          transaction ID wraparound may occur in much shorter time frames.
+        </para>
+       </listitem>
+      </varlistentry>
      </variablelist>
     </sect2>
    </sect1>
