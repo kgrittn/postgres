@@ -70,6 +70,7 @@ old_snapshot_threshold = '1min'
 autovacuum = off
 enable_indexonlyscan = off
 max_connections = 10
+log_statement = 'all'
 ));
 
 # Confirm that we can connect to the database.
