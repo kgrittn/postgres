@@ -61,7 +61,8 @@ sub snapshot_too_old_ok
 {
 	my ($dbh) = @_;
 	my $actual_value = $dbh->selectrow_array('FETCH FIRST FROM cursor1');
-	is($dbh->state, '72000', 'expect "snapshot too old" error');
+	my $errstr = $dbh->errstr;
+	is($errstr, 'ERROR:  snapshot too old', 'expect "snapshot too old" error');
 }
 
 # Initialize cluster

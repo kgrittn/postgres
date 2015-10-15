@@ -61,7 +61,8 @@ sub snapshot_too_old_ok
 {
 	my ($dbh) = @_;
 	my $actual_value = $dbh->selectrow_array('select c from t order by c limit 1');
-	is($dbh->state, '72000', 'expect "snapshot too old" error');
+	my $errstr = $dbh->errstr;
+	is($errstr, 'ERROR:  snapshot too old', 'expect "snapshot too old" error');
 }
 
 # Initialize cluster
@@ -109,12 +110,13 @@ select_ok($conn1);
 # Still using same snapshot, so value shouldn't change.
 $conn2->do(qq(UPDATE t SET c = 1001 WHERE c = 1));
 select_ok($conn1);
+
 # Try again to confirm no pruning affect.
+log_sleep_to_new_minute;
+$conn2->do(qq(VACUUM ANALYZE t));
 select_ok($conn1);
 
 # Passage of time should now make this get the "snapshot too old" error.
-$conn2->do(qq(VACUUM ANALYZE t));
-log_sleep_to_new_minute;
 log_sleep_to_new_minute;
 snapshot_too_old_ok($conn1);
 $conn1->rollback;
