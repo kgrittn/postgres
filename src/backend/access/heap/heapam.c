@@ -591,6 +591,7 @@ heapgettup(HeapScanDesc scan,
 
 		/* Since the tuple was previously fetched, needn't lock page here */
 		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(snapshot, scan->rs_rd, dp);
 		lineoff = ItemPointerGetOffsetNumber(&(tuple->t_self));
 		lpp = PageGetItemId(dp, lineoff);
 		Assert(ItemIdIsNormal(lpp));
@@ -790,6 +791,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 		}
 
 		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(scan->rs_snapshot, scan->rs_rd, dp);
 		lines = scan->rs_ntuples;
 		/* page and lineindex now reference the next visible tid */
 
@@ -830,6 +832,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 		}
 
 		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(scan->rs_snapshot, scan->rs_rd, dp);
 		lines = scan->rs_ntuples;
 
 		if (!scan->rs_inited)
@@ -863,6 +866,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 
 		/* Since the tuple was previously fetched, needn't lock page here */
 		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(scan->rs_snapshot, scan->rs_rd, dp);
 		lineoff = ItemPointerGetOffsetNumber(&(tuple->t_self));
 		lpp = PageGetItemId(dp, lineoff);
 		Assert(ItemIdIsNormal(lpp));
@@ -977,6 +981,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 		heapgetpage(scan, page);
 
 		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(scan->rs_snapshot, scan->rs_rd, dp);
 		lines = scan->rs_ntuples;
 		linesleft = lines;
 		if (backward)
