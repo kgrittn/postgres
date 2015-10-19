@@ -906,7 +906,6 @@ _equalQuery(const Query *a, const Query *b)
 	COMPARE_NODE_FIELD(rtable);
 	COMPARE_NODE_FIELD(jointree);
 	COMPARE_NODE_FIELD(targetList);
-	COMPARE_NODE_FIELD(withCheckOptions);
 	COMPARE_NODE_FIELD(onConflict);
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(groupClause);
@@ -920,6 +919,7 @@ _equalQuery(const Query *a, const Query *b)
 	COMPARE_NODE_FIELD(rowMarks);
 	COMPARE_NODE_FIELD(setOperations);
 	COMPARE_NODE_FIELD(constraintDeps);
+	COMPARE_NODE_FIELD(withCheckOptions);
 
 	return true;
 }
@@ -2075,7 +2075,7 @@ _equalCreatePolicyStmt(const CreatePolicyStmt *a, const CreatePolicyStmt *b)
 {
 	COMPARE_STRING_FIELD(policy_name);
 	COMPARE_NODE_FIELD(table);
-	COMPARE_STRING_FIELD(cmd);
+	COMPARE_STRING_FIELD(cmd_name);
 	COMPARE_NODE_FIELD(roles);
 	COMPARE_NODE_FIELD(qual);
 	COMPARE_NODE_FIELD(with_check);
@@ -2456,6 +2456,7 @@ _equalWithCheckOption(const WithCheckOption *a, const WithCheckOption *b)
 {
 	COMPARE_SCALAR_FIELD(kind);
 	COMPARE_STRING_FIELD(relname);
+	COMPARE_STRING_FIELD(polname);
 	COMPARE_NODE_FIELD(qual);
 	COMPARE_SCALAR_FIELD(cascaded);
 

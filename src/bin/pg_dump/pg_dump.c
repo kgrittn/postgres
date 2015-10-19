@@ -97,6 +97,9 @@ static const char *username_subquery;
 /* obsolete as of 7.3: */
 static Oid	g_last_builtin_oid; /* value of the last builtin oid */
 
+/* The specified names/patterns should to match at least one entity */
+static int	strict_names = 0;
+
 /*
  * Object inclusion/exclusion lists
  *
@@ -131,10 +134,12 @@ static void setup_connection(Archive *AH, DumpOptions *dopt,
 static ArchiveFormat parseArchiveFormat(const char *format, ArchiveMode *mode);
 static void expand_schema_name_patterns(Archive *fout,
 							SimpleStringList *patterns,
-							SimpleOidList *oids);
+							SimpleOidList *oids,
+							bool strict_names);
 static void expand_table_name_patterns(Archive *fout,
 						   SimpleStringList *patterns,
-						   SimpleOidList *oids);
+						   SimpleOidList *oids,
+						   bool strict_names);
 static NamespaceInfo *findNamespace(Archive *fout, Oid nsoid, Oid objoid);
 static void dumpTableData(Archive *fout, DumpOptions *dopt, TableDataInfo *tdinfo);
 static void refreshMatViewData(Archive *fout, TableDataInfo *tdinfo);
@@ -333,6 +338,7 @@ main(int argc, char **argv)
 		{"section", required_argument, NULL, 5},
 		{"serializable-deferrable", no_argument, &dopt.serializable_deferrable, 1},
 		{"snapshot", required_argument, NULL, 6},
+		{"strict-names", no_argument, &strict_names, 1},
 		{"use-set-session-authorization", no_argument, &dopt.use_setsessauth, 1},
 		{"no-security-labels", no_argument, &dopt.no_security_labels, 1},
 		{"no-synchronized-snapshots", no_argument, &dopt.no_synchronized_snapshots, 1},
@@ -690,27 +696,32 @@ main(int argc, char **argv)
 	if (schema_include_patterns.head != NULL)
 	{
 		expand_schema_name_patterns(fout, &schema_include_patterns,
-									&schema_include_oids);
+									&schema_include_oids,
+									strict_names);
 		if (schema_include_oids.head == NULL)
 			exit_horribly(NULL, "No matching schemas were found\n");
 	}
 	expand_schema_name_patterns(fout, &schema_exclude_patterns,
-								&schema_exclude_oids);
+								&schema_exclude_oids,
+								false);
 	/* non-matching exclusion patterns aren't an error */
 
 	/* Expand table selection patterns into OID lists */
 	if (table_include_patterns.head != NULL)
 	{
 		expand_table_name_patterns(fout, &table_include_patterns,
-								   &table_include_oids);
+								   &table_include_oids,
+								   strict_names);
 		if (table_include_oids.head == NULL)
 			exit_horribly(NULL, "No matching tables were found\n");
 	}
 	expand_table_name_patterns(fout, &table_exclude_patterns,
-							   &table_exclude_oids);
+							   &table_exclude_oids,
+							   false);
 
 	expand_table_name_patterns(fout, &tabledata_exclude_patterns,
-							   &tabledata_exclude_oids);
+							   &tabledata_exclude_oids,
+							   false);
 
 	/* non-matching exclusion patterns aren't an error */
 
@@ -893,7 +904,8 @@ help(const char *progname)
 	printf(_("  --column-inserts             dump data as INSERT commands with column names\n"));
 	printf(_("  --disable-dollar-quoting     disable dollar quoting, use SQL standard quoting\n"));
 	printf(_("  --disable-triggers           disable triggers during data-only restore\n"));
-	printf(_("  --enable-row-security        enable row level security\n"));
+	printf(_("  --enable-row-security        enable row security (dump only content user has\n"
+			 "                               access to)\n"));
 	printf(_("  --exclude-table-data=TABLE   do NOT dump data for the named table(s)\n"));
 	printf(_("  --if-exists                  use IF EXISTS when dropping objects\n"));
 	printf(_("  --inserts                    dump data as INSERT commands, rather than COPY\n"));
@@ -904,7 +916,9 @@ help(const char *progname)
 	printf(_("  --quote-all-identifiers      quote all identifiers, even if not key words\n"));
 	printf(_("  --section=SECTION            dump named section (pre-data, data, or post-data)\n"));
 	printf(_("  --serializable-deferrable    wait until the dump can run without anomalies\n"));
-	printf(_("  --snapshot=SNAPSHOT          use given synchronous snapshot for the dump\n"));
+	printf(_("  --snapshot=SNAPSHOT          use given snapshot for the dump\n"));
+	printf(_("  --strict-names               require table and/or schema include patterns to\n"
+			 "                               match at least one entity each\n"));
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));
@@ -1135,7 +1149,8 @@ parseArchiveFormat(const char *format, ArchiveMode *mode)
 static void
 expand_schema_name_patterns(Archive *fout,
 							SimpleStringList *patterns,
-							SimpleOidList *oids)
+							SimpleOidList *oids,
+							bool strict_names)
 {
 	PQExpBuffer query;
 	PGresult   *res;
@@ -1151,28 +1166,30 @@ expand_schema_name_patterns(Archive *fout,
 	query = createPQExpBuffer();
 
 	/*
-	 * We use UNION ALL rather than UNION; this might sometimes result in
+	 * The loop below runs multiple SELECTs might sometimes result in
 	 * duplicate entries in the OID list, but we don't care.
 	 */
 
 	for (cell = patterns->head; cell; cell = cell->next)
 	{
-		if (cell != patterns->head)
-			appendPQExpBufferStr(query, "UNION ALL\n");
 		appendPQExpBuffer(query,
 						  "SELECT oid FROM pg_catalog.pg_namespace n\n");
 		processSQLNamePattern(GetConnection(fout), query, cell->val, false,
 							  false, NULL, "n.nspname", NULL, NULL);
+
+		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		if (strict_names && PQntuples(res) == 0)
+			exit_horribly(NULL, "No matching table(s) were found for pattern \"%s\"\n", cell->val);
+
+		for (i = 0; i < PQntuples(res); i++)
+		{
+			simple_oid_list_append(oids, atooid(PQgetvalue(res, i, 0)));
+		}
+
+		PQclear(res);
+		resetPQExpBuffer(query);
 	}
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
-
-	for (i = 0; i < PQntuples(res); i++)
-	{
-		simple_oid_list_append(oids, atooid(PQgetvalue(res, i, 0)));
-	}
-
-	PQclear(res);
 	destroyPQExpBuffer(query);
 }
 
@@ -1182,7 +1199,8 @@ expand_schema_name_patterns(Archive *fout,
  */
 static void
 expand_table_name_patterns(Archive *fout,
-						   SimpleStringList *patterns, SimpleOidList *oids)
+						   SimpleStringList *patterns, SimpleOidList *oids,
+						   bool strict_names)
 {
 	PQExpBuffer query;
 	PGresult   *res;
@@ -1195,14 +1213,12 @@ expand_table_name_patterns(Archive *fout,
 	query = createPQExpBuffer();
 
 	/*
-	 * We use UNION ALL rather than UNION; this might sometimes result in
-	 * duplicate entries in the OID list, but we don't care.
+	 * this might sometimes result in duplicate entries in the OID list,
+	 * but we don't care.
 	 */
 
 	for (cell = patterns->head; cell; cell = cell->next)
 	{
-		if (cell != patterns->head)
-			appendPQExpBufferStr(query, "UNION ALL\n");
 		appendPQExpBuffer(query,
 						  "SELECT c.oid"
 						  "\nFROM pg_catalog.pg_class c"
@@ -1213,16 +1229,20 @@ expand_table_name_patterns(Archive *fout,
 		processSQLNamePattern(GetConnection(fout), query, cell->val, true,
 							  false, "n.nspname", "c.relname", NULL,
 							  "pg_catalog.pg_table_is_visible(c.oid)");
+
+		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+		if (strict_names && PQntuples(res) == 0)
+			exit_horribly(NULL, "No matching table(s) were found for pattern \"%s\"\n", cell->val);
+
+		for (i = 0; i < PQntuples(res); i++)
+		{
+			simple_oid_list_append(oids, atooid(PQgetvalue(res, i, 0)));
+		}
+
+		PQclear(res);
+		resetPQExpBuffer(query);
 	}
 
-	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
-
-	for (i = 0; i < PQntuples(res); i++)
-	{
-		simple_oid_list_append(oids, atooid(PQgetvalue(res, i, 0)));
-	}
-
-	PQclear(res);
 	destroyPQExpBuffer(query);
 }
 
@@ -1435,7 +1455,7 @@ dumpTableData_copy(Archive *fout, DumpOptions *dopt, void *dcontext)
 	const char *column_list;
 
 	if (g_verbose)
-		write_msg(NULL, "dumping contents of table \"%s\".\"%s\"\n",
+		write_msg(NULL, "dumping contents of table \"%s.%s\"\n",
 				  tbinfo->dobj.namespace->dobj.name, classname);
 
 	/*
@@ -2832,7 +2852,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading row security enabled for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading row security enabled for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -2863,7 +2883,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 		}
 
 		if (g_verbose)
-			write_msg(NULL, "reading policies for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading policies for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -4520,6 +4540,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 	int			i_relhasindex;
 	int			i_relhasrules;
 	int			i_relrowsec;
+	int			i_relforcerowsec;
 	int			i_relhasoids;
 	int			i_relfrozenxid;
 	int			i_relminmxid;
@@ -4573,7 +4594,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "(%s c.relowner) AS rolname, "
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
-						  "c.relrowsecurity, "
+						  "c.relrowsecurity, c.relforcerowsecurity, "
 						  "c.relfrozenxid, c.relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "tc.relminmxid AS tminmxid, "
@@ -4615,6 +4636,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, c.relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "tc.relminmxid AS tminmxid, "
@@ -4656,6 +4678,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, c.relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "tc.relminmxid AS tminmxid, "
@@ -4697,6 +4720,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4736,6 +4760,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4774,6 +4799,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4812,6 +4838,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 					  "c.relchecks, (c.reltriggers <> 0) AS relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4850,6 +4877,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4887,6 +4915,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4920,6 +4949,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4948,6 +4978,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4986,6 +5017,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -5034,6 +5066,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 	i_relhasindex = PQfnumber(res, "relhasindex");
 	i_relhasrules = PQfnumber(res, "relhasrules");
 	i_relrowsec = PQfnumber(res, "relrowsecurity");
+	i_relforcerowsec = PQfnumber(res, "relforcerowsecurity");
 	i_relhasoids = PQfnumber(res, "relhasoids");
 	i_relfrozenxid = PQfnumber(res, "relfrozenxid");
 	i_relminmxid = PQfnumber(res, "relminmxid");
@@ -5086,6 +5119,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 		tblinfo[i].hasrules = (strcmp(PQgetvalue(res, i, i_relhasrules), "t") == 0);
 		tblinfo[i].hastriggers = (strcmp(PQgetvalue(res, i, i_relhastriggers), "t") == 0);
 		tblinfo[i].rowsec = (strcmp(PQgetvalue(res, i, i_relrowsec), "t") == 0);
+		tblinfo[i].forcerowsec = (strcmp(PQgetvalue(res, i, i_relforcerowsec), "t") == 0);
 		tblinfo[i].hasoids = (strcmp(PQgetvalue(res, i, i_relhasoids), "t") == 0);
 		tblinfo[i].relispopulated = (strcmp(PQgetvalue(res, i, i_relispopulated), "t") == 0);
 		tblinfo[i].relreplident = *(PQgetvalue(res, i, i_relreplident));
@@ -5307,7 +5341,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading indexes for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading indexes for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -5674,7 +5708,7 @@ getConstraints(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading foreign key constraints for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading foreign key constraints for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -6013,7 +6047,7 @@ getTriggers(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading triggers for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading triggers for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -6747,7 +6781,7 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 		 * the output of an indexscan on pg_attribute_relid_attnum_index.
 		 */
 		if (g_verbose)
-			write_msg(NULL, "finding the columns and types of table \"%s\".\"%s\"\n",
+			write_msg(NULL, "finding the columns and types of table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -6960,7 +6994,7 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 			int			numDefaults;
 
 			if (g_verbose)
-				write_msg(NULL, "finding default expressions of table \"%s\".\"%s\"\n",
+				write_msg(NULL, "finding default expressions of table \"%s.%s\"\n",
 						  tbinfo->dobj.namespace->dobj.name,
 						  tbinfo->dobj.name);
 
@@ -7085,7 +7119,7 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 			int			numConstrs;
 
 			if (g_verbose)
-				write_msg(NULL, "finding check constraints for table \"%s\".\"%s\"\n",
+				write_msg(NULL, "finding check constraints for table \"%s.%s\"\n",
 						  tbinfo->dobj.namespace->dobj.name,
 						  tbinfo->dobj.name);
 
@@ -10184,6 +10218,7 @@ dumpFunc(Archive *fout, DumpOptions *dopt, FuncInfo *finfo)
 	char	   *proconfig;
 	char	   *procost;
 	char	   *prorows;
+	char	   *proparallel;
 	char	   *lanname;
 	char	   *rettypename;
 	int			nallargs;
@@ -10208,7 +10243,25 @@ dumpFunc(Archive *fout, DumpOptions *dopt, FuncInfo *finfo)
 	selectSourceSchema(fout, finfo->dobj.namespace->dobj.name);
 
 	/* Fetch function-specific details */
-	if (fout->remoteVersion >= 90500)
+	if (fout->remoteVersion >= 90600)
+	{
+		/*
+		 * proparallel was added in 9.6
+		 */
+		appendPQExpBuffer(query,
+						  "SELECT proretset, prosrc, probin, "
+					"pg_catalog.pg_get_function_arguments(oid) AS funcargs, "
+		  "pg_catalog.pg_get_function_identity_arguments(oid) AS funciargs, "
+					 "pg_catalog.pg_get_function_result(oid) AS funcresult, "
+						  "array_to_string(protrftypes, ' ') AS protrftypes, "
+						  "proiswindow, provolatile, proisstrict, prosecdef, "
+						  "proleakproof, proconfig, procost, prorows, proparallel, "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname "
+						  "FROM pg_catalog.pg_proc "
+						  "WHERE oid = '%u'::pg_catalog.oid",
+						  finfo->dobj.catId.oid);
+	}
+	else if (fout->remoteVersion >= 90500)
 	{
 		/*
 		 * protrftypes was added in 9.5
@@ -10390,6 +10443,12 @@ dumpFunc(Archive *fout, DumpOptions *dopt, FuncInfo *finfo)
 	proconfig = PQgetvalue(res, 0, PQfnumber(res, "proconfig"));
 	procost = PQgetvalue(res, 0, PQfnumber(res, "procost"));
 	prorows = PQgetvalue(res, 0, PQfnumber(res, "prorows"));
+
+	if (PQfnumber(res, "proparallel") != -1)
+		proparallel = PQgetvalue(res, 0, PQfnumber(res, "proparallel"));
+	else
+		proparallel = NULL;
+
 	lanname = PQgetvalue(res, 0, PQfnumber(res, "lanname"));
 
 	/*
@@ -10587,6 +10646,17 @@ dumpFunc(Archive *fout, DumpOptions *dopt, FuncInfo *finfo)
 	if (proretset[0] == 't' &&
 		strcmp(prorows, "0") != 0 && strcmp(prorows, "1000") != 0)
 		appendPQExpBuffer(q, " ROWS %s", prorows);
+
+	if (proparallel != NULL && proparallel[0] != PROPARALLEL_UNSAFE)
+	{
+		if (proparallel[0] == PROPARALLEL_SAFE)
+			appendPQExpBufferStr(q, " PARALLEL SAFE");
+		else if (proparallel[0] == PROPARALLEL_RESTRICTED)
+			appendPQExpBufferStr(q, " PARALLEL RESTRICTED");
+		else if (proparallel[0] != PROPARALLEL_UNSAFE)
+			exit_horribly(NULL, "unrecognized proparallel value for function \"%s\"\n",
+						  finfo->dobj.name);
+	}
 
 	for (i = 0; i < nconfigitems; i++)
 	{
@@ -14356,6 +14426,10 @@ dumpTableSchema(Archive *fout, DumpOptions *dopt, TableInfo *tbinfo)
 		appendPQExpBuffer(q, "\nALTER TABLE ONLY %s SET WITH OIDS;\n",
 						  fmtId(tbinfo->dobj.name));
 
+	if (tbinfo->forcerowsec)
+		appendPQExpBuffer(q, "\nALTER TABLE ONLY %s FORCE ROW LEVEL SECURITY;\n",
+						  fmtId(tbinfo->dobj.name));
+
 	if (dopt->binary_upgrade)
 		binary_upgrade_extension_member(q, &tbinfo->dobj, labelq->data);
 
@@ -14716,8 +14790,8 @@ dumpConstraint(Archive *fout, DumpOptions *dopt, ConstraintInfo *coninfo)
 	{
 		/* CHECK constraint on a table */
 
-		/* Ignore if not to be dumped separately */
-		if (coninfo->separate)
+		/* Ignore if not to be dumped separately, or if it was inherited */
+		if (coninfo->separate && coninfo->conislocal)
 		{
 			/* not ONLY since we want it to propagate to children */
 			appendPQExpBuffer(q, "ALTER TABLE %s\n",

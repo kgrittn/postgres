@@ -55,6 +55,8 @@
 
 #include "pgbench.h"
 
+#define ERRCODE_UNDEFINED_TABLE  "42P01"
+
 /*
  * Multi-platform pthread implementations
  */
@@ -163,6 +165,7 @@ bool		use_quiet;			/* quiet logging onto stderr */
 int			agg_interval;		/* log aggregates instead of individual
 								 * transactions */
 int			progress = 0;		/* thread progress report every this seconds */
+bool		progress_timestamp = false; /* progress report with Unix time */
 int			progress_nclients = 0;		/* number of clients for progress
 										 * report */
 int			progress_nthreads = 0;		/* number of threads for progress
@@ -371,8 +374,7 @@ usage(void)
 		 "  -f, --file=FILENAME      read transaction script from FILENAME\n"
 		   "  -j, --jobs=NUM           number of threads (default: 1)\n"
 		   "  -l, --log                write transaction times to log file\n"
-	"  -L, --latency-limit=NUM  count transactions lasting more than NUM ms\n"
-		   "                           as late.\n"
+	"  -L, --latency-limit=NUM  count transactions lasting more than NUM ms as late\n"
 		   "  -M, --protocol=simple|extended|prepared\n"
 		   "                           protocol for submitting queries (default: simple)\n"
 		   "  -n, --no-vacuum          do not run VACUUM before tests\n"
@@ -387,6 +389,7 @@ usage(void)
 		   "  -v, --vacuum-all         vacuum all four standard tables before tests\n"
 		   "  --aggregate-interval=NUM aggregate data over NUM seconds\n"
 		   "  --sampling-rate=NUM      fraction of transactions to log (e.g. 0.01 for 1%%)\n"
+		   "  --progress-timestamp     use Unix epoch timestamps for progress\n"
 		   "\nCommon options:\n"
 		   "  -d, --debug              print debugging output\n"
 	  "  -h, --host=HOSTNAME      database server host or socket directory\n"
@@ -2196,7 +2199,7 @@ parseQuery(Command *cmd, const char *raw_sql)
 	return true;
 }
 
-void
+void pg_attribute_noreturn()
 syntax_error(const char *source, const int lineno,
 			 const char *line, const char *command,
 			 const char *msg, const char *more, const int column)
@@ -2613,7 +2616,7 @@ printResults(int ttype, int64 normal_xacts, int nclients,
 	time_include = INSTR_TIME_GET_DOUBLE(total_time);
 	tps_include = normal_xacts / time_include;
 	tps_exclude = normal_xacts / (time_include -
-						(INSTR_TIME_GET_DOUBLE(conn_total_time) / nthreads));
+						(INSTR_TIME_GET_DOUBLE(conn_total_time) / nclients));
 
 	if (ttype == 0)
 		s = "TPC-B (sort of)";
@@ -2772,6 +2775,7 @@ main(int argc, char **argv)
 		{"aggregate-interval", required_argument, NULL, 5},
 		{"rate", required_argument, NULL, 'R'},
 		{"latency-limit", required_argument, NULL, 'L'},
+		{"progress-timestamp", no_argument, NULL, 6},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -3108,6 +3112,10 @@ main(int argc, char **argv)
 				}
 #endif
 				break;
+			case 6:
+				progress_timestamp = true;
+				benchmarking_option_set = true;
+				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit(1);
@@ -3252,7 +3260,14 @@ main(int argc, char **argv)
 		res = PQexec(con, "select count(*) from pgbench_branches");
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		{
+			char	   *sqlState = PQresultErrorField(res, PG_DIAG_SQLSTATE);
+
 			fprintf(stderr, "%s", PQerrorMessage(con));
+			if (sqlState && strcmp(sqlState, ERRCODE_UNDEFINED_TABLE) == 0)
+			{
+				fprintf(stderr, "Perhaps you need to do initialization (\"pgbench -i\") in database \"%s\"\n", PQdb(con));
+			}
+
 			exit(1);
 		}
 		scale = atoi(PQgetvalue(res, 0, 0));
@@ -3447,8 +3462,8 @@ main(int argc, char **argv)
 
 		/* thread level stats */
 		throttle_lag += thread->throttle_lag;
-		throttle_latency_skipped = threads->throttle_latency_skipped;
-		latency_late = thread->latency_late;
+		throttle_latency_skipped += threads->throttle_latency_skipped;
+		latency_late += thread->latency_late;
 		if (throttle_lag_max > thread->throttle_lag_max)
 			throttle_lag_max = thread->throttle_lag_max;
 		INSTR_TIME_ADD(conn_total_time, thread->conn_time);
@@ -3739,6 +3754,7 @@ threadRun(void *arg)
 							sqlat,
 							lag,
 							stdev;
+				char		tbuf[64];
 
 				/*
 				 * Add up the statistics of all threads.
@@ -3759,7 +3775,10 @@ threadRun(void *arg)
 				}
 
 				for (i = 0; i < progress_nthreads; i++)
+				{
+					skipped += thread[i].throttle_latency_skipped;
 					lags += thread[i].throttle_lag;
+				}
 
 				total_run = (now - thread_start) / 1000000.0;
 				tps = 1000000.0 * (count - last_count) / run;
@@ -3767,17 +3786,23 @@ threadRun(void *arg)
 				sqlat = 1.0 * (sqlats - last_sqlats) / (count - last_count);
 				stdev = 0.001 * sqrt(sqlat - 1000000.0 * latency * latency);
 				lag = 0.001 * (lags - last_lags) / (count - last_count);
-				skipped = thread->throttle_latency_skipped - last_skipped;
+
+				if (progress_timestamp)
+					sprintf(tbuf, "%.03f s",
+							INSTR_TIME_GET_MILLISEC(now_time) / 1000.0);
+				else
+					sprintf(tbuf, "%.1f s", total_run);
 
 				fprintf(stderr,
-						"progress: %.1f s, %.1f tps, "
-						"lat %.3f ms stddev %.3f",
-						total_run, tps, latency, stdev);
+						"progress: %s, %.1f tps, lat %.3f ms stddev %.3f",
+						tbuf, tps, latency, stdev);
+
 				if (throttle_delay)
 				{
 					fprintf(stderr, ", lag %.3f ms", lag);
 					if (latency_limit)
-						fprintf(stderr, ", " INT64_FORMAT " skipped", skipped);
+						fprintf(stderr, ", " INT64_FORMAT " skipped",
+								skipped - last_skipped);
 				}
 				fprintf(stderr, "\n");
 
@@ -3786,7 +3811,7 @@ threadRun(void *arg)
 				last_sqlats = sqlats;
 				last_lags = lags;
 				last_report = now;
-				last_skipped = thread->throttle_latency_skipped;
+				last_skipped = skipped;
 
 				/*
 				 * Ensure that the next report is in the future, in case

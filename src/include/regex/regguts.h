@@ -78,9 +78,6 @@
 #endif
 
 /* want size of a char in bits, and max value in bounded quantifiers */
-#ifndef CHAR_BIT
-#include <limits.h>
-#endif
 #ifndef _POSIX2_RE_DUP_MAX
 #define _POSIX2_RE_DUP_MAX	255 /* normally from <limits.h> */
 #endif
@@ -95,7 +92,7 @@
 #define xxx		1
 
 #define DUPMAX	_POSIX2_RE_DUP_MAX
-#define INFINITY	(DUPMAX+1)
+#define DUPINF	(DUPMAX+1)
 
 #define REMAGIC 0xfed7			/* magic number for main struct */
 
@@ -292,8 +289,10 @@ struct arc
 	struct state *from;			/* where it's from (and contained within) */
 	struct state *to;			/* where it's to */
 	struct arc *outchain;		/* link in *from's outs chain or free chain */
-#define  freechain	 outchain
+	struct arc *outchainRev;	/* back-link in *from's outs chain */
+#define  freechain	outchain	/* we do not maintain "freechainRev" */
 	struct arc *inchain;		/* link in *to's ins chain */
+	struct arc *inchainRev;		/* back-link in *to's ins chain */
 	struct arc *colorchain;		/* link in color's arc chain */
 	struct arc *colorchainRev;	/* back-link in color's arc chain */
 };
@@ -335,9 +334,6 @@ struct nfa
 	struct colormap *cm;		/* the color map */
 	color		bos[2];			/* colors, if any, assigned to BOS and BOL */
 	color		eos[2];			/* colors, if any, assigned to EOS and EOL */
-	size_t		size;			/* Current NFA size; differs from nstates as
-								 * it also counts the number of states in
-								 * children of this NFA. */
 	struct vars *v;				/* simplifies compile error reporting */
 	struct nfa *parent;			/* parent NFA, if any */
 };
@@ -385,10 +381,16 @@ struct cnfa
 #define NULLCNFA(cnfa)	((cnfa).nstates == 0)
 
 /*
- * Used to limit the maximum NFA size to something sane. [Tcl Bug 1810264]
+ * This symbol limits the transient heap space used by the regex compiler,
+ * and thereby also the maximum complexity of NFAs that we'll deal with.
+ * Currently we only count NFA states and arcs against this; the other
+ * transient data is generally not large enough to notice compared to those.
+ * Note that we do not charge anything for the final output data structures
+ * (the compacted NFA and the colormap).
  */
-#ifndef REG_MAX_STATES
-#define REG_MAX_STATES	100000
+#ifndef REG_MAX_COMPILE_SPACE
+#define REG_MAX_COMPILE_SPACE  \
+	(100000 * sizeof(struct state) + 100000 * sizeof(struct arcbatch))
 #endif
 
 /*
@@ -419,15 +421,15 @@ struct subre
 #define  LONGER  01				/* prefers longer match */
 #define  SHORTER 02				/* prefers shorter match */
 #define  MIXED	 04				/* mixed preference below */
-#define  CAP 010				/* capturing parens below */
+#define  CAP	 010			/* capturing parens below */
 #define  BACKR	 020			/* back reference below */
 #define  INUSE	 0100			/* in use in final tree */
-#define  LOCAL	 03				/* bits which may not propagate up */
+#define  NOPROP  03				/* bits which may not propagate up */
 #define  LMIX(f) ((f)<<2)		/* LONGER -> MIXED */
 #define  SMIX(f) ((f)<<1)		/* SHORTER -> MIXED */
-#define  UP(f)	 (((f)&~LOCAL) | (LMIX(f) & SMIX(f) & MIXED))
+#define  UP(f)	 (((f)&~NOPROP) | (LMIX(f) & SMIX(f) & MIXED))
 #define  MESSY(f)	 ((f)&(MIXED|CAP|BACKR))
-#define  PREF(f) ((f)&LOCAL)
+#define  PREF(f) ((f)&NOPROP)
 #define  PREF2(f1, f2)	 ((PREF(f1) != 0) ? PREF(f1) : PREF(f2))
 #define  COMBINE(f1, f2) (UP((f1)|(f2)) | PREF2(f1, f2))
 	short		id;				/* ID of subre (1..ntree-1) */
@@ -452,10 +454,14 @@ struct fns
 {
 	void		FUNCPTR(free, (regex_t *));
 	int			FUNCPTR(cancel_requested, (void));
+	int			FUNCPTR(stack_too_deep, (void));
 };
 
 #define CANCEL_REQUESTED(re)  \
 	((*((struct fns *) (re)->re_fns)->cancel_requested) ())
+
+#define STACK_TOO_DEEP(re)	\
+	((*((struct fns *) (re)->re_fns)->stack_too_deep) ())
 
 
 /*
@@ -470,7 +476,7 @@ struct guts
 	size_t		nsub;			/* copy of re_nsub */
 	struct subre *tree;
 	struct cnfa search;			/* for fast preliminary search */
-	int			ntree;			/* number of subre's, less one */
+	int			ntree;			/* number of subre's, plus one */
 	struct colormap cmap;
 	int			FUNCPTR(compare, (const chr *, const chr *, size_t));
 	struct subre *lacons;		/* lookahead-constraint vector */

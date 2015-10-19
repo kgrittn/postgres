@@ -214,6 +214,24 @@ fi])# PGAC_C_BUILTIN_BSWAP32
 
 
 
+# PGAC_C_BUILTIN_BSWAP64
+# -------------------------
+# Check if the C compiler understands __builtin_bswap64(),
+# and define HAVE__BUILTIN_BSWAP64 if so.
+AC_DEFUN([PGAC_C_BUILTIN_BSWAP64],
+[AC_CACHE_CHECK(for __builtin_bswap64, pgac_cv__builtin_bswap64,
+[AC_COMPILE_IFELSE([AC_LANG_SOURCE(
+[static unsigned long int x = __builtin_bswap64(0xaabbccddeeff0011);]
+)],
+[pgac_cv__builtin_bswap64=yes],
+[pgac_cv__builtin_bswap64=no])])
+if test x"$pgac_cv__builtin_bswap64" = xyes ; then
+AC_DEFINE(HAVE__BUILTIN_BSWAP64, 1,
+          [Define to 1 if your compiler understands __builtin_bswap64.])
+fi])# PGAC_C_BUILTIN_BSWAP64
+
+
+
 # PGAC_C_BUILTIN_CONSTANT_P
 # -------------------------
 # Check if the C compiler understands __builtin_constant_p(),
@@ -456,15 +474,14 @@ AC_DEFUN([PGAC_SSE42_CRC32_INTRINSICS],
 AC_CACHE_CHECK([for _mm_crc32_u8 and _mm_crc32_u32 with CFLAGS=$1], [Ac_cachevar],
 [pgac_save_CFLAGS=$CFLAGS
 CFLAGS="$pgac_save_CFLAGS $1"
-ac_save_c_werror_flag=$ac_c_werror_flag
-ac_c_werror_flag=yes
 AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <nmmintrin.h>],
   [unsigned int crc = 0;
    crc = _mm_crc32_u8(crc, 0);
-   crc = _mm_crc32_u32(crc, 0);])],
+   crc = _mm_crc32_u32(crc, 0);
+   /* return computed value, to prevent the above being optimized away */
+   return crc == 0;])],
   [Ac_cachevar=yes],
   [Ac_cachevar=no])
-ac_c_werror_flag=$ac_save_c_werror_flag
 CFLAGS="$pgac_save_CFLAGS"])
 if test x"$Ac_cachevar" = x"yes"; then
   CFLAGS_SSE42="$1"

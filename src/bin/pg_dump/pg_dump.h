@@ -202,7 +202,7 @@ typedef struct _tableInfo
 	char		relkind;
 	char		relpersistence; /* relation persistence */
 	bool		relispopulated; /* relation is populated */
-	bool		relreplident;	/* replica identifier */
+	char		relreplident;	/* replica identifier */
 	char	   *reltablespace;	/* relation tablespace */
 	char	   *reloptions;		/* options specified by WITH (...) */
 	char	   *checkoption;	/* WITH CHECK OPTION */
@@ -211,6 +211,7 @@ typedef struct _tableInfo
 	bool		hasrules;		/* does it have any rules? */
 	bool		hastriggers;	/* does it have any triggers? */
 	bool		rowsec;			/* is row security enabled? */
+	bool		forcerowsec;	/* is row security forced? */
 	bool		hasoids;		/* does it have OIDs? */
 	uint32		frozenxid;		/* for restore frozen xid */
 	uint32		minmxid;		/* for restore min multi xid */

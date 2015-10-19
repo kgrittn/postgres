@@ -73,6 +73,7 @@ test: vacuum
 test: drop_if_exists
 test: updatable_views
 test: rolenames
+test: roleattributes
 test: sanity_check
 test: errors
 test: select
@@ -134,6 +135,7 @@ test: functional_deps
 test: advisory_lock
 test: json
 test: jsonb
+test: json_encoding
 test: indirect_toast
 test: equivclass
 test: plancache
