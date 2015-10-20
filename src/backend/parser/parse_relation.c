@@ -1935,7 +1935,6 @@ addRangeTableEntryForTsr(ParseState *pstate,
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
 	rte->selectedCols = NULL;
-	rte->modifiedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
