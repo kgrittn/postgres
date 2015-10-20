@@ -1,0 +1,18 @@
+CREATE EXTENSION transition_tables;
+CREATE TABLE IF NOT EXISTS e(
+    i INT
+);
+CREATE TRIGGER statement_dml_e
+    AFTER INSERT OR UPDATE OR DELETE ON e
+    REFERENCING
+        OLD TABLE AS old_e
+        NEW TABLE AS new_e
+    FOR EACH STATEMENT
+        EXECUTE PROCEDURE transition_tables();
+INSERT INTO e(i)
+SELECT * FROM generate_series(1,10000);
+NOTICE:  Total change: 50005000
+UPDATE e SET i=i+1;
+NOTICE:  Total change: 10000
+DELETE FROM e WHERE i < 5000;
+NOTICE:  Total change: -12497499

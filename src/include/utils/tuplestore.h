@@ -32,12 +32,26 @@
 #define TUPLESTORE_H
 
 #include "executor/tuptable.h"
+#include "utils/tsrmd.h"
 
 
 /* Tuplestorestate is an opaque type whose details are not known outside
  * tuplestore.c.
  */
 typedef struct Tuplestorestate Tuplestorestate;
+
+/*
+ * Tuplestore Relation data; used for parsing named tuplestores, like
+ * transition tables in AFTER triggers.
+ */
+typedef struct TsrData
+{
+	TsrmdData	md;
+	Tuplestorestate	   *tstate;		/* data (or tids) */
+} TsrData;
+
+typedef TsrData *Tsr;
+
 
 /*
  * Currently we only need to store MinimalTuples, but it would be easy

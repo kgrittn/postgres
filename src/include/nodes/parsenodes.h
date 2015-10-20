@@ -776,7 +776,8 @@ typedef enum RTEKind
 	RTE_JOIN,					/* join */
 	RTE_FUNCTION,				/* function in FROM */
 	RTE_VALUES,					/* VALUES (<exprlist>), (<exprlist>), ... */
-	RTE_CTE						/* common table expr (WITH list element) */
+	RTE_CTE,					/* common table expr (WITH list element) */
+	RTE_TUPLESTORE				/* tuplestore, e.g. for AFTER triggers */
 } RTEKind;
 
 typedef struct RangeTblEntry
@@ -850,6 +851,15 @@ typedef struct RangeTblEntry
 	List	   *ctecoltypes;	/* OID list of column type OIDs */
 	List	   *ctecoltypmods;	/* integer list of column typmods */
 	List	   *ctecolcollations;		/* OID list of column collation OIDs */
+
+	/*
+	 * Needed for tuplestore RTE...
+	 *
+	 * ... include the cte* List fields from CTE and relid.  We could
+	 * duplicate them here with slightly different names, but why?
+	 */
+	char	   *tsrname;		/* name of tuplestore */
+	int			tsrparam;		/* parameter number of Tsr in param list */
 
 	/*
 	 * Fields valid in all RTEs:
@@ -1196,6 +1206,21 @@ typedef struct CommonTableExpr
 	 ((Query *) (cte)->ctequery)->targetList : \
 	 ((Query *) (cte)->ctequery)->returningList)
 
+/*
+ * TriggerTransition -
+ *	   representation of transition row or table naming clause
+ *
+ * Only transition tables are initially supported in the syntax, and only for
+ * AFTER triggers, but other permutations are accepted by the parser so we can
+ * give a meaningful message from C code.
+ */
+typedef struct TriggerTransition
+{
+	NodeTag		type;
+	char	   *name;
+	bool		isNew;
+	bool		isTable;
+} TriggerTransition;
 
 /*****************************************************************************
  *		Optimizable Statements
@@ -2083,6 +2108,8 @@ typedef struct CreateTrigStmt
 	List	   *columns;		/* column names, or NIL for all columns */
 	Node	   *whenClause;		/* qual expression, or NULL if none */
 	bool		isconstraint;	/* This is a constraint trigger */
+	/* explicitly named transition data */
+	List	   *transitionRels; /* TriggerTransition nodes, or NIL if none */
 	/* The remaining fields are only used for constraint triggers */
 	bool		deferrable;		/* [NOT] DEFERRABLE */
 	bool		initdeferred;	/* INITIALLY {DEFERRED|IMMEDIATE} */

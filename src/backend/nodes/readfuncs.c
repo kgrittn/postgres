@@ -1300,6 +1300,13 @@ _readRangeTblEntry(void)
 			READ_NODE_FIELD(ctecoltypmods);
 			READ_NODE_FIELD(ctecolcollations);
 			break;
+		case RTE_TUPLESTORE:
+			READ_STRING_FIELD(tsrname);
+			READ_INT_FIELD(tsrparam);
+			READ_NODE_FIELD(ctecoltypes);
+			READ_NODE_FIELD(ctecoltypmods);
+			READ_NODE_FIELD(ctecolcollations);
+			break;
 		default:
 			elog(ERROR, "unrecognized RTE kind: %d",
 				 (int) local_node->rtekind);

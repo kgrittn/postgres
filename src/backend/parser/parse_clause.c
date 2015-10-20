@@ -865,7 +865,11 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 				rte = transformCTEReference(pstate, rv, cte, levelsup);
 		}
 
-		/* if not found as a CTE, must be a table reference */
+		/* check for a relation supplied by a parser hook */
+		if (!rte && pstate->p_relref_hook)
+			rte = (pstate->p_relref_hook) (pstate, rv, true);
+
+		/* if not found above, must be a table reference */
 		if (!rte)
 			rte = transformTableEntry(pstate, rv);
 

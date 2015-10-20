@@ -100,6 +100,11 @@ extern RangeTblEntry *addRangeTableEntryForCTE(ParseState *pstate,
 						 Index levelsup,
 						 RangeVar *rv,
 						 bool inFromCl);
+extern RangeTblEntry *addRangeTableEntryForTsr(ParseState *pstate,
+						 TupleDesc tupdesc,
+						 int tsrparam,
+						 RangeVar *rv,
+						 bool inFromCl);
 extern bool isLockedRefname(ParseState *pstate, const char *refname);
 extern void addRTEtoQuery(ParseState *pstate, RangeTblEntry *rte,
 			  bool addToJoinList,

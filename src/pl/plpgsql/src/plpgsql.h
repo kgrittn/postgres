@@ -22,6 +22,7 @@
 #include "commands/event_trigger.h"
 #include "commands/trigger.h"
 #include "executor/spi.h"
+#include "utils/tuplestore.h"
 
 /**********************************************************************
  * Definitions
@@ -68,7 +69,8 @@ enum
 	PLPGSQL_DTYPE_REC,
 	PLPGSQL_DTYPE_RECFIELD,
 	PLPGSQL_DTYPE_ARRAYELEM,
-	PLPGSQL_DTYPE_EXPR
+	PLPGSQL_DTYPE_EXPR,
+	PLPGSQL_DTYPE_REL
 };
 
 /* ----------
@@ -308,6 +310,17 @@ typedef struct
 	bool		freetup;
 	bool		freetupdesc;
 } PLpgSQL_rec;
+
+
+typedef struct
+{								/* Relation variable */
+	int			dtype;
+	int			dno;
+	char	   *refname; /* TODO:TM redundant since also in tsrdata.md.name? */
+	int			lineno;
+
+	TsrData		tsrdata;
+} PLpgSQL_rel;
 
 
 typedef struct
@@ -689,12 +702,12 @@ typedef struct PLpgSQL_func_hashkey
 	/* be careful that pad bytes in this struct get zeroed! */
 
 	/*
-	 * For a trigger function, the OID of the relation triggered on is part of
-	 * the hash key --- we want to compile the trigger separately for each
-	 * relation it is used with, in case the rowtype is different.  Zero if
-	 * not called as a trigger.
+	 * For a trigger function, the OID of the trigger is part of the hash key
+	 * --- we want to compile the trigger function separately for each trigger
+	 * it is used with, in case the rowtype or transition table names are
+	 * different.  Zero if not called as a trigger.
 	 */
-	Oid			trigrelOid;
+	Oid			trigOid;
 
 	/*
 	 * We must include the input collation as part of the hash key too,
@@ -739,8 +752,10 @@ typedef struct PLpgSQL_function
 	int			fn_argvarnos[FUNC_MAX_ARGS];
 	int			out_param_varno;
 	int			found_varno;
-	int			new_varno;
-	int			old_varno;
+	int			rec_new_varno;
+	int			rec_old_varno;
+	int			rel_new_varno;
+	int			rel_old_varno;
 	int			tg_name_varno;
 	int			tg_when_varno;
 	int			tg_level_varno;
@@ -972,6 +987,7 @@ extern PLpgSQL_variable *plpgsql_build_variable(const char *refname, int lineno,
 					   bool add2namespace);
 extern PLpgSQL_rec *plpgsql_build_record(const char *refname, int lineno,
 					 bool add2namespace);
+extern PLpgSQL_rel *plpgsql_build_rel(void);
 extern int plpgsql_recognize_err_condition(const char *condname,
 								bool allow_sqlstate);
 extern PLpgSQL_condition *plpgsql_parse_err_condition(char *condname);

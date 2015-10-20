@@ -318,10 +318,11 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	 */
 	if (!relation->schemaname)
 		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
+
 	if (!cte)
 		relId = RangeVarGetRelid(relation, NoLock, true);
 
-	/* Now look for RTEs matching either the relation/CTE or the alias */
+	/* Now look for RTEs matching either the relation/CTE/Tsr or the alias */
 	for (levelsup = 0;
 		 pstate != NULL;
 		 pstate = pstate->parentParseState, levelsup++)
@@ -340,6 +341,9 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 				cte != NULL &&
 				rte->ctelevelsup + levelsup == ctelevelsup &&
 				strcmp(rte->ctename, refname) == 0)
+				return rte;
+			if (rte->rtekind == RTE_TUPLESTORE &&
+				strcmp(rte->tsrname, refname) == 0)
 				return rte;
 			if (strcmp(rte->eref->aliasname, refname) == 0)
 				return rte;
@@ -1870,6 +1874,79 @@ addRangeTableEntryForCTE(ParseState *pstate,
 	return rte;
 }
 
+/*
+ * Add an entry for a Tuplestore relation reference to the pstate's range
+ * table (p_rtable).
+ *
+ * This is much like addRangeTableEntry() except that it makes a Tsr RTE.
+ */
+RangeTblEntry *
+addRangeTableEntryForTsr(ParseState *pstate,
+						 TupleDesc tupdesc,
+						 int tsrparam,
+						 RangeVar *rv,
+						 bool inFromCl)
+{
+	RangeTblEntry *rte = makeNode(RangeTblEntry);
+	Alias	   *alias = rv->alias;
+	char	   *refname = alias ? alias->aliasname : rv->relname;
+	int			attno;
+
+	rte->rtekind = RTE_TUPLESTORE;
+
+	rte->eref = makeAlias(refname, NIL);
+	buildRelationAliases(tupdesc, alias, rte->eref);
+	rte->tsrname = rv->relname;
+	rte->tsrparam = tsrparam;
+
+	/*
+	 * Build the list of effective column names using user-supplied aliases
+	 * and/or actual column names.  Also build the cannibalized fields.
+	 */
+	rte->ctecoltypes = NIL;
+	rte->ctecoltypmods = NIL;
+	rte->ctecolcollations = NIL;
+	for (attno = 1; attno <= tupdesc->natts; ++attno)
+	{
+		if (tupdesc->attrs[attno - 1]->atttypid == InvalidOid &&
+			!(tupdesc->attrs[attno - 1]->attisdropped))
+			elog(ERROR, "atttypid was invalid for column which has not been dropped from \"%s\"",
+				 rv->relname);
+		rte->ctecoltypes =
+			lappend_oid(rte->ctecoltypes,
+						tupdesc->attrs[attno - 1]->atttypid);
+		rte->ctecoltypmods =
+			lappend_int(rte->ctecoltypmods,
+						tupdesc->attrs[attno - 1]->atttypmod);
+		rte->ctecolcollations =
+			lappend_oid(rte->ctecolcollations,
+						tupdesc->attrs[attno - 1]->attcollation);
+	}
+
+	/*
+	 * Set flags and access permissions.
+	 *
+	 * Tuplestores are never checked for access rights.
+	 */
+	rte->lateral = false;
+	rte->inh = false;			/* never true for tuplestores */
+	rte->inFromCl = inFromCl;
+
+	rte->requiredPerms = 0;
+	rte->checkAsUser = InvalidOid;
+	rte->selectedCols = NULL;
+	rte->modifiedCols = NULL;
+
+	/*
+	 * Add completed RTE to pstate's range table list, but not to join list
+	 * nor namespace --- caller must do that if appropriate.
+	 */
+	if (pstate != NULL)
+		pstate->p_rtable = lappend(pstate->p_rtable, rte);
+
+	return rte;
+}
+
 
 /*
  * Has the specified refname been selected FOR UPDATE/FOR SHARE?
@@ -2260,6 +2337,7 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 			}
 			break;
 		case RTE_CTE:
+		case RTE_TUPLESTORE:
 			{
 				ListCell   *aliasp_item = list_head(rte->eref->colnames);
 				ListCell   *lct;
@@ -2683,8 +2761,10 @@ get_rte_attribute_type(RangeTblEntry *rte, AttrNumber attnum,
 			}
 			break;
 		case RTE_CTE:
+		case RTE_TUPLESTORE:
 			{
 				/* CTE RTE --- get type info from lists in the RTE */
+				/* Also used by tuplestore RTE */
 				Assert(attnum > 0 && attnum <= list_length(rte->ctecoltypes));
 				*vartype = list_nth_oid(rte->ctecoltypes, attnum - 1);
 				*vartypmod = list_nth_int(rte->ctecoltypmods, attnum - 1);
@@ -2731,6 +2811,19 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 		case RTE_CTE:
 			/* Subselect, Values, CTE RTEs never have dropped columns */
 			result = false;
+			break;
+		case RTE_TUPLESTORE:
+			{
+				Assert(rte->tsrname);
+
+				/*
+				 * We checked when we loaded ctecoltypes for the tuplestore
+				 * that InvalidOid was only used for dropped columns, so it is
+				 * safe to count on that here.
+				 */
+				result =
+					(list_nth(rte->ctecoltypes, attnum - 1) != InvalidOid);
+			}
 			break;
 		case RTE_JOIN:
 			{

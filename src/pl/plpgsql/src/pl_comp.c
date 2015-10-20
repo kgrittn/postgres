@@ -25,6 +25,7 @@
 #include "funcapi.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_type.h"
+#include "parser/parse_relation.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
@@ -98,6 +99,7 @@ static void add_dummy_return(PLpgSQL_function *function);
 static Node *plpgsql_pre_column_ref(ParseState *pstate, ColumnRef *cref);
 static Node *plpgsql_post_column_ref(ParseState *pstate, ColumnRef *cref, Node *var);
 static Node *plpgsql_param_ref(ParseState *pstate, ParamRef *pref);
+static RangeTblEntry *plpgsql_rel_ref(ParseState *pstate, RangeVar *rv, bool inFromCl);
 static Node *resolve_column_ref(ParseState *pstate, PLpgSQL_expr *expr,
 				   ColumnRef *cref, bool error_if_no_field);
 static Node *make_datum_param(PLpgSQL_expr *expr, int dno, int location);
@@ -275,6 +277,7 @@ do_compile(FunctionCallInfo fcinfo,
 	Form_pg_type typeStruct;
 	PLpgSQL_variable *var;
 	PLpgSQL_rec *rec;
+	PLpgSQL_rel *rel;
 	int			i;
 	ErrorContextCallback plerrcontext;
 	int			parse_rc;
@@ -588,13 +591,21 @@ do_compile(FunctionCallInfo fcinfo,
 				  errmsg("trigger functions cannot have declared arguments"),
 						 errhint("The arguments of the trigger can be accessed through TG_NARGS and TG_ARGV instead.")));
 
-			/* Add the record for referencing NEW */
+			/* Add the record for referencing NEW ROW */
 			rec = plpgsql_build_record("new", 0, true);
-			function->new_varno = rec->dno;
+			function->rec_new_varno = rec->dno;
 
-			/* Add the record for referencing OLD */
+			/* Add the record for referencing OLD ROW */
 			rec = plpgsql_build_record("old", 0, true);
-			function->old_varno = rec->dno;
+			function->rec_old_varno = rec->dno;
+
+			/* Add the relation for referencing NEW TABLE */
+			rel = plpgsql_build_rel();
+			function->rel_new_varno = rel->dno;
+
+			/* Add the record for referencing OLD TABLE */
+			rel = plpgsql_build_rel();
+			function->rel_old_varno = rel->dno;
 
 			/* Add the variable tg_name */
 			var = plpgsql_build_variable("tg_name", 0,
@@ -1021,6 +1032,7 @@ plpgsql_parser_setup(struct ParseState *pstate, PLpgSQL_expr *expr)
 	pstate->p_pre_columnref_hook = plpgsql_pre_column_ref;
 	pstate->p_post_columnref_hook = plpgsql_post_column_ref;
 	pstate->p_paramref_hook = plpgsql_param_ref;
+	pstate->p_relref_hook = plpgsql_rel_ref;
 	/* no need to use p_coerce_param_hook */
 	pstate->p_ref_hook_state = (void *) expr;
 }
@@ -1103,6 +1115,65 @@ plpgsql_param_ref(ParseState *pstate, ParamRef *pref)
 		return NULL;			/* name not known to plpgsql */
 
 	return make_datum_param(expr, nse->itemno, pref->location);
+}
+
+static void
+plpgsql_make_rel_param(PLpgSQL_expr *expr, int dno)
+{
+	/*
+	 * Bitmapset must be allocated in function's permanent memory context
+	 */
+	MemoryContext oldcontext = MemoryContextSwitchTo(expr->func->fn_cxt);
+	expr->paramnos = bms_add_member(expr->paramnos, dno);
+	MemoryContextSwitchTo(oldcontext);
+}
+
+/*
+ * plpgsql_rel_ref		parser callback for relations (by name)
+ */
+static RangeTblEntry *
+plpgsql_rel_ref(ParseState *pstate, RangeVar *rv, bool inFromCl)
+{
+	PLpgSQL_expr *expr = (PLpgSQL_expr *) pstate->p_ref_hook_state;
+	PLpgSQL_function *func = expr->func;
+	PLpgSQL_execstate *estate = func->cur_estate;
+
+	/* At least for now we are only handling unqualified relation names. */
+	if (rv->schemaname != NULL || rv->catalogname != NULL)
+		return NULL;
+
+	if (func->rel_new_varno > 0)
+	{
+		PLpgSQL_rel *rel_new = (PLpgSQL_rel *) (estate->datums[func->rel_new_varno]);
+		/* TODO:TM I don't understand how we get rel_name->refname == NULL sometimes */
+		if (rel_new->refname && strcmp(rel_new->refname, rv->relname) == 0)
+		{
+			Assert(func->rel_new_varno == rel_new->dno);
+			plpgsql_make_rel_param(expr, rel_new->dno);
+			return addRangeTableEntryForTsr(pstate,
+											rel_new->tsrdata.md.tupdesc,
+											rel_new->dno,
+											rv,
+											inFromCl);
+		}
+	}
+	if (func->rel_old_varno > 0)
+	{
+		PLpgSQL_rel *rel_old = (PLpgSQL_rel *) (estate->datums[func->rel_old_varno]);
+		/* TODO:TM see above */
+		if (rel_old->refname && strcmp(rel_old->refname, rv->relname) == 0)
+		{
+			Assert(func->rel_old_varno == rel_old->dno);
+			plpgsql_make_rel_param(expr, rel_old->dno);
+			return addRangeTableEntryForTsr(pstate,
+											rel_old->tsrdata.md.tupdesc,
+											rel_old->dno,
+											rv,
+											inFromCl);
+		}
+	}
+
+	return NULL;
 }
 
 /*
@@ -1961,6 +2032,26 @@ plpgsql_build_record(const char *refname, int lineno, bool add2namespace)
 }
 
 /*
+ * Build empty named relation variable; will be filled in later
+ */
+PLpgSQL_rel *
+plpgsql_build_rel(void)
+{
+	PLpgSQL_rel *rel;
+
+	rel = palloc0(sizeof(PLpgSQL_rel));
+	rel->dtype = PLPGSQL_DTYPE_REL;
+	rel->refname = NULL;
+	rel->lineno = 0;
+	rel->tsrdata.md.name = NULL;
+	rel->tsrdata.md.tupdesc = NULL;
+	rel->tsrdata.tstate = NULL;
+	plpgsql_adddatum((PLpgSQL_datum *) rel);
+
+	return rel;
+}
+
+/*
  * Build a row-variable data structure given the pg_class OID.
  */
 static PLpgSQL_row *
@@ -2449,15 +2540,16 @@ compute_function_hashkey(FunctionCallInfo fcinfo,
 	hashkey->isTrigger = CALLED_AS_TRIGGER(fcinfo);
 
 	/*
-	 * if trigger, get relation OID.  In validation mode we do not know what
-	 * relation is intended to be used, so we leave trigrelOid zero; the hash
-	 * entry built in this case will never really be used.
+	 * if trigger, get its OID.  In validation mode we do not know what
+	 * relation or transition table names are intended to be used, so we leave
+	 * trigOid zero; the hash entry built in this case will never really be
+	 * used.
 	 */
 	if (hashkey->isTrigger && !forValidator)
 	{
 		TriggerData *trigdata = (TriggerData *) fcinfo->context;
 
-		hashkey->trigrelOid = RelationGetRelid(trigdata->tg_relation);
+		hashkey->trigOid = trigdata->tg_trigger->tgoid;
 	}
 
 	/* get input collation, if known */

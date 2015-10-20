@@ -93,6 +93,8 @@ extern void cost_valuesscan(Path *path, PlannerInfo *root,
 				RelOptInfo *baserel, ParamPathInfo *param_info);
 extern void cost_ctescan(Path *path, PlannerInfo *root,
 			 RelOptInfo *baserel, ParamPathInfo *param_info);
+extern void cost_tuplestorescan(Path *path, PlannerInfo *root,
+			 RelOptInfo *baserel, ParamPathInfo *param_info);
 extern void cost_recursive_union(Plan *runion, Plan *nrterm, Plan *rterm);
 extern void cost_sort(Path *path, PlannerInfo *root,
 		  List *pathkeys, Cost input_cost, double tuples, int width,
@@ -181,6 +183,7 @@ extern void set_function_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_values_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_cte_size_estimates(PlannerInfo *root, RelOptInfo *rel,
 					   Plan *cteplan);
+extern void set_tuplestore_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_foreign_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 
 /*

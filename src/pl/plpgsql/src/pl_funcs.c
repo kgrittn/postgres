@@ -716,6 +716,8 @@ plpgsql_free_function_memory(PLpgSQL_function *func)
 				break;
 			case PLPGSQL_DTYPE_REC:
 				break;
+			case PLPGSQL_DTYPE_REL:
+				break;
 			case PLPGSQL_DTYPE_RECFIELD:
 				break;
 			case PLPGSQL_DTYPE_ARRAYELEM:

@@ -2393,6 +2393,15 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 			context.paramids = bms_add_members(context.paramids, scan_params);
 			break;
 
+		case T_TuplestoreScan:
+			/*
+			 * TODO:TM I don't think we need to do anything here, as this
+			 * concerns exec/internal parmeters (???), but we need a case for
+			 * this anyway because the default elogs.
+			 */
+			context.paramids = bms_add_members(context.paramids, scan_params);
+			break;
+
 		case T_ForeignScan:
 			{
 				ForeignScan *fscan = (ForeignScan *) plan;

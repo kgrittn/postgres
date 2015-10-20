@@ -4375,3 +4375,76 @@ exception when others then
   null; -- do nothing
 end;
 $$;
+
+--
+-- test usage of transition tables in AFTER triggers
+--
+
+CREATE TABLE v (id int PRIMARY KEY, val text);
+
+CREATE OR REPLACE FUNCTION v_ins_func()
+  RETURNS trigger
+  LANGUAGE plpgsql
+AS $$
+DECLARE
+  t text;
+  l text;
+BEGIN
+  t = '';
+  FOR l IN EXECUTE
+           $q$
+             EXPLAIN (TIMING off, COSTS off, VERBOSE on)
+             SELECT * FROM newtable
+           $q$ LOOP
+    t = t || l || E'\n';
+  END LOOP;
+
+  RAISE INFO '%', t;
+  RETURN new;
+END;
+$$;
+
+CREATE TRIGGER v_ins_trig
+  AFTER INSERT ON v
+  REFERENCING OLD TABLE AS oldtable NEW TABLE AS newtable
+  FOR EACH STATEMENT
+  EXECUTE PROCEDURE v_ins_func();
+
+CREATE TRIGGER v_ins_trig
+  AFTER INSERT ON v
+  REFERENCING NEW TABLE AS newtable
+  FOR EACH STATEMENT
+  EXECUTE PROCEDURE v_ins_func();
+
+INSERT INTO v VALUES (1, 'One'), (2, 'Two');
+INSERT INTO v VALUES (3, 'Three'), (4, 'Four');
+
+CREATE OR REPLACE FUNCTION v_upd_func()
+  RETURNS trigger
+  LANGUAGE plpgsql
+AS $$
+DECLARE
+  t text;
+  l text;
+BEGIN
+  t = '';
+  FOR l IN EXECUTE
+           $q$
+             EXPLAIN (TIMING off, COSTS off, VERBOSE on)
+             SELECT * FROM oldtable ot FULL JOIN newtable nt USING (id)
+           $q$ LOOP
+    t = t || l || E'\n';
+  END LOOP;
+
+  RAISE INFO '%', t;
+  RETURN new;
+END;
+$$;
+
+CREATE TRIGGER v_upd_trig
+  AFTER UPDATE ON v
+  REFERENCING OLD TABLE AS oldtable NEW TABLE AS newtable
+  FOR EACH STATEMENT
+  EXECUTE PROCEDURE v_upd_func();
+
+UPDATE v SET val = '*' || val || '*' WHERE id BETWEEN 2 AND 3;

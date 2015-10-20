@@ -2640,6 +2640,15 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc,
 									  LCS_asString(lc->strength)),
 							 parser_errposition(pstate, thisrel->location)));
 							break;
+						case RTE_TUPLESTORE:
+							ereport(ERROR,
+									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							/*------
+							  translator: %s is a SQL row locking clause such as FOR UPDATE */
+							   errmsg("%s cannot be applied to a tuplestore",
+									  LCS_asString(lc->strength)),
+							 parser_errposition(pstate, thisrel->location)));
+							break;
 						default:
 							elog(ERROR, "unrecognized RTE type: %d",
 								 (int) rte->rtekind);

@@ -110,6 +110,7 @@
 #include "executor/nodeSubplan.h"
 #include "executor/nodeSubqueryscan.h"
 #include "executor/nodeTidscan.h"
+#include "executor/nodeTuplestorescan.h"
 #include "executor/nodeUnique.h"
 #include "executor/nodeValuesscan.h"
 #include "executor/nodeWindowAgg.h"
@@ -240,6 +241,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 
 		case T_CteScan:
 			result = (PlanState *) ExecInitCteScan((CteScan *) node,
+												   estate, eflags);
+			break;
+
+		case T_TuplestoreScan:
+			result = (PlanState *) ExecInitTuplestoreScan((TuplestoreScan *) node,
 												   estate, eflags);
 			break;
 
@@ -455,6 +461,10 @@ ExecProcNode(PlanState *node)
 
 		case T_CteScanState:
 			result = ExecCteScan((CteScanState *) node);
+			break;
+
+		case T_TuplestoreScanState:
+			result = ExecTuplestoreScan((TuplestoreScanState *) node);
 			break;
 
 		case T_WorkTableScanState:
@@ -707,6 +717,10 @@ ExecEndNode(PlanState *node)
 
 		case T_CteScanState:
 			ExecEndCteScan((CteScanState *) node);
+			break;
+
+		case T_TuplestoreScanState:
+			ExecEndTuplestoreScan((TuplestoreScanState *) node);
 			break;
 
 		case T_WorkTableScanState:

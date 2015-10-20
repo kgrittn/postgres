@@ -574,6 +574,16 @@ _outCteScan(StringInfo str, const CteScan *node)
 }
 
 static void
+_outTuplestoreScan(StringInfo str, const TuplestoreScan *node)
+{
+	WRITE_NODE_TYPE("TUPLESTORESCAN");
+
+	_outScanInfo(str, (const Scan *) node);
+
+	WRITE_INT_FIELD(tsrParam);
+}
+
+static void
 _outWorkTableScan(StringInfo str, const WorkTableScan *node)
 {
 	WRITE_NODE_TYPE("WORKTABLESCAN");
@@ -2281,6 +2291,16 @@ _outXmlSerialize(StringInfo str, const XmlSerialize *node)
 }
 
 static void
+_outTriggerTransition(StringInfo str, const TriggerTransition *node)
+{
+	WRITE_NODE_TYPE("TRIGGERTRANSITION");
+
+	WRITE_STRING_FIELD(name);
+	WRITE_BOOL_FIELD(isNew);
+	WRITE_BOOL_FIELD(isTable);
+}
+
+static void
 _outColumnDef(StringInfo str, const ColumnDef *node)
 {
 	WRITE_NODE_TYPE("COLUMNDEF");
@@ -2553,6 +2573,13 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 			WRITE_STRING_FIELD(ctename);
 			WRITE_UINT_FIELD(ctelevelsup);
 			WRITE_BOOL_FIELD(self_reference);
+			WRITE_NODE_FIELD(ctecoltypes);
+			WRITE_NODE_FIELD(ctecoltypmods);
+			WRITE_NODE_FIELD(ctecolcollations);
+			break;
+		case RTE_TUPLESTORE:
+			WRITE_STRING_FIELD(tsrname);
+			WRITE_INT_FIELD(tsrparam);
 			WRITE_NODE_FIELD(ctecoltypes);
 			WRITE_NODE_FIELD(ctecoltypmods);
 			WRITE_NODE_FIELD(ctecolcollations);
@@ -3050,6 +3077,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_CteScan:
 				_outCteScan(str, obj);
 				break;
+			case T_TuplestoreScan:
+				_outTuplestoreScan(str, obj);
+				break;
 			case T_WorkTableScan:
 				_outWorkTableScan(str, obj);
 				break;
@@ -3485,6 +3515,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_XmlSerialize:
 				_outXmlSerialize(str, obj);
+				break;
+			case T_TriggerTransition:
+				_outTriggerTransition(str, obj);
 				break;
 
 			default:

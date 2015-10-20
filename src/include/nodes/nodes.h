@@ -61,6 +61,7 @@ typedef enum NodeTag
 	T_FunctionScan,
 	T_ValuesScan,
 	T_CteScan,
+	T_TuplestoreScan,
 	T_WorkTableScan,
 	T_ForeignScan,
 	T_CustomScan,
@@ -109,6 +110,7 @@ typedef enum NodeTag
 	T_FunctionScanState,
 	T_ValuesScanState,
 	T_CteScanState,
+	T_TuplestoreScanState,
 	T_WorkTableScanState,
 	T_ForeignScanState,
 	T_CustomScanState,
@@ -429,6 +431,7 @@ typedef enum NodeTag
 	T_OnConflictClause,
 	T_CommonTableExpr,
 	T_RoleSpec,
+	T_TriggerTransition,
 
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)

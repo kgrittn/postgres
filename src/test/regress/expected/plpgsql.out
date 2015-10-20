@@ -5558,3 +5558,87 @@ end;
 $$;
 ERROR:  unhandled assertion
 CONTEXT:  PL/pgSQL function inline_code_block line 3 at ASSERT
+--
+-- test usage of transition tables in AFTER triggers
+--
+CREATE TABLE v (id int PRIMARY KEY, val text);
+CREATE OR REPLACE FUNCTION v_ins_func()
+  RETURNS trigger
+  LANGUAGE plpgsql
+AS $$
+DECLARE
+  t text;
+  l text;
+BEGIN
+  t = '';
+  FOR l IN EXECUTE
+           $q$
+             EXPLAIN (TIMING off, COSTS off, VERBOSE on)
+             SELECT * FROM newtable
+           $q$ LOOP
+    t = t || l || E'\n';
+  END LOOP;
+
+  RAISE INFO '%', t;
+  RETURN new;
+END;
+$$;
+CREATE TRIGGER v_ins_trig
+  AFTER INSERT ON v
+  REFERENCING OLD TABLE AS oldtable NEW TABLE AS newtable
+  FOR EACH STATEMENT
+  EXECUTE PROCEDURE v_ins_func();
+ERROR:  OLD TABLE can only be specified for a DELETE or UPDATE trigger
+CREATE TRIGGER v_ins_trig
+  AFTER INSERT ON v
+  REFERENCING NEW TABLE AS newtable
+  FOR EACH STATEMENT
+  EXECUTE PROCEDURE v_ins_func();
+INSERT INTO v VALUES (1, 'One'), (2, 'Two');
+INFO:  Tuplestore Scan
+  Output: id, val
+
+INSERT INTO v VALUES (3, 'Three'), (4, 'Four');
+INFO:  Tuplestore Scan
+  Output: id, val
+
+CREATE OR REPLACE FUNCTION v_upd_func()
+  RETURNS trigger
+  LANGUAGE plpgsql
+AS $$
+DECLARE
+  t text;
+  l text;
+BEGIN
+  t = '';
+  FOR l IN EXECUTE
+           $q$
+             EXPLAIN (TIMING off, COSTS off, VERBOSE on)
+             SELECT * FROM oldtable ot FULL JOIN newtable nt USING (id)
+           $q$ LOOP
+    t = t || l || E'\n';
+  END LOOP;
+
+  RAISE INFO '%', t;
+  RETURN new;
+END;
+$$;
+CREATE TRIGGER v_upd_trig
+  AFTER UPDATE ON v
+  REFERENCING OLD TABLE AS oldtable NEW TABLE AS newtable
+  FOR EACH STATEMENT
+  EXECUTE PROCEDURE v_upd_func();
+UPDATE v SET val = '*' || val || '*' WHERE id BETWEEN 2 AND 3;
+INFO:  Merge Full Join
+  Output: COALESCE(ot.id, nt.id), ot.val, nt.val
+  Merge Cond: (ot.id = nt.id)
+  ->  Sort
+        Output: ot.id, ot.val
+        Sort Key: ot.id
+        ->  Tuplestore Scan
+              Output: ot.id, ot.val
+  ->  Sort
+        Output: nt.id, nt.val
+        Sort Key: nt.id
+        ->  Tuplestore Scan
+              Output: nt.id, nt.val

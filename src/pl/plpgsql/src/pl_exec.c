@@ -39,6 +39,7 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
+#include "utils/tuplestore.h"
 #include "utils/typcache.h"
 
 
@@ -622,11 +623,11 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	 * might have a test like "if (TG_OP = 'INSERT' and NEW.foo = 'xyz')",
 	 * which should parse regardless of the current trigger type.
 	 */
-	rec_new = (PLpgSQL_rec *) (estate.datums[func->new_varno]);
+	rec_new = (PLpgSQL_rec *) (estate.datums[func->rec_new_varno]);
 	rec_new->freetup = false;
 	rec_new->tupdesc = trigdata->tg_relation->rd_att;
 	rec_new->freetupdesc = false;
-	rec_old = (PLpgSQL_rec *) (estate.datums[func->old_varno]);
+	rec_old = (PLpgSQL_rec *) (estate.datums[func->rec_old_varno]);
 	rec_old->freetup = false;
 	rec_old->tupdesc = trigdata->tg_relation->rd_att;
 	rec_old->freetupdesc = false;
@@ -656,6 +657,31 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	}
 	else
 		elog(ERROR, "unrecognized trigger action: not INSERT, DELETE, or UPDATE");
+
+	/*
+	 * Capture the NEW and OLD transition TABLE tuplestores (if specified for
+	 * this trigger).
+	 */
+	if (trigdata->tg_newtable)
+	{
+		PLpgSQL_rel *rel_new;
+
+		rel_new = (PLpgSQL_rel *) (estate.datums[func->rel_new_varno]);
+		rel_new->refname = trigdata->tg_trigger->tgnewtable;
+		rel_new->tsrdata.md.name = rel_new->refname;
+		rel_new->tsrdata.md.tupdesc = trigdata->tg_relation->rd_att;
+		rel_new->tsrdata.tstate = trigdata->tg_newtable;
+	}
+	if (trigdata->tg_oldtable)
+	{
+		PLpgSQL_rel *rel_old;
+
+		rel_old = (PLpgSQL_rel *) (estate.datums[func->rel_old_varno]);
+		rel_old->refname = trigdata->tg_trigger->tgoldtable;
+		rel_old->tsrdata.md.name = rel_old->refname;
+		rel_old->tsrdata.md.tupdesc = trigdata->tg_relation->rd_att;
+		rel_old->tsrdata.tstate = trigdata->tg_oldtable;
+	}
 
 	/*
 	 * Assign the special tg_ variables
@@ -1020,6 +1046,20 @@ copy_plpgsql_datum(PLpgSQL_datum *datum)
 			}
 			break;
 
+		case PLPGSQL_DTYPE_REL:
+			{
+				PLpgSQL_rel *new = palloc(sizeof(PLpgSQL_rel));
+
+				memcpy(new, datum, sizeof(PLpgSQL_rel));
+				/* Ensure the value is null (possibly not needed?) */
+				new->tsrdata.md.tupdesc = NULL;
+				new->tsrdata.md.name = NULL;
+				new->tsrdata.tstate = NULL;
+
+				result = (PLpgSQL_datum *) new;
+			}
+			break;
+
 		case PLPGSQL_DTYPE_ROW:
 		case PLPGSQL_DTYPE_RECFIELD:
 		case PLPGSQL_DTYPE_ARRAYELEM:
@@ -1157,6 +1197,7 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 
 			case PLPGSQL_DTYPE_RECFIELD:
 			case PLPGSQL_DTYPE_ARRAYELEM:
+			case PLPGSQL_DTYPE_REL:
 				break;
 
 			default:
@@ -5635,6 +5676,8 @@ setup_unshared_param_list(PLpgSQL_execstate *estate, PLpgSQL_expr *expr)
 		{
 			PLpgSQL_datum *datum = estate->datums[dno];
 
+			Assert(dno < estate->ndatums);
+
 			if (datum->dtype == PLPGSQL_DTYPE_VAR)
 			{
 				PLpgSQL_var *var = (PLpgSQL_var *) datum;
@@ -5649,6 +5692,16 @@ setup_unshared_param_list(PLpgSQL_execstate *estate, PLpgSQL_expr *expr)
 				prm->isnull = var->isnull;
 				prm->pflags = PARAM_FLAG_CONST;
 				prm->ptype = var->datatype->typoid;
+			}
+			else if (datum->dtype == PLPGSQL_DTYPE_REL)
+			{
+				PLpgSQL_rel *rel = (PLpgSQL_rel *) datum;
+				ParamExternData *prm = &paramLI->params[dno];
+				Tsr tsr = &rel->tsrdata; /* TODO:TM I assume that the lifetime of rel is long enough */				
+				prm->value = PointerGetDatum(tsr);
+				prm->isnull = false;
+				prm->pflags = PARAM_FLAG_CONST; /* TODO:TM ??? */
+				prm->ptype = 0; /* TODO:TM ??? */
 			}
 		}
 

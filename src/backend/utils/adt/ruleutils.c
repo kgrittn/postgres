@@ -717,6 +717,8 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	SysScanDesc tgscan;
 	int			findx = 0;
 	char	   *tgname;
+	char	   *tgoldtable;
+	char	   *tgnewtable;
 	Oid			argtypes[1];	/* dummy */
 	Datum		value;
 	bool		isnull;
@@ -822,6 +824,27 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 			appendStringInfoString(&buf, "DEFERRED ");
 		else
 			appendStringInfoString(&buf, "IMMEDIATE ");
+	}
+
+	value = fastgetattr(ht_trig, Anum_pg_trigger_tgoldtable,
+						tgrel->rd_att, &isnull);
+	if (!isnull)
+		tgoldtable = NameStr(*((NameData *) DatumGetPointer(value)));
+	else
+		tgoldtable = NULL;
+	value = fastgetattr(ht_trig, Anum_pg_trigger_tgnewtable,
+						tgrel->rd_att, &isnull);
+	if (!isnull)
+		tgnewtable = NameStr(*((NameData *) DatumGetPointer(value)));
+	else
+		tgnewtable = NULL;
+	if (tgoldtable != NULL || tgnewtable != NULL)
+	{
+		appendStringInfoString(&buf, "REFERENCING ");
+		if (tgoldtable != NULL)
+			appendStringInfo(&buf, "OLD TABLE AS %s ", tgoldtable);
+		if (tgnewtable != NULL)
+			appendStringInfo(&buf, "NEW TABLE AS %s ", tgnewtable);
 	}
 
 	if (TRIGGER_FOR_ROW(trigrec->tgtype))
@@ -6194,6 +6217,7 @@ get_name_for_var_field(Var *var, int fieldno,
 	{
 		case RTE_RELATION:
 		case RTE_VALUES:
+		case RTE_TUPLESTORE:
 
 			/*
 			 * This case should not occur: a column of a table or values list
