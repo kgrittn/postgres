@@ -1,5 +1,0 @@
-# transition_tables extension
-comment = 'Sample code for using trigger transition tables'
-default_version = '1.0'
-module_pathname = '$libdir/transition_tables'
-relocatable = true
