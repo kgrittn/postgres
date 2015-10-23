@@ -116,16 +116,6 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 	tuplestore_rescan(scanstate->table);
 
 	/*
-	 * TODO:TM where is that readptr freed?  If for each scan (which could
-	 * potentially be FOR EACH ROW, ie basically unbounded) we allocate a new
-	 * one, won't the 'readptrs' table inside the tuplestore explode?  I don't
-	 * see any facility for freeing them in fact, which would probably involve
-	 * some kind of free list inside the tuplestore machinery, so you could
-	 * return them to the pool of vailable read pointers.  Do we need to
-	 * implement that?
-	 */
-
-	/*
 	 * Miscellaneous initialization
 	 *
 	 * create expression context for node
@@ -183,6 +173,9 @@ ExecEndTuplestoreScan(TuplestoreScanState *node)
 	 */
 	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
 	ExecClearTuple(node->ss.ss_ScanTupleSlot);
+
+	/* Release the tuplestore read pointer for possible re-use. */
+	tuplestore_free_read_pointer(node->table, node->readptr);
 }
 
 /* ----------------------------------------------------------------
