@@ -74,6 +74,7 @@ extern void tuplestore_putvalues(Tuplestorestate *state, TupleDesc tdesc,
 #define tuplestore_donestoring(state)	((void) 0)
 
 extern int	tuplestore_alloc_read_pointer(Tuplestorestate *state, int eflags);
+extern void tuplestore_free_read_pointer(Tuplestorestate *state, int ptr);
 
 extern void tuplestore_select_read_pointer(Tuplestorestate *state, int ptr);
 

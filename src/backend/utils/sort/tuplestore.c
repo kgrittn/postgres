@@ -174,6 +174,7 @@ struct Tuplestorestate
 	int			activeptr;		/* index of the active read pointer */
 	int			readptrcount;	/* number of pointers currently valid */
 	int			readptrsize;	/* allocated length of readptrs array */
+	Bitmapset  *readptrsfreed;	/* pointers within count which are freed */
 
 	int			writepos_file;	/* file# (valid if READFILE state) */
 	off_t		writepos_offset;	/* offset (valid if READFILE state) */
@@ -285,6 +286,7 @@ tuplestore_begin_common(int eflags, bool interXact, int maxKBytes)
 	state->readptrsize = 8;		/* arbitrary */
 	state->readptrs = (TSReadPointer *)
 		palloc(state->readptrsize * sizeof(TSReadPointer));
+	state->readptrsfreed = NULL;
 
 	state->readptrs[0].eflags = eflags;
 	state->readptrs[0].eof_reached = false;
@@ -363,7 +365,8 @@ tuplestore_set_eflags(Tuplestorestate *state, int eflags)
 
 	state->readptrs[0].eflags = eflags;
 	for (i = 1; i < state->readptrcount; i++)
-		eflags |= state->readptrs[i].eflags;
+		if (!bms_is_member(i, state->readptrsfreed))
+			eflags |= state->readptrs[i].eflags;
 	state->eflags = eflags;
 }
 
@@ -380,6 +383,8 @@ tuplestore_set_eflags(Tuplestorestate *state, int eflags)
 int
 tuplestore_alloc_read_pointer(Tuplestorestate *state, int eflags)
 {
+	int			ptr;
+
 	/* Check for possible increase of requirements */
 	if (state->status != TSS_INMEM || state->memtupcount != 0)
 	{
@@ -387,23 +392,50 @@ tuplestore_alloc_read_pointer(Tuplestorestate *state, int eflags)
 			elog(ERROR, "too late to require new tuplestore eflags");
 	}
 
-	/* Make room for another read pointer if needed */
-	if (state->readptrcount >= state->readptrsize)
+	/* Check for a freed read pointer we can re-use */
+	if (!bms_is_empty(state->readptrsfreed))
 	{
-		int			newcnt = state->readptrsize * 2;
+		/* Read and clear bit for the first freed read pointer */
+		ptr = bms_first_member(state->readptrsfreed);
+		Assert(ptr >= 0);
+	}
+	else
+	{
+		/* Make room for another read pointer if needed */
+		if (state->readptrcount >= state->readptrsize)
+		{
+			int			newcnt = state->readptrsize * 2;
 
-		state->readptrs = (TSReadPointer *)
-			repalloc(state->readptrs, newcnt * sizeof(TSReadPointer));
-		state->readptrsize = newcnt;
+			state->readptrs = (TSReadPointer *)
+				repalloc(state->readptrs, newcnt * sizeof(TSReadPointer));
+			state->readptrsize = newcnt;
+		}
+		ptr = state->readptrcount++;
 	}
 
 	/* And set it up */
-	state->readptrs[state->readptrcount] = state->readptrs[0];
-	state->readptrs[state->readptrcount].eflags = eflags;
+	state->readptrs[ptr] = state->readptrs[0];
+	state->readptrs[ptr].eflags = eflags;
 
 	state->eflags |= eflags;
 
-	return state->readptrcount++;
+	return ptr;
+}
+
+/*
+ * tuplestore_free_read_pointer - release a read pointer for use on next alloc
+ *
+ * Accept the pointer's index and add it to a bitmapset.
+ */
+void
+tuplestore_free_read_pointer(Tuplestorestate *state, int ptr)
+{
+	if (ptr >= state->readptrcount
+		|| bms_is_member(ptr, state->readptrsfreed))
+		elog(ERROR, "cannot free a tuplestore read pointer which is not allocated");
+
+	state->readptrs[ptr].eof_reached = false;
+	state->readptrsfreed = bms_add_member(state->readptrsfreed, ptr);
 }
 
 /*
@@ -433,6 +465,8 @@ tuplestore_clear(Tuplestorestate *state)
 	state->truncated = false;
 	state->memtupdeleted = 0;
 	state->memtupcount = 0;
+	bms_free(state->readptrsfreed);
+	state->readptrsfreed = NULL;
 	readptr = state->readptrs;
 	for (i = 0; i < state->readptrcount; readptr++, i++)
 	{
@@ -472,7 +506,8 @@ tuplestore_select_read_pointer(Tuplestorestate *state, int ptr)
 	TSReadPointer *readptr;
 	TSReadPointer *oldptr;
 
-	Assert(ptr >= 0 && ptr < state->readptrcount);
+	Assert(ptr >= 0 && ptr < state->readptrcount
+		   && !bms_is_member(ptr, state->readptrsfreed));
 
 	/* No work if already active */
 	if (ptr == state->activeptr)
@@ -763,7 +798,8 @@ tuplestore_puttuple_common(Tuplestorestate *state, void *tuple)
 			readptr = state->readptrs;
 			for (i = 0; i < state->readptrcount; readptr++, i++)
 			{
-				if (readptr->eof_reached && i != state->activeptr)
+				if (readptr->eof_reached && i != state->activeptr
+					&& !bms_is_member(i, state->readptrsfreed))
 				{
 					readptr->eof_reached = false;
 					readptr->current = state->memtupcount;
@@ -824,7 +860,8 @@ tuplestore_puttuple_common(Tuplestorestate *state, void *tuple)
 			readptr = state->readptrs;
 			for (i = 0; i < state->readptrcount; readptr++, i++)
 			{
-				if (readptr->eof_reached && i != state->activeptr)
+				if (readptr->eof_reached && i != state->activeptr
+					&& !bms_is_member(i, state->readptrsfreed))
 				{
 					readptr->eof_reached = false;
 					BufFileTell(state->myfile,
@@ -858,7 +895,8 @@ tuplestore_puttuple_common(Tuplestorestate *state, void *tuple)
 			readptr = state->readptrs;
 			for (i = 0; i < state->readptrcount; readptr++, i++)
 			{
-				if (readptr->eof_reached && i != state->activeptr)
+				if (readptr->eof_reached && i != state->activeptr
+					&& !bms_is_member(i, state->readptrsfreed))
 				{
 					readptr->eof_reached = false;
 					readptr->file = state->writepos_file;
@@ -1197,7 +1235,8 @@ dumptuples(Tuplestorestate *state)
 
 		for (j = 0; j < state->readptrcount; readptr++, j++)
 		{
-			if (i == readptr->current && !readptr->eof_reached)
+			if (i == readptr->current && !readptr->eof_reached
+				&& !bms_is_member(j, state->readptrsfreed))
 				BufFileTell(state->myfile,
 							&readptr->file, &readptr->offset);
 		}
@@ -1254,8 +1293,10 @@ tuplestore_copy_read_pointer(Tuplestorestate *state,
 	TSReadPointer *sptr = &state->readptrs[srcptr];
 	TSReadPointer *dptr = &state->readptrs[destptr];
 
-	Assert(srcptr >= 0 && srcptr < state->readptrcount);
-	Assert(destptr >= 0 && destptr < state->readptrcount);
+	Assert(srcptr >= 0 && srcptr < state->readptrcount
+		   && !bms_is_member(srcptr, state->readptrsfreed));
+	Assert(destptr >= 0 && destptr < state->readptrcount
+		   && !bms_is_member(destptr, state->readptrsfreed));
 
 	/* Assigning to self is a no-op */
 	if (srcptr == destptr)
@@ -1270,7 +1311,10 @@ tuplestore_copy_read_pointer(Tuplestorestate *state,
 		*dptr = *sptr;
 		eflags = state->readptrs[0].eflags;
 		for (i = 1; i < state->readptrcount; i++)
-			eflags |= state->readptrs[i].eflags;
+		{
+			if (!bms_is_member(i, state->readptrsfreed))
+				eflags |= state->readptrs[i].eflags;
+		}
 		state->eflags = eflags;
 	}
 	else
@@ -1364,7 +1408,8 @@ tuplestore_trim(Tuplestorestate *state)
 	oldest = state->memtupcount;
 	for (i = 0; i < state->readptrcount; i++)
 	{
-		if (!state->readptrs[i].eof_reached)
+		if (!state->readptrs[i].eof_reached
+			&& !bms_is_member(i, state->readptrsfreed))
 			oldest = Min(oldest, state->readptrs[i].current);
 	}
 
@@ -1422,7 +1467,8 @@ tuplestore_trim(Tuplestorestate *state)
 	state->memtupcount -= nremove;
 	for (i = 0; i < state->readptrcount; i++)
 	{
-		if (!state->readptrs[i].eof_reached)
+		if (!state->readptrs[i].eof_reached
+			&& !bms_is_member(i, state->readptrsfreed))
 			state->readptrs[i].current -= nremove;
 	}
 }
