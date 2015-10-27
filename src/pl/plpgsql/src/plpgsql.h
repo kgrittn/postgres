@@ -316,7 +316,7 @@ typedef struct
 {								/* Relation variable */
 	int			dtype;
 	int			dno;
-	char	   *refname; /* TODO:TM redundant since also in tsrdata.md.name? */
+	char	   *refname;
 	int			lineno;
 
 	TsrData		tsrdata;

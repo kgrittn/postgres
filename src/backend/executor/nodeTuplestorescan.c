@@ -39,6 +39,7 @@ TuplestoreScanNext(TuplestoreScanState *node)
 	 * Get the next tuple from tuplestore. Return NULL if no more tuples.
 	 */
 	slot = node->ss.ss_ScanTupleSlot;
+	tuplestore_select_read_pointer(node->table, node->readptr);
 	(void) tuplestore_gettupleslot(node->table, true, false, slot);
 	return slot;
 }
@@ -113,6 +114,7 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 	 * The new read pointer copies its position from read pointer 0, which
 	 * could be anywhere, so explicitly rewind it.
 	 */
+	tuplestore_select_read_pointer(scanstate->table, scanstate->readptr);
 	tuplestore_rescan(scanstate->table);
 
 	/*
