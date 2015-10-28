@@ -1982,6 +1982,7 @@ typedef struct GatherState
 	bool		initialized;
 	struct ParallelExecutorInfo *pei;
 	struct TupleQueueFunnel *funnel;
+	TupleTableSlot *funnel_slot;
 	bool		need_to_scan_locally;
 } GatherState;
 
