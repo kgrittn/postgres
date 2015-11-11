@@ -117,6 +117,7 @@
 #include <unistd.h>
 #include <signal.h>
 
+#include "access/parallel.h"
 #include "access/slru.h"
 #include "access/transam.h"
 #include "access/xact.h"
@@ -543,6 +544,9 @@ Async_Notify(const char *channel, const char *payload)
 {
 	Notification *n;
 	MemoryContext oldcontext;
+
+	if (IsParallelWorker())
+		elog(ERROR, "cannot send notifications from a parallel worker");
 
 	if (Trace_notify)
 		elog(DEBUG1, "Async_Notify(%s)", channel);

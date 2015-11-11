@@ -3727,8 +3727,6 @@ static int
 KnownAssignedXidsGetAndSetXmin(TransactionId *xarray, TransactionId *xmin,
 							   TransactionId xmax)
 {
-	/* use volatile pointer to prevent code rearrangement */
-	volatile ProcArrayStruct *pArray = procArray;
 	int			count = 0;
 	int			head,
 				tail;
@@ -3743,10 +3741,10 @@ KnownAssignedXidsGetAndSetXmin(TransactionId *xarray, TransactionId *xmin,
 	 *
 	 * Must take spinlock to ensure we see up-to-date array contents.
 	 */
-	SpinLockAcquire(&pArray->known_assigned_xids_lck);
-	tail = pArray->tailKnownAssignedXids;
-	head = pArray->headKnownAssignedXids;
-	SpinLockRelease(&pArray->known_assigned_xids_lck);
+	SpinLockAcquire(&procArray->known_assigned_xids_lck);
+	tail = procArray->tailKnownAssignedXids;
+	head = procArray->headKnownAssignedXids;
+	SpinLockRelease(&procArray->known_assigned_xids_lck);
 
 	for (i = tail; i < head; i++)
 	{
@@ -3786,8 +3784,6 @@ KnownAssignedXidsGetAndSetXmin(TransactionId *xarray, TransactionId *xmin,
 static TransactionId
 KnownAssignedXidsGetOldestXmin(void)
 {
-	/* use volatile pointer to prevent code rearrangement */
-	volatile ProcArrayStruct *pArray = procArray;
 	int			head,
 				tail;
 	int			i;
@@ -3795,10 +3791,10 @@ KnownAssignedXidsGetOldestXmin(void)
 	/*
 	 * Fetch head just once, since it may change while we loop.
 	 */
-	SpinLockAcquire(&pArray->known_assigned_xids_lck);
-	tail = pArray->tailKnownAssignedXids;
-	head = pArray->headKnownAssignedXids;
-	SpinLockRelease(&pArray->known_assigned_xids_lck);
+	SpinLockAcquire(&procArray->known_assigned_xids_lck);
+	tail = procArray->tailKnownAssignedXids;
+	head = procArray->headKnownAssignedXids;
+	SpinLockRelease(&procArray->known_assigned_xids_lck);
 
 	for (i = tail; i < head; i++)
 	{

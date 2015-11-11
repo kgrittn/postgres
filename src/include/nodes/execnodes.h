@@ -1961,9 +1961,12 @@ typedef struct UniqueState
 typedef struct GatherState
 {
 	PlanState	ps;				/* its first field is NodeTag */
+	bool		initialized;
 	struct ParallelExecutorInfo *pei;
-	struct TupleQueueFunnel *funnel;
-	bool		need_to_scan_workers;
+	int			nreaders;
+	int			nextreader;
+	struct TupleQueueReader **reader;
+	TupleTableSlot *funnel_slot;
 	bool		need_to_scan_locally;
 } GatherState;
 
