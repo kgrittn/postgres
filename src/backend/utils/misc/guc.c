@@ -2461,7 +2461,7 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"wal_retrieve_retry_interval", PGC_SIGHUP, REPLICATION_STANDBY,
-			gettext_noop("Sets the time to wait before retrying to retrieve WAL"
+			gettext_noop("Sets the time to wait before retrying to retrieve WAL "
 						 "after a failed attempt."),
 			NULL,
 			GUC_UNIT_MS
@@ -2600,7 +2600,7 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"ssl_renegotiation_limit", PGC_USERSET, CONN_AUTH_SECURITY,
-			gettext_noop("SSL regenotiation is no longer supported; this can only be 0"),
+			gettext_noop("SSL regenotiation is no longer supported; this can only be 0."),
 			NULL,
 			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE,
 		},
@@ -3428,7 +3428,7 @@ static struct config_string ConfigureNamesString[] =
 
 	{
 		{"cluster_name", PGC_POSTMASTER, PROCESS_TITLE,
-			gettext_noop("Sets the name of the cluster which is included in the process title."),
+			gettext_noop("Sets the name of the cluster, which is included in the process title."),
 			NULL,
 			GUC_IS_NAME
 		},
