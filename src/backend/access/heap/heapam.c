@@ -5820,7 +5820,7 @@ heap_finish_speculative(Relation relation, HeapTuple tuple)
 		lp = PageGetItemId(page, offnum);
 
 	if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-		elog(ERROR, "heap_confirm_insert: invalid lp");
+		elog(ERROR, "invalid lp");
 
 	htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -6061,14 +6061,14 @@ heap_inplace_update(Relation relation, HeapTuple tuple)
 		lp = PageGetItemId(page, offnum);
 
 	if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-		elog(ERROR, "heap_inplace_update: invalid lp");
+		elog(ERROR, "invalid lp");
 
 	htup = (HeapTupleHeader) PageGetItem(page, lp);
 
 	oldlen = ItemIdGetLength(lp) - htup->t_hoff;
 	newlen = tuple->t_len - tuple->t_data->t_hoff;
 	if (oldlen != newlen || htup->t_hoff != tuple->t_data->t_hoff)
-		elog(ERROR, "heap_inplace_update: wrong tuple length");
+		elog(ERROR, "wrong tuple length");
 
 	/* NO EREPORT(ERROR) from here till changes are logged */
 	START_CRIT_SECTION();
@@ -7998,7 +7998,7 @@ heap_xlog_delete(XLogReaderState *record)
 			lp = PageGetItemId(page, xlrec->offnum);
 
 		if (PageGetMaxOffsetNumber(page) < xlrec->offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_delete_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -8089,7 +8089,7 @@ heap_xlog_insert(XLogReaderState *record)
 		page = BufferGetPage(buffer);
 
 		if (PageGetMaxOffsetNumber(page) + 1 < xlrec->offnum)
-			elog(PANIC, "heap_insert_redo: invalid max offset number");
+			elog(PANIC, "invalid max offset number");
 
 		data = XLogRecGetBlockData(record, 0, &datalen);
 
@@ -8114,7 +8114,7 @@ heap_xlog_insert(XLogReaderState *record)
 
 		if (PageAddItem(page, (Item) htup, newlen, xlrec->offnum,
 						true, true) == InvalidOffsetNumber)
-			elog(PANIC, "heap_insert_redo: failed to add tuple");
+			elog(PANIC, "failed to add tuple");
 
 		freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
 
@@ -8224,7 +8224,7 @@ heap_xlog_multi_insert(XLogReaderState *record)
 			else
 				offnum = xlrec->offsets[i];
 			if (PageGetMaxOffsetNumber(page) + 1 < offnum)
-				elog(PANIC, "heap_multi_insert_redo: invalid max offset number");
+				elog(PANIC, "invalid max offset number");
 
 			xlhdr = (xl_multi_insert_tuple *) SHORTALIGN(tupdata);
 			tupdata = ((char *) xlhdr) + SizeOfMultiInsertTuple;
@@ -8250,10 +8250,10 @@ heap_xlog_multi_insert(XLogReaderState *record)
 
 			offnum = PageAddItem(page, (Item) htup, newlen, offnum, true, true);
 			if (offnum == InvalidOffsetNumber)
-				elog(PANIC, "heap_multi_insert_redo: failed to add tuple");
+				elog(PANIC, "failed to add tuple");
 		}
 		if (tupdata != endptr)
-			elog(PANIC, "heap_multi_insert_redo: total tuple length mismatch");
+			elog(PANIC, "total tuple length mismatch");
 
 		freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
 
@@ -8364,7 +8364,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_update_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -8442,7 +8442,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 
 		offnum = xlrec->new_offnum;
 		if (PageGetMaxOffsetNumber(page) + 1 < offnum)
-			elog(PANIC, "heap_update_redo: invalid max offset number");
+			elog(PANIC, "invalid max offset number");
 
 		if (xlrec->flags & XLH_UPDATE_PREFIX_FROM_OLD)
 		{
@@ -8520,7 +8520,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 
 		offnum = PageAddItem(page, (Item) htup, newlen, offnum, true, true);
 		if (offnum == InvalidOffsetNumber)
-			elog(PANIC, "heap_update_redo: failed to add tuple");
+			elog(PANIC, "failed to add tuple");
 
 		if (xlrec->flags & XLH_UPDATE_NEW_ALL_VISIBLE_CLEARED)
 			PageClearAllVisible(page);
@@ -8575,7 +8575,7 @@ heap_xlog_confirm(XLogReaderState *record)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_confirm_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -8611,7 +8611,7 @@ heap_xlog_lock(XLogReaderState *record)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_lock_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -8661,7 +8661,7 @@ heap_xlog_lock_updated(XLogReaderState *record)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_xlog_lock_updated: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -8700,13 +8700,13 @@ heap_xlog_inplace(XLogReaderState *record)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_inplace_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
 		oldlen = ItemIdGetLength(lp) - htup->t_hoff;
 		if (oldlen != newlen)
-			elog(PANIC, "heap_inplace_redo: wrong tuple length");
+			elog(PANIC, "wrong tuple length");
 
 		memcpy((char *) htup + htup->t_hoff, newtup, newlen);
 
