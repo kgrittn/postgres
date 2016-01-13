@@ -1999,22 +1999,24 @@ psql_completion(const char *text, int start, int end)
 	/* First off we complete CREATE UNIQUE with "INDEX" */
 	else if (TailMatches2("CREATE", "UNIQUE"))
 		COMPLETE_WITH_CONST("INDEX");
-	/* If we have CREATE|UNIQUE INDEX, then add "ON" and existing indexes */
+	/* If we have CREATE|UNIQUE INDEX, then add "ON", "CONCURRENTLY",
+	   and existing indexes */
 	else if (TailMatches2("CREATE|UNIQUE", "INDEX"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexes,
 								   " UNION SELECT 'ON'"
 								   " UNION SELECT 'CONCURRENTLY'");
-	/* Complete ... INDEX [<name>] ON with a list of tables  */
-	else if (TailMatches3("INDEX", MatchAny, "ON") ||
+	/* Complete ... INDEX|CONCURRENTLY [<name>] ON with a list of tables  */
+	else if (TailMatches3("INDEX|CONCURRENTLY", MatchAny, "ON") ||
 			 TailMatches2("INDEX|CONCURRENTLY", "ON"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tm, NULL);
-	/* If we have CREATE|UNIQUE INDEX <sth> CONCURRENTLY, then add "ON" */
-	else if (TailMatches3("INDEX", MatchAny, "CONCURRENTLY") ||
-			 TailMatches2("INDEX", "CONCURRENTLY"))
+	/* Complete ... INDEX CONCURRENTLY with "ON" and existing indexes */
+	else if (TailMatches2("INDEX", "CONCURRENTLY"))
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexes,
+								   " UNION SELECT 'ON'");
+	/* Complete CREATE|UNIQUE INDEX [CONCURRENTLY] <sth> with "ON" */
+	else if (TailMatches3("CREATE|UNIQUE", "INDEX", MatchAny) ||
+			 TailMatches4("CREATE|UNIQUE", "INDEX", "CONCURRENTLY", MatchAny))
 		COMPLETE_WITH_CONST("ON");
-	/* If we have CREATE|UNIQUE INDEX <sth>, then add "ON" or "CONCURRENTLY" */
-	else if (TailMatches3("CREATE|UNIQUE", "INDEX", MatchAny))
-		COMPLETE_WITH_LIST2("CONCURRENTLY", "ON");
 
 	/*
 	 * Complete INDEX <name> ON <table> with a list of table columns (which
