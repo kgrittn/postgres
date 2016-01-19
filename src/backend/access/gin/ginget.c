@@ -1781,11 +1781,9 @@ scanPendingInsert(IndexScanDesc scan, TIDBitmap *tbm, int64 *ntids)
 
 #define GinIsVoidRes(s)		( ((GinScanOpaque) scan->opaque)->isVoidRes )
 
-Datum
-gingetbitmap(PG_FUNCTION_ARGS)
+int64
+gingetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 {
-	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
-	TIDBitmap  *tbm = (TIDBitmap *) PG_GETARG_POINTER(1);
 	GinScanOpaque so = (GinScanOpaque) scan->opaque;
 	int64		ntids;
 	ItemPointerData iptr;
@@ -1799,7 +1797,7 @@ gingetbitmap(PG_FUNCTION_ARGS)
 	ginNewScanKey(scan);
 
 	if (GinIsVoidRes(scan))
-		PG_RETURN_INT64(0);
+		return 0;
 
 	ntids = 0;
 
@@ -1836,5 +1834,5 @@ gingetbitmap(PG_FUNCTION_ARGS)
 		ntids++;
 	}
 
-	PG_RETURN_INT64(ntids);
+	return ntids;
 }

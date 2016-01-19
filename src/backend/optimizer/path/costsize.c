@@ -75,6 +75,7 @@
 #endif
 #include <math.h>
 
+#include "access/amapi.h"
 #include "access/htup_details.h"
 #include "access/tsmapi.h"
 #include "executor/executor.h"
@@ -228,9 +229,9 @@ cost_seqscan(Path *path, PlannerInfo *root,
 	/*
 	 * Primitive parallel cost model.  Assume the leader will do half as much
 	 * work as a regular worker, because it will also need to read the tuples
-	 * returned by the workers when they percolate up to the gather ndoe.
-	 * This is almost certainly not exactly the right way to model this, so
-	 * this will probably need to be changed at some point...
+	 * returned by the workers when they percolate up to the gather node. This
+	 * is almost certainly not exactly the right way to model this, so this
+	 * will probably need to be changed at some point...
 	 */
 	if (nworkers > 0)
 		run_cost = run_cost / (nworkers + 0.5);
@@ -364,6 +365,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	IndexOptInfo *index = path->indexinfo;
 	RelOptInfo *baserel = index->rel;
 	bool		indexonly = (path->path.pathtype == T_IndexOnlyScan);
+	amcostestimate_function amcostestimate;
 	List	   *qpquals;
 	Cost		startup_cost = 0;
 	Cost		run_cost = 0;
@@ -417,16 +419,13 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	 * Call index-access-method-specific code to estimate the processing cost
 	 * for scanning the index, as well as the selectivity of the index (ie,
 	 * the fraction of main-table tuples we will have to retrieve) and its
-	 * correlation to the main-table tuple order.
+	 * correlation to the main-table tuple order.  We need a cast here because
+	 * relation.h uses a weak function type to avoid including amapi.h.
 	 */
-	OidFunctionCall7(index->amcostestimate,
-					 PointerGetDatum(root),
-					 PointerGetDatum(path),
-					 Float8GetDatum(loop_count),
-					 PointerGetDatum(&indexStartupCost),
-					 PointerGetDatum(&indexTotalCost),
-					 PointerGetDatum(&indexSelectivity),
-					 PointerGetDatum(&indexCorrelation));
+	amcostestimate = (amcostestimate_function) index->amcostestimate;
+	amcostestimate(root, path, loop_count,
+				   &indexStartupCost, &indexTotalCost,
+				   &indexSelectivity, &indexCorrelation);
 
 	/*
 	 * Save amcostestimate's results for possible use in bitmap scan planning.
