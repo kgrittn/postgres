@@ -6261,6 +6261,9 @@ getTriggers(Archive *fout, TableInfo tblinfo[], int numTables)
 
 		tginfo = (TriggerInfo *) pg_malloc(ntups * sizeof(TriggerInfo));
 
+		tbinfo->numTriggers = ntups;
+		tbinfo->triggers = tginfo;
+
 		for (j = 0; j < ntups; j++)
 		{
 			tginfo[j].dobj.objType = DO_TRIGGER;
@@ -9611,7 +9614,7 @@ dumpDomain(Archive *fout, TypeInfo *tyinfo)
 		appendPQExpBuffer(labelq, "CONSTRAINT %s ",
 						  fmtId(domcheck->dobj.name));
 		appendPQExpBuffer(labelq, "ON DOMAIN %s",
-						  fmtId(qtypname));
+						  qtypname);
 		dumpComment(fout, labelq->data,
 					tyinfo->dobj.namespace->dobj.name,
 					tyinfo->rolname,
@@ -12383,6 +12386,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	PGresult   *res;
 	int			i_aggtransfn;
 	int			i_aggfinalfn;
+	int			i_aggcombinefn;
 	int			i_aggmtransfn;
 	int			i_aggminvtransfn;
 	int			i_aggmfinalfn;
@@ -12399,6 +12403,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	int			i_convertok;
 	const char *aggtransfn;
 	const char *aggfinalfn;
+	const char *aggcombinefn;
 	const char *aggmtransfn;
 	const char *aggminvtransfn;
 	const char *aggmfinalfn;
@@ -12429,12 +12434,31 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	selectSourceSchema(fout, agginfo->aggfn.dobj.namespace->dobj.name);
 
 	/* Get aggregate-specific details */
-	if (fout->remoteVersion >= 90400)
+	if (fout->remoteVersion >= 90600)
+	{
+		appendPQExpBuffer(query, "SELECT aggtransfn, "
+			"aggfinalfn, aggtranstype::pg_catalog.regtype, "
+			"aggcombinefn, aggmtransfn, "
+			"aggminvtransfn, aggmfinalfn, aggmtranstype::pg_catalog.regtype, "
+			"aggfinalextra, aggmfinalextra, "
+			"aggsortop::pg_catalog.regoperator, "
+			"(aggkind = 'h') AS hypothetical, "
+			"aggtransspace, agginitval, "
+			"aggmtransspace, aggminitval, "
+			"true AS convertok, "
+			"pg_catalog.pg_get_function_arguments(p.oid) AS funcargs, "
+			"pg_catalog.pg_get_function_identity_arguments(p.oid) AS funciargs "
+			"FROM pg_catalog.pg_aggregate a, pg_catalog.pg_proc p "
+			"WHERE a.aggfnoid = p.oid "
+			"AND p.oid = '%u'::pg_catalog.oid",
+			agginfo->aggfn.dobj.catId.oid);
+	}
+	else if (fout->remoteVersion >= 90400)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
-						  "aggmtransfn, aggminvtransfn, aggmfinalfn, "
-						  "aggmtranstype::pg_catalog.regtype, "
+						  "'-' AS aggcombinefn, aggmtransfn, aggminvtransfn, "
+						  "aggmfinalfn, aggmtranstype::pg_catalog.regtype, "
 						  "aggfinalextra, aggmfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
 						  "(aggkind = 'h') AS hypothetical, "
@@ -12452,9 +12476,10 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
-						  "'-' AS aggmtransfn, '-' AS aggminvtransfn, "
-						  "'-' AS aggmfinalfn, 0 AS aggmtranstype, "
-						  "false AS aggfinalextra, false AS aggmfinalextra, "
+						  "'-' AS aggcombinefn, '-' AS aggmtransfn, "
+						  "'-' AS aggminvtransfn, '-' AS aggmfinalfn, "
+						  "0 AS aggmtranstype, false AS aggfinalextra, "
+						  "false AS aggmfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval, "
@@ -12471,9 +12496,10 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
-						  "'-' AS aggmtransfn, '-' AS aggminvtransfn, "
-						  "'-' AS aggmfinalfn, 0 AS aggmtranstype, "
-						  "false AS aggfinalextra, false AS aggmfinalextra, "
+						  "'-' AS aggcombinefn, '-' AS aggmtransfn, "
+						  "'-' AS aggminvtransfn, '-' AS aggmfinalfn, "
+						  "0 AS aggmtranstype, false AS aggfinalextra, "
+						  "false AS aggmfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval, "
@@ -12488,10 +12514,10 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
-						  "'-' AS aggmtransfn, '-' AS aggminvtransfn, "
-						  "'-' AS aggmfinalfn, 0 AS aggmtranstype, "
-						  "false AS aggfinalextra, false AS aggmfinalextra, "
-						  "0 AS aggsortop, "
+						  "'-' AS aggcombinefn, '-' AS aggmtransfn, "
+						  "'-' AS aggminvtransfn, '-' AS aggmfinalfn, "
+						  "0 AS aggmtranstype, false AS aggfinalextra, "
+						  "false AS aggmfinalextra, 0 AS aggsortop, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval, "
 						  "0 AS aggmtransspace, NULL AS aggminitval, "
@@ -12505,10 +12531,10 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, aggfinalfn, "
 						  "format_type(aggtranstype, NULL) AS aggtranstype, "
-						  "'-' AS aggmtransfn, '-' AS aggminvtransfn, "
-						  "'-' AS aggmfinalfn, 0 AS aggmtranstype, "
-						  "false AS aggfinalextra, false AS aggmfinalextra, "
-						  "0 AS aggsortop, "
+						  "'-' AS aggcombinefn, '-' AS aggmtransfn, "
+						  "'-' AS aggminvtransfn, '-' AS aggmfinalfn, "
+						  "0 AS aggmtranstype, false AS aggfinalextra, "
+						  "false AS aggmfinalextra, 0 AS aggsortop, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval, "
 						  "0 AS aggmtransspace, NULL AS aggminitval, "
@@ -12522,10 +12548,10 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 		appendPQExpBuffer(query, "SELECT aggtransfn1 AS aggtransfn, "
 						  "aggfinalfn, "
 						  "(SELECT typname FROM pg_type WHERE oid = aggtranstype1) AS aggtranstype, "
-						  "'-' AS aggmtransfn, '-' AS aggminvtransfn, "
-						  "'-' AS aggmfinalfn, 0 AS aggmtranstype, "
-						  "false AS aggfinalextra, false AS aggmfinalextra, "
-						  "0 AS aggsortop, "
+						  "'-' AS aggcombinefn, '-' AS aggmtransfn, "
+						  "'-' AS aggminvtransfn, '-' AS aggmfinalfn, "
+						  "0 AS aggmtranstype, false AS aggfinalextra, "
+						  "false AS aggmfinalextra, 0 AS aggsortop, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval1 AS agginitval, "
 						  "0 AS aggmtransspace, NULL AS aggminitval, "
@@ -12539,6 +12565,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 
 	i_aggtransfn = PQfnumber(res, "aggtransfn");
 	i_aggfinalfn = PQfnumber(res, "aggfinalfn");
+	i_aggcombinefn = PQfnumber(res, "aggcombinefn");
 	i_aggmtransfn = PQfnumber(res, "aggmtransfn");
 	i_aggminvtransfn = PQfnumber(res, "aggminvtransfn");
 	i_aggmfinalfn = PQfnumber(res, "aggmfinalfn");
@@ -12556,6 +12583,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 
 	aggtransfn = PQgetvalue(res, 0, i_aggtransfn);
 	aggfinalfn = PQgetvalue(res, 0, i_aggfinalfn);
+	aggcombinefn = PQgetvalue(res, 0, i_aggcombinefn);
 	aggmtransfn = PQgetvalue(res, 0, i_aggmtransfn);
 	aggminvtransfn = PQgetvalue(res, 0, i_aggminvtransfn);
 	aggmfinalfn = PQgetvalue(res, 0, i_aggmfinalfn);
@@ -12642,6 +12670,11 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  aggfinalfn);
 		if (aggfinalextra)
 			appendPQExpBufferStr(details, ",\n    FINALFUNC_EXTRA");
+	}
+
+	if (strcmp(aggcombinefn, "-") != 0)
+	{
+		appendPQExpBuffer(details, ",\n    COMBINEFUNC = %s",	aggcombinefn);
 	}
 
 	if (strcmp(aggmtransfn, "-") != 0)

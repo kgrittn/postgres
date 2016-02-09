@@ -473,7 +473,7 @@ ReplicationOriginShmemInit(void)
 	{
 		int			i;
 
-		replication_states_ctl->tranche_id = LWLockNewTrancheId();
+		replication_states_ctl->tranche_id = LWTRANCHE_REPLICATION_ORIGIN;
 		replication_states_ctl->tranche.name = "ReplicationOrigins";
 		replication_states_ctl->tranche.array_base =
 			&replication_states[0].lock;
@@ -677,7 +677,7 @@ StartupReplicationOrigin(void)
 				 errmsg("could not open file \"%s\": %m",
 						path)));
 
-	/* verify magic, thats written even if nothing was active */
+	/* verify magic, that is written even if nothing was active */
 	readBytes = read(fd, &magic, sizeof(magic));
 	if (readBytes != sizeof(magic))
 		ereport(PANIC,
