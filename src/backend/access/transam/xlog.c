@@ -4675,7 +4675,7 @@ XLOGShmemInit(void)
 		(WALInsertLockPadded *) allocptr;
 	allocptr += sizeof(WALInsertLockPadded) * NUM_XLOGINSERT_LOCKS;
 
-	XLogCtl->Insert.WALInsertLockTranche.name = "WALInsertLocks";
+	XLogCtl->Insert.WALInsertLockTranche.name = "wal_insert";
 	XLogCtl->Insert.WALInsertLockTranche.array_base = WALInsertLocks;
 	XLogCtl->Insert.WALInsertLockTranche.array_stride = sizeof(WALInsertLockPadded);
 
@@ -6283,7 +6283,7 @@ StartupXLOG(void)
 				  (uint32) (checkPoint.redo >> 32), (uint32) checkPoint.redo,
 					wasShutdown ? "TRUE" : "FALSE")));
 	ereport(DEBUG1,
-			(errmsg_internal("next transaction ID: %u/%u; next OID: %u",
+			(errmsg_internal("next transaction ID: %u:%u; next OID: %u",
 					checkPoint.nextXidEpoch, checkPoint.nextXid,
 					checkPoint.nextOid)));
 	ereport(DEBUG1,
@@ -7927,7 +7927,7 @@ ShutdownXLOG(int code, Datum arg)
 {
 	/* Don't be chatty in standalone mode */
 	ereport(IsPostmasterEnvironment ? LOG : NOTICE,
-			(errmsg("shutting down at %s", current_time_as_str())));
+			(errmsg("shutting down")));
 
 	if (RecoveryInProgress())
 		CreateRestartPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
@@ -7943,28 +7943,11 @@ ShutdownXLOG(int code, Datum arg)
 			RequestXLogSwitch();
 
 		CreateCheckPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
-
-		elog(IsPostmasterEnvironment ? LOG : NOTICE,
-			 "shutdown checkpoint complete at %s",
-			 current_time_as_str());
 	}
 	ShutdownCLOG();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "ShutdownCLOG() complete at %s",
-		 current_time_as_str());
 	ShutdownCommitTs();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "ShutdownCommitTs() complete at %s",
-		 current_time_as_str());
 	ShutdownSUBTRANS();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "ShutdownSUBTRANS() complete at %s",
-		 current_time_as_str());
 	ShutdownMultiXact();
-
-	/* Don't be chatty in standalone mode */
-	ereport(IsPostmasterEnvironment ? LOG : NOTICE,
-			(errmsg("database system is shut down at %s", current_time_as_str())));
 }
 
 /*
@@ -8436,9 +8419,6 @@ CreateCheckPoint(int flags)
 
 	XLogFlush(recptr);
 
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "checkpoint WAL record flushed at %s", current_time_as_str());
-
 	/*
 	 * We mustn't write any new WAL after a shutdown checkpoint, or it will be
 	 * overwritten at next startup.  No-one should even try, this just allows
@@ -8494,9 +8474,6 @@ CreateCheckPoint(int flags)
 	UpdateControlFile();
 	LWLockRelease(ControlFileLock);
 
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "pg_control updated at %s", current_time_as_str());
-
 	/* Update shared-memory copy of checkpoint XID/epoch */
 	SpinLockAcquire(&XLogCtl->info_lck);
 	XLogCtl->ckptXidEpoch = checkPoint.nextXidEpoch;
@@ -8514,9 +8491,6 @@ CreateCheckPoint(int flags)
 	 */
 	smgrpostckpt();
 
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "smgrpostckpt() done at %s", current_time_as_str());
-
 	/*
 	 * Delete old log files (those no longer needed even for previous
 	 * checkpoint or the standbys in XLOG streaming).
@@ -8532,9 +8506,6 @@ CreateCheckPoint(int flags)
 		KeepLogSeg(recptr, &_logSegNo);
 		_logSegNo--;
 		RemoveOldXlogFiles(_logSegNo, PriorRedoPtr, recptr);
-
-		elog(IsPostmasterEnvironment ? LOG : NOTICE,
-			 "RemoveOldXlogFiles() done at %s", current_time_as_str());
 	}
 
 	/*
@@ -8552,11 +8523,7 @@ CreateCheckPoint(int flags)
 	 * StartupSUBTRANS hasn't been called yet.
 	 */
 	if (!RecoveryInProgress())
-	{
 		TruncateSUBTRANS(GetOldestXmin(NULL, false));
-		elog(IsPostmasterEnvironment ? LOG : NOTICE,
-			 "TruncateSUBTRANS() done at %s", current_time_as_str());
-	}
 
 	/* Real work is done, but log and update stats before releasing lock. */
 	LogCheckpointEnd(false);
@@ -8631,45 +8598,19 @@ CreateEndOfRecoveryRecord(void)
 static void
 CheckPointGuts(XLogRecPtr checkPointRedo, int flags)
 {
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointGuts starting at %s", current_time_as_str());
 	CheckPointCLOG();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointCLOG() done at %s", current_time_as_str());
 	CheckPointCommitTs();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointCommitTs() done at %s", current_time_as_str());
 	CheckPointSUBTRANS();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointSUBTRANS() done at %s", current_time_as_str());
 	CheckPointMultiXact();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointMultiXact() done at %s", current_time_as_str());
 	CheckPointPredicate();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointPredicate() done at %s", current_time_as_str());
 	CheckPointRelationMap();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointRelationMap() done at %s", current_time_as_str());
 	CheckPointReplicationSlots();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointReplicationSlots() done at %s", current_time_as_str());
 	CheckPointSnapBuild();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointSnapBuild() done at %s", current_time_as_str());
 	CheckPointLogicalRewriteHeap();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointLogicalRewriteHeap() done at %s", current_time_as_str());
 	CheckPointBuffers(flags);	/* performs all required fsyncs */
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointBuffers() done at %s", current_time_as_str());
 	CheckPointReplicationOrigin();
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointReplicationOrigin() done at %s", current_time_as_str());
 	/* We deliberately delay 2PC checkpointing as long as possible */
 	CheckPointTwoPhase(checkPointRedo);
-	elog(IsPostmasterEnvironment ? LOG : NOTICE,
-		 "CheckPointGuts done at %s", current_time_as_str());
 }
 
 /*
