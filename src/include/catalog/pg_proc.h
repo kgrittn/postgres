@@ -3601,6 +3601,8 @@ DATA(insert OID = 2288 ( pg_size_pretty			PGNSP PGUID 12 1 0 0 0 f f f f t f i s
 DESCR("convert a long int to a human readable text using size units");
 DATA(insert OID = 3166 ( pg_size_pretty			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "1700" _null_ _null_ _null_ _null_ _null_ pg_size_pretty_numeric _null_ _null_ _null_ ));
 DESCR("convert a numeric to a human readable text using size units");
+DATA(insert OID = 3334 ( pg_size_bytes			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 20 "25" _null_ _null_ _null_ _null_ _null_ pg_size_bytes _null_ _null_ _null_ ));
+DESCR("convert a size in human-readable format with size units into bytes");
 DATA(insert OID = 2997 ( pg_table_size			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 20 "2205" _null_ _null_ _null_ _null_ _null_ pg_table_size _null_ _null_ _null_ ));
 DESCR("disk space usage for the specified table, including TOAST, free space and visibility map");
 DATA(insert OID = 2998 ( pg_indexes_size		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 20 "2205" _null_ _null_ _null_ _null_ _null_ pg_indexes_size _null_ _null_ _null_ ));
@@ -5207,6 +5209,10 @@ DATA(insert OID = 3298 (  row_security_active	   PGNSP PGUID 12 1 0 0 0 f f f f 
 DESCR("row security for current context active on table by table oid");
 DATA(insert OID = 3299 (  row_security_active	   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 16 "25" _null_ _null_ _null_ _null_ _null_	row_security_active_name _null_ _null_ _null_ ));
 DESCR("row security for current context active on table by table name");
+
+/* pg_config */
+DATA(insert OID = 3400 ( pg_config PGNSP PGUID 12 1 23 0 0 f f f f t t i r 0 0 2249 "" "{25,25}" "{o,o}" "{name,setting}" _null_ _null_ pg_config _null_ _null_ _null_ ));
+DESCR("pg_config binary as a function");
 
 /*
  * Symbolic values for provolatile column: these indicate whether the result
