@@ -80,6 +80,8 @@ typedef struct OldSnapshotControlData
 	 */
 	slock_t		mutex_current;			/* protect current timestamp */
 	int64		current_timestamp;		/* latest snapshot timestamp */
+	slock_t		mutex_latest_xmin;		/* protect latest snapshot xmin */
+	TransactionId latest_xmin;			/* latest snapshot xmin */
 	slock_t		mutex_threshold;		/* protect threshold fields */
 	int64		threshold_timestamp;	/* earlier snapshot is old */
 	TransactionId threshold_xid;		/* earlier xid may be gone */
@@ -267,6 +269,8 @@ SnapMgrInit(void)
 	{
 		SpinLockInit(&oldSnapshotControl->mutex_current);
 		oldSnapshotControl->current_timestamp = 0;
+		SpinLockInit(&oldSnapshotControl->mutex_latest_xmin);
+		oldSnapshotControl->latest_xmin = InvalidTransactionId;
 		SpinLockInit(&oldSnapshotControl->mutex_threshold);
 		oldSnapshotControl->threshold_timestamp = 0;
 		oldSnapshotControl->threshold_xid = InvalidTransactionId;
@@ -1547,8 +1551,8 @@ GetSnapshotCurrentTimestamp(void)
  * Get timestamp through which vacuum may have processed based on last stored
  * value for threshold_timestamp.
  *
- * XXX: If we can trust a read of an int64 value to be atomic, we can skip the
- * spinlock here.
+ * XXX: So far, we never trust that a 64-bit value can be read atomically; if
+ * that ever changes, we could get rid of the spinlock here.
  */
 int64
 GetOldSnapshotThresholdTimestamp(void)
@@ -1583,7 +1587,17 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 	{
 		int64		ts;
 		TransactionId xlimit = recentXmin;
+		TransactionId latest_xmin = oldSnapshotControl->latest_xmin;
 		bool		same_ts_as_threshold = false;
+
+		/* Zero threshold always overrides to latest xmin, if valid. */
+		if (old_snapshot_threshold == 0)
+		{
+			if (TransactionIdFollows(latest_xmin, xlimit))
+				xlimit = latest_xmin;
+
+			return xlimit;
+		}
 
 		ts = AlignTimestampToMinuteBoundary(GetSnapshotCurrentTimestamp())
 			 - (old_snapshot_threshold * USECS_PER_MINUTE);
@@ -1626,6 +1640,19 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 			LWLockRelease(OldSnapshotTimeMapLock);
 		}
 
+		/*
+		 * Failsafe protection against vacuuming work of active transaction.
+		 *
+		 * This is not an assertion because we avoid the spinlock for
+		 * performance, leaving open the possibility that xlimit could advance
+		 * and be more current; but it seems prudent to apply this limit.  It
+		 * might make pruning a tiny bit less agressive than it could be, but
+		 * protects against data loss bugs.
+		 */
+		if (TransactionIdIsNormal(latest_xmin)
+			&& TransactionIdPrecedes(latest_xmin, xlimit))
+			xlimit = latest_xmin;
+
 		if (NormalTransactionIdFollows(xlimit, recentXmin))
 			return xlimit;
 	}
@@ -1641,11 +1668,18 @@ MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
 {
 	int64		ts;
 
-	/*
-	 * Fast exit when old_snapshot_threshold is not used or when snapshots
-	 * should immediately be considered "old" (for testing purposes).
-	 */
-	if (old_snapshot_threshold <= 0)
+	/* Fast exit when old_snapshot_threshold is not used. */
+	if (old_snapshot_threshold < 0)
+		return;
+
+	/* Keep track of the latest xmin seen by any process. */
+	SpinLockAcquire(&oldSnapshotControl->mutex_latest_xmin);
+	if (TransactionIdFollows(xmin, oldSnapshotControl->latest_xmin))
+		oldSnapshotControl->latest_xmin = xmin;
+	SpinLockRelease(&oldSnapshotControl->mutex_latest_xmin);
+
+	/* No further tracking needed for 0 (used for testing). */
+	if (old_snapshot_threshold == 0)
 		return;
 
 	/*
