@@ -1566,6 +1566,15 @@ GetOldSnapshotThresholdTimestamp(void)
 	return threshold_timestamp;
 }
 
+static void
+SetOldSnapshotThresholdTimestamp(int64 ts, TransactionId xlimit)
+{
+	SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
+	oldSnapshotControl->threshold_timestamp = ts;
+	oldSnapshotControl->threshold_xid = xlimit;
+	SpinLockRelease(&oldSnapshotControl->mutex_threshold);
+}
+
 /*
  * TransactionIdLimitedForOldSnapshots
  *
@@ -1585,21 +1594,32 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 		&& !IsCatalogRelation(relation)
 		&& !RelationIsAccessibleInLogicalDecoding(relation))
 	{
-		int64		ts;
+		int64		ts = GetSnapshotCurrentTimestamp();
 		TransactionId xlimit = recentXmin;
 		TransactionId latest_xmin = oldSnapshotControl->latest_xmin;
 		bool		same_ts_as_threshold = false;
 
-		/* Zero threshold always overrides to latest xmin, if valid. */
+		/*
+		 * Zero threshold always overrides to latest xmin, if valid.  Without
+		 * some heuristic it will find its own snapshot too old on, for
+		 * example, a simple UPDATE -- which would make it useless for most
+		 * testing, but there is no principled way to ensure that it doesn't
+		 * fail in this way.  Use a five-second delay to try to get useful
+		 * testing behavior, but this may need adjustment.
+		 */
 		if (old_snapshot_threshold == 0)
 		{
-			if (TransactionIdFollows(latest_xmin, xlimit))
+			if (TransactionIdPrecedes(latest_xmin, MyPgXact->xmin)
+				&& TransactionIdFollows(latest_xmin, xlimit))
 				xlimit = latest_xmin;
+
+			ts -= 5 * USECS_PER_SEC;
+			SetOldSnapshotThresholdTimestamp(ts, xlimit);
 
 			return xlimit;
 		}
 
-		ts = AlignTimestampToMinuteBoundary(GetSnapshotCurrentTimestamp())
+		ts = AlignTimestampToMinuteBoundary(ts)
 			 - (old_snapshot_threshold * USECS_PER_MINUTE);
 
 		/* Check for fast exit without LW locking. */
@@ -1629,12 +1649,7 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 				xlimit = oldSnapshotControl->xid_by_minute[offset];
 
 				if (NormalTransactionIdFollows(xlimit, recentXmin))
-				{
-					SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
-					oldSnapshotControl->threshold_timestamp = ts;
-					oldSnapshotControl->threshold_xid = xlimit;
-					SpinLockRelease(&oldSnapshotControl->mutex_threshold);
-				}
+					SetOldSnapshotThresholdTimestamp(ts, xlimit);
 			}
 
 			LWLockRelease(OldSnapshotTimeMapLock);
