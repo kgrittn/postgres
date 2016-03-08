@@ -7866,10 +7866,7 @@ heap_xlog_visible(XLogReaderState *record)
 		 */
 		page = BufferGetPage(buffer);
 
-		if (xlrec->flags & VISIBILITYMAP_ALL_VISIBLE)
-			PageSetAllVisible(page);
-		if (xlrec->flags & VISIBILITYMAP_ALL_FROZEN)
-			PageSetAllFrozen(page);
+		PageSetAllVisible(page);
 
 		MarkBufferDirty(buffer);
 	}
