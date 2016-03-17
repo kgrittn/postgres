@@ -94,6 +94,7 @@ static int	pthread_join(pthread_t th, void **thread_return);
 
 int			nxacts = 0;			/* number of transactions per client */
 int			duration = 0;		/* duration in seconds */
+int64		end_time = 0;		/* when to stop in micro seconds, under -T */
 
 /*
  * scaling factor. for example, scale = 10 will make 1000000 tuples in
@@ -229,9 +230,9 @@ typedef struct
 	int			id;				/* client No. */
 	int			state;			/* state No. */
 	bool		listen;			/* whether an async query has been sent */
-	bool		is_throttled;	/* whether transaction throttling is done */
 	bool		sleeping;		/* whether the client is napping */
 	bool		throttling;		/* whether nap is for throttling */
+	bool		is_throttled;	/* whether transaction throttling is done */
 	Variable   *variables;		/* array of variable definitions */
 	int			nvariables;
 	int64		txn_scheduled;	/* scheduled start time of transaction (usec) */
@@ -534,7 +535,7 @@ getExponentialRand(TState *thread, int64 min, int64 max, double parameter)
 	uniform = 1.0 - pg_erand48(thread->random_state);
 
 	/*
-	 * inner expresion in (cut, 1] (if parameter > 0), rand in [0, 1)
+	 * inner expression in (cut, 1] (if parameter > 0), rand in [0, 1)
 	 */
 	Assert((1.0 - cut) != 0.0);
 	rand = -log(cut + (1.0 - cut) * uniform) / parameter;
@@ -1362,6 +1363,10 @@ top:
 		thread->throttle_trigger += wait;
 		st->txn_scheduled = thread->throttle_trigger;
 
+		/* stop client if next transaction is beyond pgbench end of execution */
+		if (duration > 0 && st->txn_scheduled > end_time)
+			return clientDone(st, true);
+
 		/*
 		 * If this --latency-limit is used, and this slot is already late so
 		 * that the transaction will miss the latency limit even if it
@@ -1517,6 +1522,13 @@ top:
 		}
 		INSTR_TIME_SET_CURRENT(end);
 		INSTR_TIME_ACCUM_DIFF(thread->conn_time, end, start);
+
+		/* Reset session-local state */
+		st->listen = false;
+		st->sleeping = false;
+		st->throttling = false;
+		st->is_throttled = false;
+		memset(st->prepared, 0, sizeof(st->prepared));
 	}
 
 	/*
@@ -3582,6 +3594,11 @@ main(int argc, char **argv)
 
 		INSTR_TIME_SET_CURRENT(thread->start_time);
 
+		/* compute when to stop */
+		if (duration > 0)
+			end_time = INSTR_TIME_GET_MICROSEC(thread->start_time) +
+				(int64) 1000000 * duration;
+
 		/* the first thread (i = 0) is executed by main thread */
 		if (i > 0)
 		{
@@ -3600,6 +3617,10 @@ main(int argc, char **argv)
 	}
 #else
 	INSTR_TIME_SET_CURRENT(threads[0].start_time);
+	/* compute when to stop */
+	if (duration > 0)
+		end_time = INSTR_TIME_GET_MICROSEC(threads[0].start_time) +
+			(int64) 1000000 * duration;
 	threads[0].thread = INVALID_THREAD;
 #endif   /* ENABLE_THREAD_SAFETY */
 
@@ -3797,7 +3818,7 @@ threadRun(void *arg)
 			sock = PQsocket(st->con);
 			if (sock < 0)
 			{
-				fprintf(stderr, "bad socket: %s", PQerrorMessage(st->con));
+				fprintf(stderr, "invalid socket: %s", PQerrorMessage(st->con));
 				goto done;
 			}
 
@@ -3867,7 +3888,8 @@ threadRun(void *arg)
 
 				if (sock < 0)
 				{
-					fprintf(stderr, "bad socket: %s", PQerrorMessage(st->con));
+					fprintf(stderr, "invalid socket: %s",
+							PQerrorMessage(st->con));
 					goto done;
 				}
 				if (FD_ISSET(sock, &input_mask) ||

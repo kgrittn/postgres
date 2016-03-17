@@ -101,34 +101,6 @@ tlist_member_match_var(Var *var, List *targetlist)
 }
 
 /*
- * flatten_tlist
- *	  Create a target list that only contains unique variables.
- *
- * Aggrefs and PlaceHolderVars in the input are treated according to
- * aggbehavior and phbehavior, for which see pull_var_clause().
- *
- * 'tlist' is the current target list
- *
- * Returns the "flattened" new target list.
- *
- * The result is entirely new structure sharing no nodes with the original.
- * Copying the Var nodes is probably overkill, but be safe for now.
- */
-List *
-flatten_tlist(List *tlist, PVCAggregateBehavior aggbehavior,
-			  PVCPlaceHolderBehavior phbehavior)
-{
-	List	   *vlist = pull_var_clause((Node *) tlist,
-										aggbehavior,
-										phbehavior);
-	List	   *new_tlist;
-
-	new_tlist = add_to_flat_tlist(NIL, vlist);
-	list_free(vlist);
-	return new_tlist;
-}
-
-/*
  * add_to_flat_tlist
  *		Add more items to a flattened tlist (if they're not already in it)
  *
@@ -445,6 +417,26 @@ get_sortgroupref_clause(Index sortref, List *clauses)
 }
 
 /*
+ * get_sortgroupref_clause_noerr
+ *		As above, but return NULL rather than throwing an error if not found.
+ */
+SortGroupClause *
+get_sortgroupref_clause_noerr(Index sortref, List *clauses)
+{
+	ListCell   *l;
+
+	foreach(l, clauses)
+	{
+		SortGroupClause *cl = (SortGroupClause *) lfirst(l);
+
+		if (cl->tleSortGroupRef == sortref)
+			return cl;
+	}
+
+	return NULL;
+}
+
+/*
  * extract_grouping_ops - make an array of the equality operator OIDs
  *		for a SortGroupClause list
  */
@@ -554,7 +546,7 @@ grouping_is_hashable(List *groupClause)
 PathTarget *
 make_pathtarget_from_tlist(List *tlist)
 {
-	PathTarget *target = (PathTarget *) palloc0(sizeof(PathTarget));
+	PathTarget *target = makeNode(PathTarget);
 	int			i;
 	ListCell   *lc;
 
@@ -601,6 +593,112 @@ make_tlist_from_pathtarget(PathTarget *target)
 	}
 
 	return tlist;
+}
+
+/*
+ * copy_pathtarget
+ *	  Copy a PathTarget.
+ *
+ * The new PathTarget has its own List cells, but shares the underlying
+ * target expression trees with the old one.  We duplicate the List cells
+ * so that items can be added to one target without damaging the other.
+ */
+PathTarget *
+copy_pathtarget(PathTarget *src)
+{
+	PathTarget *dst = makeNode(PathTarget);
+
+	/* Copy scalar fields */
+	memcpy(dst, src, sizeof(PathTarget));
+	/* Shallow-copy the expression list */
+	dst->exprs = list_copy(src->exprs);
+	/* Duplicate sortgrouprefs if any (if not, the memcpy handled this) */
+	if (src->sortgrouprefs)
+	{
+		Size		nbytes = list_length(src->exprs) * sizeof(Index);
+
+		dst->sortgrouprefs = (Index *) palloc(nbytes);
+		memcpy(dst->sortgrouprefs, src->sortgrouprefs, nbytes);
+	}
+	return dst;
+}
+
+/*
+ * create_empty_pathtarget
+ *	  Create an empty (zero columns, zero cost) PathTarget.
+ */
+PathTarget *
+create_empty_pathtarget(void)
+{
+	/* This is easy, but we don't want callers to hard-wire this ... */
+	return makeNode(PathTarget);
+}
+
+/*
+ * add_column_to_pathtarget
+ *		Append a target column to the PathTarget.
+ *
+ * As with make_pathtarget_from_tlist, we leave it to the caller to update
+ * the cost and width fields.
+ */
+void
+add_column_to_pathtarget(PathTarget *target, Expr *expr, Index sortgroupref)
+{
+	/* Updating the exprs list is easy ... */
+	target->exprs = lappend(target->exprs, expr);
+	/* ... the sortgroupref data, a bit less so */
+	if (target->sortgrouprefs)
+	{
+		int			nexprs = list_length(target->exprs);
+
+		/* This might look inefficient, but actually it's usually cheap */
+		target->sortgrouprefs = (Index *)
+			repalloc(target->sortgrouprefs, nexprs * sizeof(Index));
+		target->sortgrouprefs[nexprs - 1] = sortgroupref;
+	}
+	else if (sortgroupref)
+	{
+		/* Adding sortgroupref labeling to a previously unlabeled target */
+		int			nexprs = list_length(target->exprs);
+
+		target->sortgrouprefs = (Index *) palloc0(nexprs * sizeof(Index));
+		target->sortgrouprefs[nexprs - 1] = sortgroupref;
+	}
+}
+
+/*
+ * add_new_column_to_pathtarget
+ *		Append a target column to the PathTarget, but only if it's not
+ *		equal() to any pre-existing target expression.
+ *
+ * The caller cannot specify a sortgroupref, since it would be unclear how
+ * to merge that with a pre-existing column.
+ *
+ * As with make_pathtarget_from_tlist, we leave it to the caller to update
+ * the cost and width fields.
+ */
+void
+add_new_column_to_pathtarget(PathTarget *target, Expr *expr)
+{
+	if (!list_member(target->exprs, expr))
+		add_column_to_pathtarget(target, expr, 0);
+}
+
+/*
+ * add_new_columns_to_pathtarget
+ *		Apply add_new_column_to_pathtarget() for each element of the list.
+ */
+void
+add_new_columns_to_pathtarget(PathTarget *target, List *exprs)
+{
+	ListCell   *lc;
+
+	foreach(lc, exprs)
+	{
+		Expr	   *expr = (Expr *) lfirst(lc);
+
+		add_new_column_to_pathtarget(target, expr);
+	}
 }
 
 /*
