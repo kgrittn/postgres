@@ -1941,148 +1941,7 @@ top:
 			fprintf(stderr, "\n");
 		}
 
-		/*
-		 * Note: this section could be removed, as the same functionnality
-		 * is available through \set xxx random_gaussian(...)
-		 */
-		if (pg_strcasecmp(argv[0], "setrandom") == 0)
-		{
-			char	   *var;
-			int64		min,
-						max;
-			double		parameter = 0;
-			char		res[64];
-
-			if (*argv[2] == ':')
-			{
-				if ((var = getVariable(st, argv[2] + 1)) == NULL)
-				{
-					fprintf(stderr, "%s: undefined variable \"%s\"\n",
-							argv[0], argv[2]);
-					st->ecnt++;
-					return true;
-				}
-				min = strtoint64(var);
-			}
-			else
-				min = strtoint64(argv[2]);
-
-			if (*argv[3] == ':')
-			{
-				if ((var = getVariable(st, argv[3] + 1)) == NULL)
-				{
-					fprintf(stderr, "%s: undefined variable \"%s\"\n",
-							argv[0], argv[3]);
-					st->ecnt++;
-					return true;
-				}
-				max = strtoint64(var);
-			}
-			else
-				max = strtoint64(argv[3]);
-
-			if (max < min)
-			{
-				fprintf(stderr, "%s: \\setrandom maximum is less than minimum\n",
-						argv[0]);
-				st->ecnt++;
-				return true;
-			}
-
-			/*
-			 * Generate random number functions need to be able to subtract
-			 * max from min and add one to the result without overflowing.
-			 * Since we know max > min, we can detect overflow just by
-			 * checking for a negative result. But we must check both that the
-			 * subtraction doesn't overflow, and that adding one to the result
-			 * doesn't overflow either.
-			 */
-			if (max - min < 0 || (max - min) + 1 < 0)
-			{
-				fprintf(stderr, "%s: \\setrandom range is too large\n",
-						argv[0]);
-				st->ecnt++;
-				return true;
-			}
-
-			if (argc == 4 ||	/* uniform without or with "uniform" keyword */
-				(argc == 5 && pg_strcasecmp(argv[4], "uniform") == 0))
-			{
-#ifdef DEBUG
-				printf("min: " INT64_FORMAT " max: " INT64_FORMAT " random: " INT64_FORMAT "\n", min, max, getrand(thread, min, max));
-#endif
-				snprintf(res, sizeof(res), INT64_FORMAT, getrand(thread, min, max));
-			}
-			else if (argc == 6 &&
-					 ((pg_strcasecmp(argv[4], "gaussian") == 0) ||
-					  (pg_strcasecmp(argv[4], "exponential") == 0)))
-			{
-				if (*argv[5] == ':')
-				{
-					if ((var = getVariable(st, argv[5] + 1)) == NULL)
-					{
-						fprintf(stderr, "%s: invalid parameter: \"%s\"\n",
-								argv[0], argv[5]);
-						st->ecnt++;
-						return true;
-					}
-					parameter = strtod(var, NULL);
-				}
-				else
-					parameter = strtod(argv[5], NULL);
-
-				if (pg_strcasecmp(argv[4], "gaussian") == 0)
-				{
-					if (parameter < MIN_GAUSSIAN_PARAM)
-					{
-						fprintf(stderr, "gaussian parameter must be at least %f (not \"%s\")\n", MIN_GAUSSIAN_PARAM, argv[5]);
-						st->ecnt++;
-						return true;
-					}
-#ifdef DEBUG
-					printf("min: " INT64_FORMAT " max: " INT64_FORMAT " random: " INT64_FORMAT "\n",
-						   min, max,
-						   getGaussianRand(thread, min, max, parameter));
-#endif
-					snprintf(res, sizeof(res), INT64_FORMAT,
-							 getGaussianRand(thread, min, max, parameter));
-				}
-				else if (pg_strcasecmp(argv[4], "exponential") == 0)
-				{
-					if (parameter <= 0.0)
-					{
-						fprintf(stderr,
-								"exponential parameter must be greater than zero (not \"%s\")\n",
-								argv[5]);
-						st->ecnt++;
-						return true;
-					}
-#ifdef DEBUG
-					printf("min: " INT64_FORMAT " max: " INT64_FORMAT " random: " INT64_FORMAT "\n",
-						   min, max,
-						   getExponentialRand(thread, min, max, parameter));
-#endif
-					snprintf(res, sizeof(res), INT64_FORMAT,
-							 getExponentialRand(thread, min, max, parameter));
-				}
-			}
-			else	/* this means an error somewhere in the parsing phase... */
-			{
-				fprintf(stderr, "%s: invalid arguments for \\setrandom\n",
-						argv[0]);
-				st->ecnt++;
-				return true;
-			}
-
-			if (!putVariable(st, argv[0], argv[1], res))
-			{
-				st->ecnt++;
-				return true;
-			}
-
-			st->listen = true;
-		}
-		else if (pg_strcasecmp(argv[0], "set") == 0)
+		if (pg_strcasecmp(argv[0], "set") == 0)
 		{
 			char		res[64];
 			PgBenchExpr *expr = commands[st->state]->expr;
@@ -2880,43 +2739,7 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 												  start_offset,
 												  end_offset);
 
-	if (pg_strcasecmp(my_command->argv[0], "setrandom") == 0)
-	{
-		/*--------
-		 * parsing:
-		 *	 \setrandom variable min max [uniform]
-		 *	 \setrandom variable min max (gaussian|exponential) parameter
-		 */
-
-		if (my_command->argc < 4)
-			syntax_error(source, lineno, my_command->line, my_command->argv[0],
-						 "missing arguments", NULL, -1);
-
-		if (my_command->argc == 4 ||	/* uniform without/with "uniform"
-										 * keyword */
-			(my_command->argc == 5 &&
-			 pg_strcasecmp(my_command->argv[4], "uniform") == 0))
-		{
-			/* nothing to do */
-		}
-		else if (				/* argc >= 5 */
-				 (pg_strcasecmp(my_command->argv[4], "gaussian") == 0) ||
-				 (pg_strcasecmp(my_command->argv[4], "exponential") == 0))
-		{
-			if (my_command->argc < 6)
-				syntax_error(source, lineno, my_command->line, my_command->argv[0],
-							 "missing parameter", NULL, -1);
-			else if (my_command->argc > 6)
-				syntax_error(source, lineno, my_command->line, my_command->argv[0],
-							 "too many arguments", NULL,
-							 offsets[6] - start_offset);
-		}
-		else	/* unrecognized distribution argument */
-			syntax_error(source, lineno, my_command->line, my_command->argv[0],
-						 "unexpected argument", my_command->argv[4],
-						 offsets[4] - start_offset);
-	}
-	else if (pg_strcasecmp(my_command->argv[0], "sleep") == 0)
+	if (pg_strcasecmp(my_command->argv[0], "sleep") == 0)
 	{
 		if (my_command->argc < 2)
 			syntax_error(source, lineno, my_command->line, my_command->argv[0],
@@ -3231,10 +3054,10 @@ parseScriptWeight(const char *option, char **script)
 			fprintf(stderr, "invalid weight specification: %s\n", sep);
 			exit(1);
 		}
-		if (wtmp > INT_MAX || wtmp <= 0)
+		if (wtmp > INT_MAX || wtmp < 0)
 		{
 			fprintf(stderr,
-			"weight specification out of range (1 .. %u): " INT64_FORMAT "\n",
+			"weight specification out of range (0 .. %u): " INT64_FORMAT "\n",
 					INT_MAX, (int64) wtmp);
 			exit(1);
 		}
@@ -3358,10 +3181,11 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 		{
 			if (num_scripts > 1)
 				printf("SQL script %d: %s\n"
-					   " - weight = %d\n"
+					   " - weight = %d (targets %.1f%% of total)\n"
 					   " - " INT64_FORMAT " transactions (%.1f%% of total, tps = %f)\n",
 					   i + 1, sql_script[i].desc,
 					   sql_script[i].weight,
+					   100.0 * sql_script[i].weight / total_weight,
 					   sql_script[i].stats.cnt,
 					   100.0 * sql_script[i].stats.cnt / total->cnt,
 					   sql_script[i].stats.cnt / time_include);
@@ -3804,6 +3628,12 @@ main(int argc, char **argv)
 	for (i = 0; i < num_scripts; i++)
 		/* cannot overflow: weight is 32b, total_weight 64b */
 		total_weight += sql_script[i].weight;
+
+	if (total_weight == 0 && !is_init_mode)
+	{
+		fprintf(stderr, "total script weight must not be zero\n");
+		exit(1);
+	}
 
 	/* show per script stats if several scripts are used */
 	if (num_scripts > 1)
