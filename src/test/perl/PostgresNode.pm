@@ -404,7 +404,7 @@ sub init
 
 	if ($params{allows_streaming})
 	{
-		print $conf "wal_level = hot_standby\n";
+		print $conf "wal_level = replica\n";
 		print $conf "max_wal_senders = 5\n";
 		print $conf "wal_keep_segments = 20\n";
 		print $conf "max_wal_size = 128MB\n";
@@ -1031,6 +1031,8 @@ sub psql
 	$timeout =
 	  IPC::Run::timeout($params{timeout}, exception => $timeout_exception)
 	  if (defined($params{timeout}));
+
+	${$params{timed_out}} = 0 if defined $params{timed_out};
 
 	# IPC::Run would otherwise append to existing contents:
 	$$stdout = "" if ref($stdout);
