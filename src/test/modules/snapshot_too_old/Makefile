@@ -28,7 +28,7 @@ check: isolationcheck
 submake-isolation:
 	$(MAKE) -C $(top_builddir)/src/test/isolation all
 
-submake-test_decoding:
+submake-test_snapshot_too_old:
 	$(MAKE) -C $(top_builddir)/src/test/modules/snapshot_too_old
 
 isolationcheck: | submake-isolation temp-install
