@@ -40,7 +40,6 @@
 #include "parser/parse_relation.h"
 #include "nodes/makefuncs.h"
 #include "rewrite/rewriteHandler.h"
-#include "rewrite/rowsecurity.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -49,6 +48,7 @@
 #include "utils/memutils.h"
 #include "utils/portal.h"
 #include "utils/rel.h"
+#include "utils/rls.h"
 #include "utils/snapmgr.h"
 
 
@@ -163,6 +163,7 @@ typedef struct CopyStateData
 	int		   *defmap;			/* array of default att numbers */
 	ExprState **defexprs;		/* array of default att expressions */
 	bool		volatile_defexprs;		/* is any of defexprs volatile? */
+	List	   *range_table;
 
 	/*
 	 * These variables are used to reduce overhead in textual COPY FROM.
@@ -789,6 +790,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	Relation	rel;
 	Oid			relid;
 	Node	   *query = NULL;
+	List	   *range_table = NIL;
 
 	/* Disallow COPY to/from file or program except to superusers. */
 	if (!pipe && !superuser())
@@ -811,9 +813,9 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	{
 		TupleDesc	tupDesc;
 		AclMode		required_access = (is_from ? ACL_INSERT : ACL_SELECT);
-		RangeTblEntry *rte;
 		List	   *attnums;
 		ListCell   *cur;
+		RangeTblEntry *rte;
 
 		Assert(!stmt->query);
 
@@ -828,6 +830,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		rte->relid = RelationGetRelid(rel);
 		rte->relkind = rel->rd_rel->relkind;
 		rte->requiredPerms = required_access;
+		range_table = list_make1(rte);
 
 		tupDesc = RelationGetDescr(rel);
 		attnums = CopyGetAttnums(tupDesc, rel, stmt->attlist);
@@ -841,7 +844,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 			else
 				rte->selectedCols = bms_add_member(rte->selectedCols, attno);
 		}
-		ExecCheckRTPerms(list_make1(rte), true);
+		ExecCheckRTPerms(range_table, true);
 
 		/*
 		 * Permission check for row security policies.
@@ -857,7 +860,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		 * If RLS is not enabled for this, then just fall through to the
 		 * normal non-filtering relation handling.
 		 */
-		if (check_enable_rls(rte->relid, InvalidOid) == RLS_ENABLED)
+		if (check_enable_rls(rte->relid, InvalidOid, false) == RLS_ENABLED)
 		{
 			SelectStmt *select;
 			ColumnRef  *cr;
@@ -920,6 +923,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 
 		cstate = BeginCopyFrom(rel, stmt->filename, stmt->is_program,
 							   stmt->attlist, stmt->options);
+		cstate->range_table = range_table;
 		*processed = CopyFrom(cstate);	/* copy from file to database */
 		EndCopyFrom(cstate);
 	}
@@ -2277,6 +2281,7 @@ CopyFrom(CopyState cstate)
 	estate->es_result_relations = resultRelInfo;
 	estate->es_num_result_relations = 1;
 	estate->es_result_relation_info = resultRelInfo;
+	estate->es_range_table = cstate->range_table;
 
 	/* Set up a tuple slot too */
 	myslot = ExecInitExtraTupleSlot(estate);
