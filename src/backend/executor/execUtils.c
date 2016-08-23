@@ -1247,6 +1247,7 @@ retry:
 								ForwardScanDirection)) != NULL)
 	{
 		TransactionId xwait;
+		ItemPointerData ctid_wait;
 		Datum		existing_values[INDEX_MAX_KEYS];
 		bool		existing_isnull[INDEX_MAX_KEYS];
 		char	   *error_new;
@@ -1308,8 +1309,9 @@ retry:
 
 		if (TransactionIdIsValid(xwait))
 		{
+			ctid_wait = tup->t_data->t_ctid;
 			index_endscan(index_scan);
-			XactLockTableWait(xwait, heap, &tup->t_data->t_ctid,
+			XactLockTableWait(xwait, heap, &ctid_wait,
 							  XLTW_RecheckExclusionConstr);
 			goto retry;
 		}
