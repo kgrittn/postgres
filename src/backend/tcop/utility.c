@@ -781,7 +781,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsGrantObjectType(stmt->objtype))
 					ProcessUtilitySlow(parsetree, queryString,
-									   context, params,
+									   context, params, tsrcache,
 									   dest, completionTag);
 				else
 					ExecuteGrantStmt((GrantStmt *) parsetree);
@@ -846,7 +846,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objtype))
 					ProcessUtilitySlow(parsetree, queryString,
-									   context, params,
+									   context, params, tsrcache,
 									   dest, completionTag);
 				else
 					CommentObject((CommentStmt *) parsetree);
@@ -859,7 +859,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objtype))
 					ProcessUtilitySlow(parsetree, queryString,
-									   context, params,
+									   context, params, tsrcache,
 									   dest, completionTag);
 				else
 					ExecSecLabelStmt(stmt);
