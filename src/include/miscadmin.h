@@ -271,6 +271,7 @@ extern void check_stack_depth(void);
 
 /* in tcop/utility.c */
 extern void PreventCommandIfReadOnly(const char *cmdname);
+extern void PreventCommandIfParallelMode(const char *cmdname);
 extern void PreventCommandDuringRecovery(const char *cmdname);
 
 /* in utils/misc/guc.c */
@@ -295,7 +296,7 @@ extern void InitStandaloneProcess(const char *argv0);
 
 extern void SetDatabasePath(const char *path);
 
-extern char *GetUserNameFromId(Oid roleid);
+extern char *GetUserNameFromId(Oid roleid, bool noerr);
 extern Oid	GetUserId(void);
 extern Oid	GetOuterUserId(void);
 extern Oid	GetSessionUserId(void);

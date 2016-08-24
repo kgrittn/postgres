@@ -134,14 +134,6 @@ bool		criticalSharedRelcachesBuilt = false;
 static long relcacheInvalsReceived = 0L;
 
 /*
- * This list remembers the OIDs of the non-shared relations cached in the
- * database's local relcache init file.  Note that there is no corresponding
- * list for the shared relcache init file, for reasons explained in the
- * comments for RelationCacheInitFileRemove.
- */
-static List *initFileRelationIds = NIL;
-
-/*
  * eoxact_list[] stores the OIDs of relations that (might) need AtEOXact
  * cleanup work.  This list intentionally has limited size; if it overflows,
  * we fall back to scanning the whole hashtable.  There is no value in a very
@@ -873,7 +865,7 @@ equalPolicy(RowSecurityPolicy *policy1, RowSecurityPolicy *policy2)
 			return false;
 		if (policy1->hassublinks != policy2->hassublinks)
 			return false;
-		if (strcmp(policy1->policy_name,policy2->policy_name) != 0)
+		if (strcmp(policy1->policy_name, policy2->policy_name) != 0)
 			return false;
 		if (ARR_DIMS(policy1->roles)[0] != ARR_DIMS(policy2->roles)[0])
 			return false;
@@ -887,7 +879,7 @@ equalPolicy(RowSecurityPolicy *policy1, RowSecurityPolicy *policy2)
 				return false;
 		}
 
-		if (!equal(policy1->qual, policy1->qual))
+		if (!equal(policy1->qual, policy2->qual))
 			return false;
 		if (!equal(policy1->with_check_qual, policy2->with_check_qual))
 			return false;
@@ -906,8 +898,8 @@ equalPolicy(RowSecurityPolicy *policy1, RowSecurityPolicy *policy2)
 static bool
 equalRSDesc(RowSecurityDesc *rsdesc1, RowSecurityDesc *rsdesc2)
 {
-	ListCell 	*lc,
-				*rc;
+	ListCell   *lc,
+			   *rc;
 
 	if (rsdesc1 == NULL && rsdesc2 == NULL)
 		return true;
@@ -922,10 +914,10 @@ equalRSDesc(RowSecurityDesc *rsdesc1, RowSecurityDesc *rsdesc2)
 	/* RelationBuildRowSecurity should build policies in order */
 	forboth(lc, rsdesc1->policies, rc, rsdesc2->policies)
 	{
-		RowSecurityPolicy	   *l = (RowSecurityPolicy *) lfirst(lc);
-		RowSecurityPolicy	   *r = (RowSecurityPolicy *) lfirst(rc);
+		RowSecurityPolicy *l = (RowSecurityPolicy *) lfirst(lc);
+		RowSecurityPolicy *r = (RowSecurityPolicy *) lfirst(rc);
 
-		if (!equalPolicy(l,r))
+		if (!equalPolicy(l, r))
 			return false;
 	}
 
@@ -3460,7 +3452,7 @@ RelationCacheInitializePhase3(void)
 		{
 			RelationBuildRowSecurity(relation);
 
-			Assert (relation->rd_rsdesc != NULL);
+			Assert(relation->rd_rsdesc != NULL);
 			restart = true;
 		}
 
@@ -3488,9 +3480,6 @@ RelationCacheInitializePhase3(void)
 		 * that the init files will be most useful for future backends.
 		 */
 		InitCatalogCachePhase2();
-
-		/* reset initFileRelationIds list; we'll fill it during write */
-		initFileRelationIds = NIL;
 
 		/* now write the files */
 		write_relcache_init_file(true);
@@ -4915,10 +4904,6 @@ load_relcache_init_file(bool shared)
 	for (relno = 0; relno < num_rels; relno++)
 	{
 		RelationCacheInsert(rels[relno], false);
-		/* also make a list of their OIDs, for RelationIdIsInInitFile */
-		if (!shared)
-			initFileRelationIds = lcons_oid(RelationGetRelid(rels[relno]),
-											initFileRelationIds);
 	}
 
 	pfree(rels);
@@ -4955,8 +4940,14 @@ write_relcache_init_file(bool shared)
 	int			magic;
 	HASH_SEQ_STATUS status;
 	RelIdCacheEnt *idhentry;
-	MemoryContext oldcxt;
 	int			i;
+
+	/*
+	 * If we have already received any relcache inval events, there's no
+	 * chance of succeeding so we may as well skip the whole thing.
+	 */
+	if (relcacheInvalsReceived != 0L)
+		return;
 
 	/*
 	 * We must write a temporary file and rename it into place. Otherwise,
@@ -5017,6 +5008,16 @@ write_relcache_init_file(bool shared)
 		if (relform->relisshared != shared)
 			continue;
 
+		/*
+		 * Ignore if not supposed to be in init file.  We can allow any shared
+		 * relation that's been loaded so far to be in the shared init file,
+		 * but unshared relations must be used for catalog caches.  (Note: if
+		 * you want to change the criterion for rels to be kept in the init
+		 * file, see also inval.c.)
+		 */
+		if (!shared && !RelationSupportsSysCache(RelationGetRelid(rel)))
+			continue;
+
 		/* first write the relcache entry proper */
 		write_item(rel, sizeof(RelationData), fp);
 
@@ -5072,15 +5073,6 @@ write_relcache_init_file(bool shared)
 			write_item(rel->rd_indoption,
 					   relform->relnatts * sizeof(int16),
 					   fp);
-		}
-
-		/* also make a list of their OIDs, for RelationIdIsInInitFile */
-		if (!shared)
-		{
-			oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
-			initFileRelationIds = lcons_oid(RelationGetRelid(rel),
-											initFileRelationIds);
-			MemoryContextSwitchTo(oldcxt);
 		}
 	}
 
@@ -5138,21 +5130,6 @@ write_item(const void *data, Size len, FILE *fp)
 		elog(FATAL, "could not write init file");
 	if (fwrite(data, 1, len, fp) != len)
 		elog(FATAL, "could not write init file");
-}
-
-/*
- * Detect whether a given relation (identified by OID) is one of the ones
- * we store in the local relcache init file.
- *
- * Note that we effectively assume that all backends running in a database
- * would choose to store the same set of relations in the init file;
- * otherwise there are cases where we'd fail to detect the need for an init
- * file invalidation.  This does not seem likely to be a problem in practice.
- */
-bool
-RelationIdIsInInitFile(Oid relationId)
-{
-	return list_member_oid(initFileRelationIds, relationId);
 }
 
 /*

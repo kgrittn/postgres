@@ -36,7 +36,7 @@ extern void SetCancelConn(void);
 extern void ResetCancelConn(void);
 
 extern PGresult *PSQLexec(const char *query);
-extern int PSQLexecWatch(const char *query, const printQueryOpt *opt);
+extern int	PSQLexecWatch(const char *query, const printQueryOpt *opt);
 
 extern bool SendQuery(const char *query);
 
@@ -45,5 +45,7 @@ extern bool standard_strings(void);
 extern const char *session_username(void);
 
 extern void expand_tilde(char **filename);
+
+extern bool recognized_connection_string(const char *connstr);
 
 #endif   /* COMMON_H */

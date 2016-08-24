@@ -24,6 +24,7 @@
 #include "access/xlog_internal.h"
 #include "catalog/catversion.h"
 #include "catalog/pg_control.h"
+#include "common/restricted_token.h"
 #include "getopt_long.h"
 #include "storage/bufpage.h"
 
@@ -102,6 +103,7 @@ main(int argc, char **argv)
 	TimeLineID	endtli;
 	ControlFileData ControlFile_new;
 
+	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_rewind"));
 	progname = get_progname(argv[0]);
 
 	/* Process command-line arguments */
@@ -155,24 +157,39 @@ main(int argc, char **argv)
 	/* No source given? Show usage */
 	if (datadir_source == NULL && connstr_source == NULL)
 	{
-		pg_fatal("no source specified (--source-pgdata or --source-server)\n");
-		pg_fatal("Try \"%s --help\" for more information.\n", progname);
+		fprintf(stderr, _("no source specified (--source-pgdata or --source-server)\n"));
+		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 		exit(1);
 	}
 
 	if (datadir_target == NULL)
 	{
-		pg_fatal("no target data directory specified (--target-pgdata)\n");
+		fprintf(stderr, _("no target data directory specified (--target-pgdata)\n"));
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 		exit(1);
 	}
 
 	if (argc != optind)
 	{
-		pg_fatal("%s: invalid arguments\n", progname);
+		fprintf(stderr, _("invalid arguments\n"));
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 		exit(1);
 	}
+
+	/*
+	 * Don't allow pg_rewind to be run as root, to avoid overwriting the
+	 * ownership of files in the data directory. We need only check for root
+	 * -- any other user won't have sufficient permissions to modify files in
+	 * the data directory.
+	 */
+#ifndef WIN32
+	if (geteuid() == 0)
+		pg_fatal("cannot be executed by \"root\"\n"
+				 "You must run %s as the PostgreSQL superuser.\n",
+				 progname);
+#endif
+
+	get_restricted_token(progname);
 
 	/* Connect to remote server */
 	if (connstr_source)
@@ -246,13 +263,13 @@ main(int argc, char **argv)
 		   chkpttli);
 
 	/*
-	 * Build the filemap, by comparing the remote and local data directories.
+	 * Build the filemap, by comparing the source and target data directories.
 	 */
 	filemap_create();
 	pg_log(PG_PROGRESS, "reading source file list\n");
-	fetchRemoteFileList();
+	fetchSourceFileList();
 	pg_log(PG_PROGRESS, "reading target file list\n");
-	traverse_datadir(datadir_target, &process_local_file);
+	traverse_datadir(datadir_target, &process_target_file);
 
 	/*
 	 * Read the target WAL from last checkpoint before the point of fork, to
@@ -473,15 +490,15 @@ createBackupLabel(XLogRecPtr startpoint, TimeLineID starttli, XLogRecPtr checkpo
 				   "BACKUP METHOD: pg_rewind\n"
 				   "BACKUP FROM: standby\n"
 				   "START TIME: %s\n",
-				   /* omit LABEL: line */
-				   (uint32) (startpoint >> 32), (uint32) startpoint, xlogfilename,
+	/* omit LABEL: line */
+			  (uint32) (startpoint >> 32), (uint32) startpoint, xlogfilename,
 				   (uint32) (checkpointloc >> 32), (uint32) checkpointloc,
 				   strfbuf);
 	if (len >= sizeof(buf))
-		pg_fatal("backup label buffer too small\n"); /* shouldn't happen */
+		pg_fatal("backup label buffer too small\n");	/* shouldn't happen */
 
 	/* TODO: move old file out of the way, if any. */
-	open_target_file("backup_label", true); /* BACKUP_LABEL_FILE */
+	open_target_file("backup_label", true);		/* BACKUP_LABEL_FILE */
 	write_target_range(buf, 0, len);
 }
 
@@ -491,7 +508,7 @@ createBackupLabel(XLogRecPtr startpoint, TimeLineID starttli, XLogRecPtr checkpo
 static void
 checkControlFile(ControlFileData *ControlFile)
 {
-	pg_crc32	crc;
+	pg_crc32c	crc;
 
 	/* Calculate CRC */
 	INIT_CRC32C(crc);
