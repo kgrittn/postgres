@@ -232,7 +232,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		AlterEventTrigStmt
 		AlterDatabaseStmt AlterDatabaseSetStmt AlterDomainStmt AlterEnumStmt
 		AlterFdwStmt AlterForeignServerStmt AlterGroupStmt
-		AlterObjectSchemaStmt AlterOwnerStmt AlterSeqStmt AlterSystemStmt AlterTableStmt
+		AlterObjectSchemaStmt AlterOwnerStmt AlterOperatorStmt AlterSeqStmt AlterSystemStmt AlterTableStmt
 		AlterTblSpcStmt AlterExtensionStmt AlterExtensionContentsStmt AlterForeignTableStmt
 		AlterCompositeTypeStmt AlterUserStmt AlterUserMappingStmt AlterUserSetStmt
 		AlterRoleStmt AlterRoleSetStmt AlterPolicyStmt
@@ -362,7 +362,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				any_operator expr_list attrs
 				target_list opt_target_list insert_column_list set_target_list
 				set_clause_list set_clause multiple_set_clause
-				ctext_expr_list ctext_row def_list indirection opt_indirection
+				ctext_expr_list ctext_row def_list operator_def_list indirection opt_indirection
 				reloption_list group_clause TriggerFuncArgs select_limit
 				opt_select_limit opclass_item_list opclass_drop_list
 				opclass_purpose opt_opfamily transaction_mode_list_or_empty
@@ -436,7 +436,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <node>	TableElement TypedTableElement ConstraintElem TableFuncElement
 %type <node>	columnDef columnOptions
-%type <defelt>	def_elem reloption_elem old_aggr_elem
+%type <defelt>	def_elem reloption_elem old_aggr_elem operator_def_elem
 %type <node>	def_arg columnElem where_clause where_or_current_clause
 				a_expr b_expr c_expr AexprConst indirection_el
 				columnref in_expr having_clause func_table array_expr
@@ -461,8 +461,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <jexpr>	joined_table
 %type <range>	relation_expr
 %type <range>	relation_expr_opt_alias
+%type <node>	tablesample_clause opt_repeatable_clause
 %type <target>	target_el single_set_clause set_target insert_column_item
-%type <node>	relation_expr_tablesample tablesample_clause opt_repeatable_clause
 
 %type <str>		generic_option_name
 %type <node>	generic_option_arg
@@ -773,6 +773,7 @@ stmt :
 			| AlterGroupStmt
 			| AlterObjectSchemaStmt
 			| AlterOwnerStmt
+			| AlterOperatorStmt
 			| AlterPolicyStmt
 			| AlterSeqStmt
 			| AlterSystemStmt
@@ -1945,6 +1946,16 @@ alter_table_cmd:
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_AddColumn;
 					n->def = $2;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
+			/* ALTER TABLE <name> ADD IF NOT EXISTS <coldef> */
+			| ADD_P IF_P NOT EXISTS columnDef
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_AddColumn;
+					n->def = $5;
+					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
 			/* ALTER TABLE <name> ADD COLUMN <coldef> */
@@ -1953,6 +1964,16 @@ alter_table_cmd:
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_AddColumn;
 					n->def = $3;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
+			/* ALTER TABLE <name> ADD COLUMN IF NOT EXISTS <coldef> */
+			| ADD_P COLUMN IF_P NOT EXISTS columnDef
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_AddColumn;
+					n->def = $6;
+					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
 			/* ALTER TABLE <name> ALTER [COLUMN] <colname> {SET DEFAULT <expr>|DROP DEFAULT} */
@@ -8247,6 +8268,33 @@ AlterObjectSchemaStmt:
 
 /*****************************************************************************
  *
+ * ALTER OPERATOR name SET define
+ *
+ *****************************************************************************/
+
+AlterOperatorStmt:
+			ALTER OPERATOR any_operator oper_argtypes SET '(' operator_def_list ')'
+				{
+					AlterOperatorStmt *n = makeNode(AlterOperatorStmt);
+					n->opername = $3;
+					n->operargs = $4;
+					n->options = $7;
+					$$ = (Node *)n;
+				}
+		;
+
+operator_def_list:	operator_def_elem								{ $$ = list_make1($1); }
+			| operator_def_list ',' operator_def_elem				{ $$ = lappend($1, $3); }
+		;
+
+operator_def_elem: ColLabel '=' NONE
+						{ $$ = makeDefElem($1, NULL); }
+				   | ColLabel '=' def_arg
+						{ $$ = makeDefElem($1, (Node *) $3); }
+		;
+
+/*****************************************************************************
+ *
  * ALTER THING name OWNER TO newname
  *
  *****************************************************************************/
@@ -10512,9 +10560,13 @@ table_ref:	relation_expr opt_alias_clause
 					$1->alias = $2;
 					$$ = (Node *) $1;
 				}
-			| relation_expr_tablesample
+			| relation_expr opt_alias_clause tablesample_clause
 				{
-					$$ = (Node *) $1;
+					RangeTableSample *n = (RangeTableSample *) $3;
+					$1->alias = $2;
+					/* relation_expr goes inside the RangeTableSample node */
+					n->relation = (Node *) $1;
+					$$ = (Node *) n;
 				}
 			| func_table func_alias_clause
 				{
@@ -10841,23 +10893,18 @@ relation_expr_opt_alias: relation_expr					%prec UMINUS
 				}
 		;
 
-
-relation_expr_tablesample: relation_expr opt_alias_clause tablesample_clause
-				{
-					RangeTableSample *n = (RangeTableSample *) $3;
-					n->relation = $1;
-					n->relation->alias = $2;
-					$$ = (Node *) n;
-				}
-		;
-
+/*
+ * TABLESAMPLE decoration in a FROM item
+ */
 tablesample_clause:
-			TABLESAMPLE ColId '(' expr_list ')' opt_repeatable_clause
+			TABLESAMPLE func_name '(' expr_list ')' opt_repeatable_clause
 				{
 					RangeTableSample *n = makeNode(RangeTableSample);
+					/* n->relation will be filled in later */
 					n->method = $2;
 					n->args = $4;
 					n->repeatable = $6;
+					n->location = @2;
 					$$ = (Node *) n;
 				}
 		;

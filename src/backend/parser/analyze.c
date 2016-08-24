@@ -893,6 +893,12 @@ transformOnConflictClause(ParseState *pstate,
 	/* Process DO UPDATE */
 	if (onConflictClause->action == ONCONFLICT_UPDATE)
 	{
+		/*
+		 * All INSERT expressions have been parsed, get ready for potentially
+		 * existing SET statements that need to be processed like an UPDATE.
+		 */
+		pstate->p_is_insert = false;
+
 		exclRte = addRangeTableEntryForRelation(pstate,
 												pstate->p_target_relation,
 												makeAlias("excluded", NIL),
@@ -2001,7 +2007,7 @@ transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 	Node	   *qual;
 
 	qry->commandType = CMD_UPDATE;
-	pstate->p_is_update = true;
+	pstate->p_is_insert = false;
 
 	/* process the WITH clause independently of all else */
 	if (stmt->withClause)

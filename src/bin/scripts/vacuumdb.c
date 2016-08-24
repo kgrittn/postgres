@@ -392,10 +392,10 @@ vacuum_one_database(const char *dbname, vacuumingOptions *vacopts,
 		ntups = PQntuples(res);
 		for (i = 0; i < ntups; i++)
 		{
-			appendPQExpBuffer(&buf, "%s",
-							  fmtQualifiedId(PQserverVersion(conn),
-											 PQgetvalue(res, i, 1),
-											 PQgetvalue(res, i, 0)));
+			appendPQExpBufferStr(&buf,
+								 fmtQualifiedId(PQserverVersion(conn),
+												PQgetvalue(res, i, 1),
+												PQgetvalue(res, i, 0)));
 
 			simple_string_list_append(&dbtables, buf.data);
 			resetPQExpBuffer(&buf);
@@ -412,6 +412,7 @@ vacuum_one_database(const char *dbname, vacuumingOptions *vacopts,
 			concurrentCons = ntups;
 		if (concurrentCons <= 1)
 			parallel = false;
+		PQclear(res);
 	}
 
 	/*
@@ -643,7 +644,7 @@ prepare_vacuum_command(PQExpBuffer sql, PGconn *conn, vacuumingOptions *vacopts,
 				sep = comma;
 			}
 			if (sep != paren)
-				appendPQExpBufferStr(sql, ")");
+				appendPQExpBufferChar(sql, ')');
 		}
 		else
 		{

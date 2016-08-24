@@ -106,7 +106,7 @@ test_rls_hooks_permissive(CmdType cmdtype, Relation relation)
 	e = (Node *) makeSimpleA_Expr(AEXPR_OP, "=", (Node *) n, (Node *) c, 0);
 
 	policy->qual = (Expr *) transformWhereClause(qual_pstate, copyObject(e),
-												 EXPR_KIND_WHERE,
+												 EXPR_KIND_POLICY,
 												 "POLICY");
 
 	policy->with_check_qual = copyObject(policy->qual);
@@ -119,6 +119,11 @@ test_rls_hooks_permissive(CmdType cmdtype, Relation relation)
 
 /*
  * Return restrictive policies to be added
+ *
+ * Note that a permissive policy must exist or the default-deny policy
+ * will be included and nothing will be visible.  If no filtering should
+ * be done except for the restrictive policy, then a single "USING (true)"
+ * permissive policy can be used; see the regression tests.
  */
 List *
 test_rls_hooks_restrictive(CmdType cmdtype, Relation relation)
@@ -160,7 +165,7 @@ test_rls_hooks_restrictive(CmdType cmdtype, Relation relation)
 	e = (Node *) makeSimpleA_Expr(AEXPR_OP, "=", (Node *) n, (Node *) c, 0);
 
 	policy->qual = (Expr *) transformWhereClause(qual_pstate, copyObject(e),
-												 EXPR_KIND_WHERE,
+												 EXPR_KIND_POLICY,
 												 "POLICY");
 
 	policy->with_check_qual = copyObject(policy->qual);

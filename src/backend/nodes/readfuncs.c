@@ -368,46 +368,6 @@ _readCommonTableExpr(void)
 }
 
 /*
- * _readRangeTableSample
- */
-static RangeTableSample *
-_readRangeTableSample(void)
-{
-	READ_LOCALS(RangeTableSample);
-
-	READ_NODE_FIELD(relation);
-	READ_STRING_FIELD(method);
-	READ_NODE_FIELD(repeatable);
-	READ_NODE_FIELD(args);
-
-	READ_DONE();
-}
-
-/*
- * _readTableSampleClause
- */
-static TableSampleClause *
-_readTableSampleClause(void)
-{
-	READ_LOCALS(TableSampleClause);
-
-	READ_OID_FIELD(tsmid);
-	READ_BOOL_FIELD(tsmseqscan);
-	READ_BOOL_FIELD(tsmpagemode);
-	READ_OID_FIELD(tsminit);
-	READ_OID_FIELD(tsmnextblock);
-	READ_OID_FIELD(tsmnexttuple);
-	READ_OID_FIELD(tsmexaminetuple);
-	READ_OID_FIELD(tsmend);
-	READ_OID_FIELD(tsmreset);
-	READ_OID_FIELD(tsmcost);
-	READ_NODE_FIELD(repeatable);
-	READ_NODE_FIELD(args);
-
-	READ_DONE();
-}
-
-/*
  * _readSetOperationStmt
  */
 static SetOperationStmt *
@@ -578,7 +538,7 @@ _readGroupingFunc(void)
 	READ_NODE_FIELD(args);
 	READ_NODE_FIELD(refs);
 	READ_NODE_FIELD(cols);
-	READ_INT_FIELD(agglevelsup);
+	READ_UINT_FIELD(agglevelsup);
 	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
@@ -1296,9 +1256,9 @@ _readOnConflictExpr(void)
 	READ_ENUM_FIELD(action, OnConflictAction);
 	READ_NODE_FIELD(arbiterElems);
 	READ_NODE_FIELD(arbiterWhere);
+	READ_OID_FIELD(constraint);
 	READ_NODE_FIELD(onConflictSet);
 	READ_NODE_FIELD(onConflictWhere);
-	READ_OID_FIELD(constraint);
 	READ_INT_FIELD(exclRelIndex);
 	READ_NODE_FIELD(exclRelTlist);
 
@@ -1398,6 +1358,21 @@ _readRangeTblFunction(void)
 	READ_DONE();
 }
 
+/*
+ * _readTableSampleClause
+ */
+static TableSampleClause *
+_readTableSampleClause(void)
+{
+	READ_LOCALS(TableSampleClause);
+
+	READ_OID_FIELD(tsmhandler);
+	READ_NODE_FIELD(args);
+	READ_NODE_FIELD(repeatable);
+
+	READ_DONE();
+}
+
 
 /*
  * parseNodeString
@@ -1433,10 +1408,6 @@ parseNodeString(void)
 		return_value = _readRowMarkClause();
 	else if (MATCH("COMMONTABLEEXPR", 15))
 		return_value = _readCommonTableExpr();
-	else if (MATCH("RANGETABLESAMPLE", 16))
-		return_value = _readRangeTableSample();
-	else if (MATCH("TABLESAMPLECLAUSE", 17))
-		return_value = _readTableSampleClause();
 	else if (MATCH("SETOPERATIONSTMT", 16))
 		return_value = _readSetOperationStmt();
 	else if (MATCH("ALIAS", 5))
@@ -1535,6 +1506,8 @@ parseNodeString(void)
 		return_value = _readRangeTblEntry();
 	else if (MATCH("RANGETBLFUNCTION", 16))
 		return_value = _readRangeTblFunction();
+	else if (MATCH("TABLESAMPLECLAUSE", 17))
+		return_value = _readTableSampleClause();
 	else if (MATCH("NOTIFY", 6))
 		return_value = _readNotifyStmt();
 	else if (MATCH("DECLARECURSOR", 13))

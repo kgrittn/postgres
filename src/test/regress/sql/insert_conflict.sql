@@ -58,6 +58,18 @@ drop index both_index_key;
 drop index both_index_expr_key;
 
 --
+-- Make sure that cross matching of attribute opclass/collation does not occur
+--
+create unique index cross_match on insertconflicttest(lower(fruit) collate "C", upper(fruit) text_pattern_ops);
+
+-- fails:
+explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (lower(fruit) text_pattern_ops, upper(fruit) collate "C") do nothing;
+-- works:
+explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (lower(fruit) collate "C", upper(fruit) text_pattern_ops) do nothing;
+
+drop index cross_match;
+
+--
 -- Single key tests
 --
 create unique index key_index on insertconflicttest(key);
@@ -102,7 +114,6 @@ insert into insertconflicttest values (5, 'Lemon') on conflict (fruit) do update
 insert into insertconflicttest values (6, 'Passionfruit') on conflict (lower(fruit)) do update set fruit = excluded.fruit;
 
 -- Check the target relation can be aliased
-insert into insertconflicttest values (6, 'Passionfruits') on conflict (key) do update set fruit = excluded.fruit;
 insert into insertconflicttest AS ict values (6, 'Passionfruit') on conflict (key) do update set fruit = excluded.fruit; -- ok, no reference to target table
 insert into insertconflicttest AS ict values (6, 'Passionfruit') on conflict (key) do update set fruit = ict.fruit; -- ok, alias
 insert into insertconflicttest AS ict values (6, 'Passionfruit') on conflict (key) do update set fruit = insertconflicttest.fruit; -- error, references aliased away name

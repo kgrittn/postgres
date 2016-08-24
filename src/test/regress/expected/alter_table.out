@@ -1842,7 +1842,8 @@ DROP TABLE check_fk_presence_1, check_fk_presence_2;
 drop type lockmodes;
 ERROR:  type "lockmodes" does not exist
 create type lockmodes as enum (
- 'AccessShareLock'
+ 'SIReadLock'
+,'AccessShareLock'
 ,'RowShareLock'
 ,'RowExclusiveLock'
 ,'ShareUpdateExclusiveLock'
@@ -2400,6 +2401,69 @@ Check constraints:
 
 DROP TABLE alter2.tt8;
 DROP SCHEMA alter2;
+-- Check that comments on constraints and indexes are not lost at ALTER TABLE.
+CREATE TABLE comment_test (
+  id int,
+  positive_col int CHECK (positive_col > 0),
+  indexed_col int,
+  CONSTRAINT comment_test_pk PRIMARY KEY (id));
+CREATE INDEX comment_test_index ON comment_test(indexed_col);
+COMMENT ON COLUMN comment_test.id IS 'Column ''id'' on comment_test';
+COMMENT ON INDEX comment_test_index IS 'Simple index on comment_test';
+COMMENT ON CONSTRAINT comment_test_positive_col_check ON comment_test IS 'CHECK constraint on comment_test.positive_col';
+COMMENT ON CONSTRAINT comment_test_pk ON comment_test IS 'PRIMARY KEY constraint of comment_test';
+COMMENT ON INDEX comment_test_pk IS 'Index backing the PRIMARY KEY of comment_test';
+SELECT col_description('comment_test'::regclass, 1) as comment;
+           comment           
+-----------------------------
+ Column 'id' on comment_test
+(1 row)
+
+SELECT indexrelid::regclass::text as index, obj_description(indexrelid, 'pg_class') as comment FROM pg_index where indrelid = 'comment_test'::regclass ORDER BY 1, 2;
+       index        |                    comment                    
+--------------------+-----------------------------------------------
+ comment_test_index | Simple index on comment_test
+ comment_test_pk    | Index backing the PRIMARY KEY of comment_test
+(2 rows)
+
+SELECT conname as constraint, obj_description(oid, 'pg_constraint') as comment FROM pg_constraint where conrelid = 'comment_test'::regclass ORDER BY 1, 2;
+           constraint            |                    comment                    
+---------------------------------+-----------------------------------------------
+ comment_test_pk                 | PRIMARY KEY constraint of comment_test
+ comment_test_positive_col_check | CHECK constraint on comment_test.positive_col
+(2 rows)
+
+-- Change the datatype of all the columns. ALTER TABLE is optimized to not
+-- rebuild an index if the new data type is binary compatible with the old
+-- one. Check do a dummy ALTER TABLE that doesn't change the datatype
+-- first, to test that no-op codepath, and another one that does.
+ALTER TABLE comment_test ALTER COLUMN indexed_col SET DATA TYPE int;
+ALTER TABLE comment_test ALTER COLUMN indexed_col SET DATA TYPE text;
+ALTER TABLE comment_test ALTER COLUMN id SET DATA TYPE int;
+ALTER TABLE comment_test ALTER COLUMN id SET DATA TYPE text;
+ALTER TABLE comment_test ALTER COLUMN positive_col SET DATA TYPE int;
+ALTER TABLE comment_test ALTER COLUMN positive_col SET DATA TYPE bigint;
+-- Check that the comments are intact.
+SELECT col_description('comment_test'::regclass, 1) as comment;
+           comment           
+-----------------------------
+ Column 'id' on comment_test
+(1 row)
+
+SELECT indexrelid::regclass::text as index, obj_description(indexrelid, 'pg_class') as comment FROM pg_index where indrelid = 'comment_test'::regclass ORDER BY 1, 2;
+       index        |                    comment                    
+--------------------+-----------------------------------------------
+ comment_test_index | Simple index on comment_test
+ comment_test_pk    | Index backing the PRIMARY KEY of comment_test
+(2 rows)
+
+SELECT conname as constraint, obj_description(oid, 'pg_constraint') as comment FROM pg_constraint where conrelid = 'comment_test'::regclass ORDER BY 1, 2;
+           constraint            |                    comment                    
+---------------------------------+-----------------------------------------------
+ comment_test_pk                 | PRIMARY KEY constraint of comment_test
+ comment_test_positive_col_check | CHECK constraint on comment_test.positive_col
+(2 rows)
+
 -- Check that we map relation oids to filenodes and back correctly.  Only
 -- display bad mappings so the test output doesn't change all the time.  A
 -- filenode function call can return NULL for a relation dropped concurrently
@@ -2542,3 +2606,92 @@ ALTER TABLE logged1 SET UNLOGGED; -- silently do nothing
 DROP TABLE logged3;
 DROP TABLE logged2;
 DROP TABLE logged1;
+-- test ADD COLUMN IF NOT EXISTS
+CREATE TABLE test_add_column(c1 integer);
+\d test_add_column
+Table "public.test_add_column"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ c1     | integer | 
+
+ALTER TABLE test_add_column
+	ADD COLUMN c2 integer;
+\d test_add_column
+Table "public.test_add_column"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ c1     | integer | 
+ c2     | integer | 
+
+ALTER TABLE test_add_column
+	ADD COLUMN c2 integer; -- fail because c2 already exists
+ERROR:  column "c2" of relation "test_add_column" already exists
+\d test_add_column
+Table "public.test_add_column"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ c1     | integer | 
+ c2     | integer | 
+
+ALTER TABLE test_add_column
+	ADD COLUMN IF NOT EXISTS c2 integer; -- skipping because c2 already exists
+NOTICE:  column "c2" of relation "test_add_column" already exists, skipping
+\d test_add_column
+Table "public.test_add_column"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ c1     | integer | 
+ c2     | integer | 
+
+ALTER TABLE test_add_column
+	ADD COLUMN c2 integer, -- fail because c2 already exists
+	ADD COLUMN c3 integer;
+ERROR:  column "c2" of relation "test_add_column" already exists
+\d test_add_column
+Table "public.test_add_column"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ c1     | integer | 
+ c2     | integer | 
+
+ALTER TABLE test_add_column
+	ADD COLUMN IF NOT EXISTS c2 integer, -- skipping because c2 already exists
+	ADD COLUMN c3 integer; -- fail because c3 already exists
+NOTICE:  column "c2" of relation "test_add_column" already exists, skipping
+\d test_add_column
+Table "public.test_add_column"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ c1     | integer | 
+ c2     | integer | 
+ c3     | integer | 
+
+ALTER TABLE test_add_column
+	ADD COLUMN IF NOT EXISTS c2 integer, -- skipping because c2 already exists
+	ADD COLUMN IF NOT EXISTS c3 integer; -- skipping because c3 already exists
+NOTICE:  column "c2" of relation "test_add_column" already exists, skipping
+NOTICE:  column "c3" of relation "test_add_column" already exists, skipping
+\d test_add_column
+Table "public.test_add_column"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ c1     | integer | 
+ c2     | integer | 
+ c3     | integer | 
+
+ALTER TABLE test_add_column
+	ADD COLUMN IF NOT EXISTS c2 integer, -- skipping because c2 already exists
+	ADD COLUMN IF NOT EXISTS c3 integer, -- skipping because c3 already exists
+	ADD COLUMN c4 integer;
+NOTICE:  column "c2" of relation "test_add_column" already exists, skipping
+NOTICE:  column "c3" of relation "test_add_column" already exists, skipping
+\d test_add_column
+Table "public.test_add_column"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ c1     | integer | 
+ c2     | integer | 
+ c3     | integer | 
+ c4     | integer | 
+
+DROP TABLE test_add_column;

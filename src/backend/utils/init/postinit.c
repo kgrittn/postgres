@@ -52,6 +52,7 @@
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
+#include "utils/memutils.h"
 #include "utils/pg_locale.h"
 #include "utils/portal.h"
 #include "utils/ps_status.h"
@@ -190,6 +191,18 @@ PerformAuthentication(Port *port)
 	 * FIXME: [fork/exec] Ugh.  Is there a way around this overhead?
 	 */
 #ifdef EXEC_BACKEND
+	/*
+	 * load_hba() and load_ident() want to work within the PostmasterContext,
+	 * so create that if it doesn't exist (which it won't).  We'll delete it
+	 * again later, in PostgresMain.
+	 */
+	if (PostmasterContext == NULL)
+		PostmasterContext = AllocSetContextCreate(TopMemoryContext,
+												  "Postmaster",
+												  ALLOCSET_DEFAULT_MINSIZE,
+												  ALLOCSET_DEFAULT_INITSIZE,
+												  ALLOCSET_DEFAULT_MAXSIZE);
+
 	if (!load_hba())
 	{
 		/*
@@ -378,6 +391,8 @@ CheckMyDatabase(const char *name, bool am_superuser)
 	SetConfigOption("lc_collate", collate, PGC_INTERNAL, PGC_S_OVERRIDE);
 	SetConfigOption("lc_ctype", ctype, PGC_INTERNAL, PGC_S_OVERRIDE);
 
+	check_strxfrm_bug();
+
 	ReleaseSysCache(tup);
 }
 
@@ -418,7 +433,7 @@ InitCommunication(void)
  * backslashes, with \\ representing a literal backslash.
  */
 void
-pg_split_opts(char **argv, int *argcp, char *optstr)
+pg_split_opts(char **argv, int *argcp, const char *optstr)
 {
 	StringInfoData s;
 
@@ -438,8 +453,8 @@ pg_split_opts(char **argv, int *argcp, char *optstr)
 			break;
 
 		/*
-		 * Parse a single option + value, stopping at the first space, unless
-		 * it's escaped.
+		 * Parse a single option, stopping at the first space, unless it's
+		 * escaped.
 		 */
 		while (*optstr)
 		{
@@ -457,10 +472,11 @@ pg_split_opts(char **argv, int *argcp, char *optstr)
 			optstr++;
 		}
 
-		/* now store the option */
+		/* now store the option in the next argv[] position */
 		argv[(*argcp)++] = pstrdup(s.data);
 	}
-	resetStringInfo(&s);
+
+	pfree(s.data);
 }
 
 /*

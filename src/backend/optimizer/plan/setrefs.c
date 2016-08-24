@@ -372,10 +372,10 @@ flatten_rtes_walker(Node *node, PlannerGlobal *glob)
  *
  * In the flat rangetable, we zero out substructure pointers that are not
  * needed by the executor; this reduces the storage space and copying cost
- * for cached plans.  We keep only the alias and eref Alias fields, which are
- * needed by EXPLAIN, and the selectedCols, insertedCols and updatedCols
- * bitmaps, which are needed for executor-startup permissions checking and for
- * trigger event checking.
+ * for cached plans.  We keep only the ctename, alias and eref Alias fields,
+ * which are needed by EXPLAIN, and the selectedCols, insertedCols and
+ * updatedCols bitmaps, which are needed for executor-startup permissions
+ * checking and for trigger event checking.
  */
 static void
 add_rte_to_flat_rtable(PlannerGlobal *glob, RangeTblEntry *rte)
@@ -387,6 +387,7 @@ add_rte_to_flat_rtable(PlannerGlobal *glob, RangeTblEntry *rte)
 	memcpy(newrte, rte, sizeof(RangeTblEntry));
 
 	/* zap unneeded sub-structure */
+	newrte->tablesample = NULL;
 	newrte->subquery = NULL;
 	newrte->joinaliasvars = NIL;
 	newrte->functions = NIL;
@@ -395,6 +396,7 @@ add_rte_to_flat_rtable(PlannerGlobal *glob, RangeTblEntry *rte)
 	newrte->ctecoltypes = NIL;
 	newrte->ctecoltypmods = NIL;
 	newrte->ctecolcollations = NIL;
+	newrte->securityQuals = NIL;
 
 	glob->finalrtable = lappend(glob->finalrtable, newrte);
 
@@ -454,11 +456,13 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 			{
 				SampleScan *splan = (SampleScan *) plan;
 
-				splan->scanrelid += rtoffset;
-				splan->plan.targetlist =
-					fix_scan_list(root, splan->plan.targetlist, rtoffset);
-				splan->plan.qual =
-					fix_scan_list(root, splan->plan.qual, rtoffset);
+				splan->scan.scanrelid += rtoffset;
+				splan->scan.plan.targetlist =
+					fix_scan_list(root, splan->scan.plan.targetlist, rtoffset);
+				splan->scan.plan.qual =
+					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
+				splan->tablesample = (TableSampleClause *)
+					fix_scan_expr(root, (Node *) splan->tablesample, rtoffset);
 			}
 			break;
 		case T_IndexScan:
@@ -787,6 +791,8 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 									  linitial_int(splan->resultRelations),
 									  rtoffset);
 
+					pfree(itlist);
+
 					splan->exclRelTlist =
 						fix_scan_list(root, splan->exclRelTlist, rtoffset);
 				}
@@ -1104,7 +1110,7 @@ set_foreignscan_references(PlannerInfo *root,
 
 	if (fscan->fdw_scan_tlist != NIL || fscan->scan.scanrelid == 0)
 	{
-		/* Adjust tlist, qual, fdw_exprs to reference custom scan tuple */
+		/* Adjust tlist, qual, fdw_exprs to reference foreign scan tuple */
 		indexed_tlist *itlist = build_tlist_index(fscan->fdw_scan_tlist);
 
 		fscan->scan.plan.targetlist = (List *)
@@ -1208,7 +1214,7 @@ set_customscan_references(PlannerInfo *root,
 	}
 
 	/* Adjust child plan-nodes recursively, if needed */
-	foreach (lc, cscan->custom_plans)
+	foreach(lc, cscan->custom_plans)
 	{
 		lfirst(lc) = set_plan_refs(root, (Plan *) lfirst(lc), rtoffset);
 	}

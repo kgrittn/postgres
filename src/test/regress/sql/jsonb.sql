@@ -93,7 +93,12 @@ SELECT jsonb_agg(q)
          FROM generate_series(1,2) x,
               generate_series(4,5) y) q;
 
-SELECT jsonb_agg(q)
+SELECT jsonb_agg(q ORDER BY x, y)
+  FROM rows q;
+
+UPDATE rows SET x = NULL WHERE x = 1;
+
+SELECT jsonb_agg(q ORDER BY x NULLS FIRST, y)
   FROM rows q;
 
 -- jsonb extraction functions
@@ -334,6 +339,11 @@ INSERT INTO foo VALUES (847003,'sub-alpha','GESS90');
 SELECT jsonb_build_object('turbines',jsonb_object_agg(serial_num,jsonb_build_object('name',name,'type',type)))
 FROM foo;
 
+SELECT jsonb_object_agg(name, type) FROM foo;
+
+INSERT INTO foo VALUES (999999, NULL, 'bar');
+SELECT jsonb_object_agg(name, type) FROM foo;
+
 -- jsonb_object
 
 -- one dimension
@@ -529,7 +539,7 @@ SELECT count(*) FROM testjsonb WHERE j @> '{"age":25}';
 SELECT count(*) FROM testjsonb WHERE j @> '{"age":25.0}';
 SELECT count(*) FROM testjsonb WHERE j @> '{"array":["foo"]}';
 SELECT count(*) FROM testjsonb WHERE j @> '{"array":["bar"]}';
--- excercise GIN_SEARCH_MODE_ALL
+-- exercise GIN_SEARCH_MODE_ALL
 SELECT count(*) FROM testjsonb WHERE j @> '{}';
 SELECT count(*) FROM testjsonb WHERE j ? 'public';
 SELECT count(*) FROM testjsonb WHERE j ? 'bar';
@@ -582,7 +592,7 @@ SELECT count(*) FROM testjsonb WHERE j @> '{"wait":"CC"}';
 SELECT count(*) FROM testjsonb WHERE j @> '{"wait":"CC", "public":true}';
 SELECT count(*) FROM testjsonb WHERE j @> '{"age":25}';
 SELECT count(*) FROM testjsonb WHERE j @> '{"age":25.0}';
--- excercise GIN_SEARCH_MODE_ALL
+-- exercise GIN_SEARCH_MODE_ALL
 SELECT count(*) FROM testjsonb WHERE j @> '{}';
 
 RESET enable_seqscan;
@@ -642,6 +652,8 @@ SELECT '["a","b","c",[1,2],null]'::jsonb -> 3 -> 1;
 SELECT '["a","b","c",[1,2],null]'::jsonb -> 4;
 SELECT '["a","b","c",[1,2],null]'::jsonb -> 5;
 SELECT '["a","b","c",[1,2],null]'::jsonb -> -1;
+SELECT '["a","b","c",[1,2],null]'::jsonb -> -5;
+SELECT '["a","b","c",[1,2],null]'::jsonb -> -6;
 
 --nested path extraction
 SELECT '{"a":"b","c":[1,2,3]}'::jsonb #> '{0}';
@@ -652,6 +664,8 @@ SELECT '{"a":"b","c":[1,2,3]}'::jsonb #> '{c,1}';
 SELECT '{"a":"b","c":[1,2,3]}'::jsonb #> '{c,2}';
 SELECT '{"a":"b","c":[1,2,3]}'::jsonb #> '{c,3}';
 SELECT '{"a":"b","c":[1,2,3]}'::jsonb #> '{c,-1}';
+SELECT '{"a":"b","c":[1,2,3]}'::jsonb #> '{c,-3}';
+SELECT '{"a":"b","c":[1,2,3]}'::jsonb #> '{c,-4}';
 
 SELECT '[0,1,2,[3,4],{"5":"five"}]'::jsonb #> '{0}';
 SELECT '[0,1,2,[3,4],{"5":"five"}]'::jsonb #> '{3}';
@@ -757,6 +771,7 @@ select jsonb_delete_path('{"n":null, "a":1, "b":[1,2], "c":{"1":2}, "d":{"1":[2,
 
 select '{"n":null, "a":1, "b":[1,2], "c":{"1":2}, "d":{"1":[2,3]}}'::jsonb #- '{n}';
 select '{"n":null, "a":1, "b":[1,2], "c":{"1":2}, "d":{"1":[2,3]}}'::jsonb #- '{b,-1}';
+select '{"n":null, "a":1, "b":[1,2], "c":{"1":2}, "d":{"1":[2,3]}}'::jsonb #- '{b,-1e}'; -- invalid array subscript
 select '{"n":null, "a":1, "b":[1,2], "c":{"1":2}, "d":{"1":[2,3]}}'::jsonb #- '{d,1,0}';
 
 

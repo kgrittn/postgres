@@ -23,7 +23,6 @@
 #include "commands/trigger.h"
 #include "executor/spi.h"
 #include "utils/tsrcache.h"
-#include "utils/hsearch.h"
 
 /**********************************************************************
  * Definitions
@@ -753,12 +752,13 @@ typedef struct PLpgSQL_function
 	int			extra_warnings;
 	int			extra_errors;
 
+	/* the datums representing the function's local variables */
 	int			ndatums;
 	PLpgSQL_datum **datums;
-	PLpgSQL_stmt_block *action;
+	Bitmapset  *resettable_datums;		/* dnos of non-simple vars */
 
-	/* table for performing casts needed in this function */
-	HTAB	   *cast_hash;
+	/* function body parsetree */
+	PLpgSQL_stmt_block *action;
 
 	/* these fields change when the function is used */
 	struct PLpgSQL_execstate *cur_estate;
@@ -797,6 +797,7 @@ typedef struct PLpgSQL_execstate
 
 	/* we pass datums[i] to the executor, when needed, in paramLI->params[i] */
 	ParamListInfo paramLI;
+	bool		params_dirty;	/* T if any resettable datum has been passed */
 
 	/* the named tuplestores to use */
 	Tsrcache	*tsrcache;

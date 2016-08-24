@@ -3932,16 +3932,8 @@ convert_string_datum(Datum value, Oid typid)
 		size_t xfrmlen2 PG_USED_FOR_ASSERTS_ONLY;
 
 		/*
-		 * Note: originally we guessed at a suitable output buffer size, and
-		 * only needed to call strxfrm twice if our guess was too small.
-		 * However, it seems that some versions of Solaris have buggy strxfrm
-		 * that can write past the specified buffer length in that scenario.
-		 * So, do it the dumb way for portability.
-		 *
-		 * Yet other systems (e.g., glibc) sometimes return a smaller value
-		 * from the second call than the first; thus the Assert must be <= not
-		 * == as you'd expect.  Can't any of these people program their way
-		 * out of a paper bag?
+		 * XXX: We could guess at a suitable output buffer size and only call
+		 * strxfrm twice if our guess is too small.
 		 *
 		 * XXX: strxfrm doesn't support UTF-8 encoding on Win32, it can return
 		 * bogus data or set an error. This is not really a problem unless it
@@ -3974,6 +3966,11 @@ convert_string_datum(Datum value, Oid typid)
 #endif
 		xfrmstr = (char *) palloc(xfrmlen + 1);
 		xfrmlen2 = strxfrm(xfrmstr, val, xfrmlen + 1);
+
+		/*
+		 * Some systems (e.g., glibc) can return a smaller value from the
+		 * second call than the first; thus the Assert must be <= not ==.
+		 */
 		Assert(xfrmlen2 <= xfrmlen);
 		pfree(val);
 		val = xfrmstr;
@@ -4635,8 +4632,8 @@ examine_simple_variable(PlannerInfo *root, Var *var,
  * *isdefault: set to TRUE if the result is a default rather than based on
  * anything meaningful.
  *
- * NB: be careful to produce an integral result, since callers may compare
- * the result to exact integer counts.
+ * NB: be careful to produce a positive integral result, since callers may
+ * compare the result to exact integer counts, or might divide by it.
  */
 double
 get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
@@ -4712,7 +4709,7 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 * If we had an absolute estimate, use that.
 	 */
 	if (stadistinct > 0.0)
-		return stadistinct;
+		return clamp_row_est(stadistinct);
 
 	/*
 	 * Otherwise we need to get the relation size; punt if not available.
@@ -4733,7 +4730,7 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 * If we had a relative estimate, use that.
 	 */
 	if (stadistinct < 0.0)
-		return floor((-stadistinct * ntuples) + 0.5);
+		return clamp_row_est(-stadistinct * ntuples);
 
 	/*
 	 * With no data, estimate ndistinct = ntuples if the table is small, else
@@ -4741,7 +4738,7 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 * that the behavior isn't discontinuous.
 	 */
 	if (ntuples < DEFAULT_NUM_DISTINCT)
-		return ntuples;
+		return clamp_row_est(ntuples);
 
 	*isdefault = true;
 	return DEFAULT_NUM_DISTINCT;

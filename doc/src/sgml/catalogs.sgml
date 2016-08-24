@@ -279,11 +279,6 @@
      </row>
 
      <row>
-      <entry><link linkend="catalog-pg-tablesample-method"><structname>pg_tablesample_method</structname></link></entry>
-      <entry>table sampling methods</entry>
-     </row>
-
-     <row>
       <entry><link linkend="catalog-pg-tablespace"><structname>pg_tablespace</structname></link></entry>
       <entry>tablespaces within this database cluster</entry>
      </row>
@@ -5798,6 +5793,16 @@
     </varlistentry>
 
     <varlistentry>
+     <term><symbol>SHARED_DEPENDENCY_POLICY</> (<literal>r</>)</term>
+     <listitem>
+      <para>
+       The referenced object (which must be a role) is mentioned as the
+       target of a dependent policy object.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
      <term><symbol>SHARED_DEPENDENCY_PIN</> (<literal>p</>)</term>
      <listitem>
       <para>
@@ -6125,121 +6130,6 @@
        these columns' type more specifically than <type>anyarray</>.
       </entry>
      </row>
-    </tbody>
-   </tgroup>
-  </table>
-
- </sect1>
-
-
- <sect1 id="catalog-pg-tablesample-method">
-  <title><structname>pg_tabesample_method</structname></title>
-
-  <indexterm zone="catalog-pg-tablesample-method">
-   <primary>pg_am</primary>
-  </indexterm>
-
-  <para>
-   The catalog <structname>pg_tablesample_method</structname> stores
-   information about table sampling methods which can be used in
-   <command>TABLESAMPLE</command> clause of a <command>SELECT</command>
-   statement.
-  </para>
-
-  <table>
-   <title><structname>pg_tablesample_method</> Columns</title>
-
-   <tgroup cols="4">
-    <thead>
-     <row>
-      <entry>Name</entry>
-      <entry>Type</entry>
-      <entry>References</entry>
-      <entry>Description</entry>
-     </row>
-    </thead>
-    <tbody>
-
-     <row>
-      <entry><structfield>oid</structfield></entry>
-      <entry><type>oid</type></entry>
-      <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmname</structfield></entry>
-      <entry><type>name</type></entry>
-      <entry></entry>
-      <entry>Name of the sampling method</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmseqscan</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry></entry>
-      <entry>If true, the sampling method scans the whole table sequentially.
-      </entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmpagemode</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry></entry>
-      <entry>If true, the sampling method always reads the pages completely.
-      </entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsminit</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>Initialize the sampling scan</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmnextblock</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>Get next block number</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmnexttuple</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>Get next tuple offset</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmexaminetuple</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry>Function which examines the tuple contents and decides if to
-        return it, or zero if none</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmend</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>End the sampling scan</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmreset</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>Restart the state of sampling scan</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmcost</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry>Costing function</entry>
-     </row>
-
     </tbody>
    </tgroup>
   </table>
@@ -7642,7 +7532,7 @@
 
      <row>
       <entry><link linkend="view-pg-file-settings"><structname>pg_file_settings</structname></link></entry>
-      <entry>file location of parameter settings</entry>
+      <entry>summary of configuration file contents</entry>
      </row>
 
      <row>
@@ -8023,13 +7913,26 @@
   </indexterm>
 
   <para>
-   The view <structname>pg_file_settings</structname> provides the file
-   name, line number and value of all parameters which are set through
-   configuration files.
-   In contrast to <structname>pg_settings</structname>, a row is provided for
-   each occurrence of the parameter across all configuration files. This is helpful
-   for discovering why one value may have been used in preference to another
-   when the parameters were loaded.
+   The view <structname>pg_file_settings</structname> provides a summary of
+   the contents of the server's configuration file(s).  A row appears in
+   this view for each <quote>name = value</> entry appearing in the files,
+   with annotations indicating whether the value could be applied
+   successfully.  Additional row(s) may appear for problems not linked to
+   a <quote>name = value</> entry, such as syntax errors in the files.
+  </para>
+
+  <para>
+   This view is helpful for checking whether planned changes in the
+   configuration files will work, or for diagnosing a previous failure.
+   Note that this view reports on the <emphasis>current</> contents of the
+   files, not on what was last applied by the server.  (The
+   <link linkend="view-pg-settings"><structname>pg_settings</structname></link>
+   view is usually sufficient to determine that.)
+  </para>
+
+  <para>
+   The <structname>pg_file_settings</structname> view can be read only by
+   superusers.
   </para>
 
   <table>
@@ -8047,43 +7950,64 @@
     <row>
      <entry><structfield>sourcefile</structfield></entry>
      <entry><structfield>text</structfield></entry>
-     <entry>Path to and name of the configration file</entry>
+     <entry>Full pathname of the configuration file</entry>
     </row>
     <row>
      <entry><structfield>sourceline</structfield></entry>
      <entry><structfield>integer</structfield></entry>
      <entry>
-      Line number within the configuration file where the value was set
+      Line number within the configuration file where the entry appears
      </entry>
     </row>
     <row>
      <entry><structfield>seqno</structfield></entry>
      <entry><structfield>integer</structfield></entry>
-     <entry>Order in which the setting was loaded</entry>
+     <entry>Order in which the entries are processed (1..<replaceable>n</>)</entry>
     </row>
     <row>
      <entry><structfield>name</structfield></entry>
      <entry><structfield>text</structfield></entry>
-     <entry>Run-time configuration parameter name</entry>
+     <entry>Configuration parameter name</entry>
     </row>
     <row>
      <entry><structfield>setting</structfield></entry>
      <entry><structfield>text</structfield></entry>
-     <entry>value of the parameter</entry>
+     <entry>Value to be assigned to the parameter</entry>
+    </row>
+    <row>
+     <entry><structfield>applied</structfield></entry>
+     <entry><structfield>boolean</structfield></entry>
+     <entry>True if the value can be applied successfully</entry>
+    </row>
+    <row>
+     <entry><structfield>error</structfield></entry>
+     <entry><structfield>text</structfield></entry>
+     <entry>If not null, an error message indicating why this entry could
+      not be applied</entry>
     </row>
    </tbody>
   </tgroup>
- </table>
+  </table>
 
   <para>
-   See <xref linkend="config-setting"> for more information about the various
-   ways to change these parameters.
+   If the configuration file contains syntax errors or invalid parameter
+   names, the server will not attempt to apply any settings from it, and
+   therefore all the <structfield>applied</> fields will read as false.
+   In such a case there will be one or more rows with
+   non-null <structfield>error</structfield> fields indicating the
+   problem(s).  Otherwise, individual settings will be applied if possible.
+   If an individual setting cannot be applied (e.g., invalid value, or the
+   setting cannot be changed after server start) it will have an appropriate
+   message in the <structfield>error</structfield> field.  Another way that
+   an entry might have <structfield>applied</> = false is that it is
+   overridden by a later entry for the same parameter name; this case is not
+   considered an error so nothing appears in
+   the <structfield>error</structfield> field.
   </para>
 
   <para>
-   The <structname>pg_file_settings</structname> view cannot be modified
-   directly as it represents information, as read in at server start or
-   reload time, about all parameter settings across all configuration files.
+   See <xref linkend="config-setting"> for more information about the various
+   ways to change run-time parameters.
   </para>
 
 </sect1>

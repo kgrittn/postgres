@@ -107,7 +107,6 @@ get_row_security_policies(Query *root, CmdType commandType, RangeTblEntry *rte,
 
 	Relation	rel;
 	Oid			user_id;
-	int			sec_context;
 	int			rls_status;
 	bool		defaultDeny = false;
 
@@ -117,21 +116,12 @@ get_row_security_policies(Query *root, CmdType commandType, RangeTblEntry *rte,
 	*hasRowSecurity = false;
 	*hasSubLinks = false;
 
-	/* This is just to get the security context */
-	GetUserIdAndSecContext(&user_id, &sec_context);
+	/* If this is not a normal relation, just return immediately */
+	if (rte->relkind != RELKIND_RELATION)
+		return;
 
 	/* Switch to checkAsUser if it's set */
 	user_id = rte->checkAsUser ? rte->checkAsUser : GetUserId();
-
-	/*
-	 * If this is not a normal relation, or we have been told to explicitly
-	 * skip RLS (perhaps because this is an FK check) then just return
-	 * immediately.
-	 */
-	if (rte->relid < FirstNormalObjectId
-		|| rte->relkind != RELKIND_RELATION
-		|| (sec_context & SECURITY_ROW_LEVEL_DISABLED))
-		return;
 
 	/* Determine the state of RLS for this, pass checkAsUser explicitly */
 	rls_status = check_enable_rls(rte->relid, rte->checkAsUser, false);
@@ -157,8 +147,18 @@ get_row_security_policies(Query *root, CmdType commandType, RangeTblEntry *rte,
 		return;
 	}
 
-	/* Grab the built-in policies which should be applied to this relation. */
+	/*
+	 * RLS is enabled for this relation.
+	 *
+	 * Get the security policies that should be applied, based on the command
+	 * type.  Note that if this isn't the target relation, we actually want
+	 * the relation's SELECT policies, regardless of the query command type,
+	 * for example in UPDATE t1 ... FROM t2 we need to apply t1's UPDATE
+	 * policies and t2's SELECT policies.
+	 */
 	rel = heap_open(rte->relid, NoLock);
+	if (rt_index != root->resultRelation)
+		commandType = CMD_SELECT;
 
 	rowsec_policies = pull_row_security_policies(commandType, rel,
 												 user_id);
@@ -225,12 +225,18 @@ get_row_security_policies(Query *root, CmdType commandType, RangeTblEntry *rte,
 	}
 
 	/*
-	 * If the only built-in policy is the default-deny one, and hook policies
-	 * exist, then use the hook policies only and do not apply the
+	 * If the only built-in policy is the default-deny one, and permissive hook
+	 * policies exist, then use the hook policies only and do not apply the
 	 * default-deny policy.  Otherwise, we will apply both sets below.
+	 *
+	 * Note that we do not remove the defaultDeny policy if only *restrictive*
+	 * policies exist as restrictive policies should only ever be reducing what
+	 * is visible.  Therefore, at least one permissive policy must exist which
+	 * allows records to be seen before restrictive policies can remove rows
+	 * from that set.  A single "true" policy can be created to address this
+	 * requirement, if necessary.
 	 */
-	if (defaultDeny &&
-		(hook_policies_restrictive != NIL || hook_policies_permissive != NIL))
+	if (defaultDeny && hook_policies_permissive != NIL)
 	{
 		rowsec_expr = NULL;
 		rowsec_with_check_expr = NULL;

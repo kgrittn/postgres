@@ -175,6 +175,14 @@ shared_buffers = 128MB
      effect in the same way.  Settings in <filename>postgresql.auto.conf</>
      override those in <filename>postgresql.conf</>.
     </para>
+
+    <para>
+     The system view
+     <link linkend="view-pg-file-settings"><structname>pg_file_settings</structname></link>
+     can be helpful for pre-testing changes to the configuration file, or for
+     diagnosing problems if a <systemitem>SIGHUP</> signal did not have the
+     desired effects.
+    </para>
    </sect2>
 
    <sect2 id="config-setting-sql-command-interaction">
@@ -1023,35 +1031,6 @@ include_dir 'conf.d'
         relative to the data directory.  This parameter can only be set at
         server start.
        </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="guc-ssl-renegotiation-limit" xreflabel="ssl_renegotiation_limit">
-      <term><varname>ssl_renegotiation_limit</varname> (<type>integer</type>)
-      <indexterm>
-       <primary><varname>ssl_renegotiation_limit</> configuration parameter</primary>
-      </indexterm>
-      </term>
-      <listitem>
-       <para>
-        Specifies how much data can flow over an <acronym>SSL</>-encrypted
-        connection before renegotiation of the session keys will take
-        place. Renegotiation decreases an attacker's chances of doing
-        cryptanalysis when large amounts of traffic can be examined, but it
-        also carries a large performance penalty. The sum of sent and received
-        traffic is used to check the limit. If this parameter is set to 0,
-        renegotiation is disabled. The default is <literal>512MB</>.
-       </para>
-       <note>
-        <para>
-         SSL libraries from before November 2009 are insecure when using SSL
-         renegotiation, due to a vulnerability in the SSL protocol. As a
-         stop-gap fix for this vulnerability, some vendors shipped SSL
-         libraries incapable of doing renegotiation. If any such libraries
-         are in use on the client or server, SSL renegotiation should be
-         disabled.
-        </para>
-       </note>
       </listitem>
      </varlistentry>
 
@@ -2295,6 +2274,7 @@ include_dir 'conf.d'
         <xref linkend="guc-full-page-writes"> is on or during a base backup.
         A compressed page image will be decompressed during WAL replay.
         The default value is <literal>off</>.
+        Only superusers can change this setting.
        </para>
 
        <para>
@@ -5559,20 +5539,22 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
        <para>
         This variable controls if row security policies are to be applied
         to queries which are run against tables that have row security enabled.
-        The default is 'on'.  When set to 'on', all users, except superusers
-        and the owner of the table, will have the row policies for the table
-        applied to their queries.  The table owner and superuser can request
-        that row policies be applied to their queries by setting this to
-        'force'.  Lastly, this can also be set to 'off' which will bypass row
-        policies for the table, if possible, and error if not.
+        The default is <literal>on</>.  When set to <literal>on</>, all users,
+        except superusers and the owner of the table, will have the row
+        policies for the table applied to their queries. The table owner and
+        superuser can request that row policies be applied to their queries by
+        setting this to <literal>force</>. Lastly, this can also be set to
+        <literal>off</> which will bypass row policies for the table, if
+        possible, and error if not.
        </para>
 
        <para>
         For a user who is not a superuser and not the table owner to bypass
-        row policies for the table, they must have the BYPASSRLS role attribute.
-        If this is set to 'off' and the user queries a table which has row
-        policies enabled and the user does not have the right to bypass
-        row policies then a permission denied error will be returned.
+        row policies for the table, they must have the <literal>BYPASSRLS</>
+        role attribute. If this is set to <literal>off</> and the user queries
+        a table which has row policies enabled and the user does not have the
+        right to bypass row policies then a permission denied error will be
+        returned.
        </para>
 
        <para>
