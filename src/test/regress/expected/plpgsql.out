@@ -5510,3 +5510,4 @@ INFO:  Merge Full Join
         Sort Key: nt.id
         ->  Tuplestore Scan
               Output: nt.id, nt.val
+
