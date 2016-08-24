@@ -823,7 +823,7 @@ standard_ProcessUtility(Node *parsetree,
 									   context, params, tsrcache,
 									   dest, completionTag);
 				else
-					ExecAlterObjectSchemaStmt(stmt);
+					ExecAlterObjectSchemaStmt(stmt, NULL);
 			}
 			break;
 
@@ -892,6 +892,7 @@ ProcessUtilitySlow(Node *parsetree,
 	bool		isTopLevel = (context == PROCESS_UTILITY_TOPLEVEL);
 	bool		isCompleteQuery = (context <= PROCESS_UTILITY_QUERY);
 	bool		needCleanup;
+	ObjectAddress address;
 
 	/* All event trigger calls are done only when isCompleteQuery is true */
 	needCleanup = isCompleteQuery && EventTriggerBeginCompleteQuery();
@@ -917,7 +918,6 @@ ProcessUtilitySlow(Node *parsetree,
 				{
 					List	   *stmts;
 					ListCell   *l;
-					Oid			relOid;
 
 					/* Run parse analysis ... */
 					stmts = transformCreateStmt((CreateStmt *) parsetree,
@@ -934,9 +934,9 @@ ProcessUtilitySlow(Node *parsetree,
 							static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
 
 							/* Create the table itself */
-							relOid = DefineRelation((CreateStmt *) stmt,
-													RELKIND_RELATION,
-													InvalidOid);
+							address = DefineRelation((CreateStmt *) stmt,
+													 RELKIND_RELATION,
+													 InvalidOid, NULL);
 
 							/*
 							 * Let NewRelationCreateToastTable decide if this
@@ -958,16 +958,17 @@ ProcessUtilitySlow(Node *parsetree,
 												   toast_options,
 												   true);
 
-							NewRelationCreateToastTable(relOid, toast_options);
+							NewRelationCreateToastTable(address.objectId,
+														toast_options);
 						}
 						else if (IsA(stmt, CreateForeignTableStmt))
 						{
 							/* Create the table itself */
-							relOid = DefineRelation((CreateStmt *) stmt,
-													RELKIND_FOREIGN_TABLE,
-													InvalidOid);
+							address = DefineRelation((CreateStmt *) stmt,
+													 RELKIND_FOREIGN_TABLE,
+													 InvalidOid, NULL);
 							CreateForeignTable((CreateForeignTableStmt *) stmt,
-											   relOid);
+											   address.objectId);
 						}
 						else
 						{
@@ -1075,7 +1076,8 @@ ProcessUtilitySlow(Node *parsetree,
 							break;
 						case 'C':		/* ADD CONSTRAINT */
 							AlterDomainAddConstraint(stmt->typeName,
-													 stmt->def);
+													 stmt->def,
+													 NULL);
 							break;
 						case 'X':		/* DROP CONSTRAINT */
 							AlterDomainDropConstraint(stmt->typeName,
@@ -1198,7 +1200,8 @@ ProcessUtilitySlow(Node *parsetree,
 				break;
 
 			case T_AlterExtensionContentsStmt:
-				ExecAlterExtensionContentsStmt((AlterExtensionContentsStmt *) parsetree);
+				ExecAlterExtensionContentsStmt((AlterExtensionContentsStmt *) parsetree,
+											   NULL);
 				break;
 
 			case T_CreateFdwStmt:
@@ -1342,7 +1345,8 @@ ProcessUtilitySlow(Node *parsetree,
 				break;
 
 			case T_AlterObjectSchemaStmt:
-				ExecAlterObjectSchemaStmt((AlterObjectSchemaStmt *) parsetree);
+				ExecAlterObjectSchemaStmt((AlterObjectSchemaStmt *) parsetree,
+										  NULL);
 				break;
 
 			case T_AlterOwnerStmt:

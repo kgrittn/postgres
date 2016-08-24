@@ -100,7 +100,7 @@ static void AfterTriggerEnlargeQueryState(void);
 
 
 /*
- * Create a trigger.  Returns the OID of the created trigger.
+ * Create a trigger.  Returns the address of the created trigger.
  *
  * queryString is the source text of the CREATE TRIGGER command.
  * This must be supplied if a whenClause is specified, else it can be NULL.
@@ -129,10 +129,11 @@ static void AfterTriggerEnlargeQueryState(void);
  * relation, as well as ACL_EXECUTE on the trigger function.  For internal
  * triggers the caller must apply any required permission checks.
  *
- * Note: can return InvalidOid if we decided to not create a trigger at all,
- * but a foreign-key constraint.  This is a kluge for backwards compatibility.
+ * Note: can return InvalidObjectAddress if we decided to not create a trigger
+ * at all, but a foreign-key constraint.  This is a kluge for backwards
+ * compatibility.
  */
-Oid
+ObjectAddress
 CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 			  Oid relOid, Oid refRelOid, Oid constraintOid, Oid indexOid,
 			  bool isInternal)
@@ -542,7 +543,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 
 		ConvertTriggerToFK(stmt, funcoid);
 
-		return InvalidOid;
+		return InvalidObjectAddress;
 	}
 
 	/*
@@ -897,7 +898,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	/* Keep lock on target rel until end of xact */
 	heap_close(rel, NoLock);
 
-	return trigoid;
+	return myself;
 }
 
 
@@ -1347,7 +1348,7 @@ RangeVarCallbackForRenameTrigger(const RangeVar *rv, Oid relid, Oid oldrelid,
  *		modify tgname in trigger tuple
  *		update row in catalog
  */
-Oid
+ObjectAddress
 renametrig(RenameStmt *stmt)
 {
 	Oid			tgoid;
@@ -1357,6 +1358,7 @@ renametrig(RenameStmt *stmt)
 	SysScanDesc tgscan;
 	ScanKeyData key[2];
 	Oid			relid;
+	ObjectAddress address;
 
 	/*
 	 * Look up name, check permissions, and acquire lock (which we will NOT
@@ -1449,6 +1451,8 @@ renametrig(RenameStmt *stmt)
 						stmt->subname, RelationGetRelationName(targetrel))));
 	}
 
+	ObjectAddressSet(address, TriggerRelationId, tgoid);
+
 	systable_endscan(tgscan);
 
 	heap_close(tgrel, RowExclusiveLock);
@@ -1458,7 +1462,7 @@ renametrig(RenameStmt *stmt)
 	 */
 	relation_close(targetrel, NoLock);
 
-	return tgoid;
+	return address;
 }
 
 
