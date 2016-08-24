@@ -1428,7 +1428,8 @@ typedef struct BitmapIndexScanState
  *		lossy_pages		   total number of lossy pages retrieved
  *		prefetch_iterator  iterator for prefetching ahead of current page
  *		prefetch_pages	   # pages prefetch iterator is ahead of current
- *		prefetch_target    target prefetch distance
+ *		prefetch_target    current target prefetch distance
+ *		prefetch_maximum   maximum value for prefetch_target
  * ----------------
  */
 typedef struct BitmapHeapScanState
@@ -1443,6 +1444,7 @@ typedef struct BitmapHeapScanState
 	TBMIterator *prefetch_iterator;
 	int			prefetch_pages;
 	int			prefetch_target;
+	int			prefetch_maximum;
 } BitmapHeapScanState;
 
 /* ----------------
