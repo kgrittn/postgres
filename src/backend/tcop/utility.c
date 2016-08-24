@@ -631,7 +631,7 @@ standard_ProcessUtility(Node *parsetree,
 				/* we choose to allow this during "read only" transactions */
 				PreventCommandDuringRecovery((stmt->options & VACOPT_VACUUM) ?
 											 "VACUUM" : "ANALYZE");
-				vacuum(stmt, InvalidOid, true, NULL, false, isTopLevel);
+				ExecVacuum(stmt, isTopLevel);
 			}
 			break;
 
@@ -758,9 +758,10 @@ standard_ProcessUtility(Node *parsetree,
 						 * intended effect!
 						 */
 						PreventTransactionChain(isTopLevel,
-												(stmt->kind == REINDEX_OBJECT_SCHEMA) ?
-												"REINDEX SCHEMA" : "REINDEX DATABASE");
-						ReindexObject(stmt->name, stmt->kind);
+												(stmt->kind == REINDEX_OBJECT_SCHEMA) ? "REINDEX SCHEMA" :
+												(stmt->kind == REINDEX_OBJECT_SYSTEM) ? "REINDEX SYSTEM" :
+												"REINDEX DATABASE");
+						ReindexMultipleTables(stmt->name, stmt->kind);
 						break;
 					default:
 						elog(ERROR, "unrecognized object type: %d",
@@ -2402,26 +2403,22 @@ CreateCommandTag(Node *parsetree)
 						else if (stmt->rowMarks != NIL)
 						{
 							/* not 100% but probably close enough */
-							switch (((PlanRowMark *) linitial(stmt->rowMarks))->markType)
+							switch (((PlanRowMark *) linitial(stmt->rowMarks))->strength)
 							{
-								case ROW_MARK_EXCLUSIVE:
-									tag = "SELECT FOR UPDATE";
-									break;
-								case ROW_MARK_NOKEYEXCLUSIVE:
-									tag = "SELECT FOR NO KEY UPDATE";
-									break;
-								case ROW_MARK_SHARE:
-									tag = "SELECT FOR SHARE";
-									break;
-								case ROW_MARK_KEYSHARE:
+								case LCS_FORKEYSHARE:
 									tag = "SELECT FOR KEY SHARE";
 									break;
-								case ROW_MARK_REFERENCE:
-								case ROW_MARK_COPY:
-									tag = "SELECT";
+								case LCS_FORSHARE:
+									tag = "SELECT FOR SHARE";
+									break;
+								case LCS_FORNOKEYUPDATE:
+									tag = "SELECT FOR NO KEY UPDATE";
+									break;
+								case LCS_FORUPDATE:
+									tag = "SELECT FOR UPDATE";
 									break;
 								default:
-									tag = "???";
+									tag = "SELECT";
 									break;
 							}
 						}
