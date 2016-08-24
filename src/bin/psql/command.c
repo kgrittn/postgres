@@ -1071,7 +1071,8 @@ exec_command(const char *cmd,
 			static const char *const my_list[] = {
 				"border", "columns", "expanded", "fieldsep", "fieldsep_zero",
 				"footer", "format", "linestyle", "null",
-				"numericlocale", "pager", "recordsep", "recordsep_zero",
+				"numericlocale", "pager", "pager_min_lines",
+				"recordsep", "recordsep_zero",
 				"tableattr", "title", "tuples_only",
 				"unicode_border_linestyle",
 				"unicode_column_linestyle",
@@ -1265,7 +1266,7 @@ exec_command(const char *cmd,
 					lines++;
 				}
 
-				output = PageOutput(lineno, pset.popt.topt.pager);
+				output = PageOutput(lineno, &(pset.popt.topt));
 				is_pager = true;
 			}
 			else
@@ -2248,6 +2249,9 @@ _align2string(enum printFormat in)
 		case PRINT_HTML:
 			return "html";
 			break;
+		case PRINT_ASCIIDOC:
+			return "asciidoc";
+			break;
 		case PRINT_LATEX:
 			return "latex";
 			break;
@@ -2324,6 +2328,8 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 			popt->topt.format = PRINT_WRAPPED;
 		else if (pg_strncasecmp("html", value, vallen) == 0)
 			popt->topt.format = PRINT_HTML;
+		else if (pg_strncasecmp("asciidoc", value, vallen) == 0)
+			popt->topt.format = PRINT_ASCIIDOC;
 		else if (pg_strncasecmp("latex", value, vallen) == 0)
 			popt->topt.format = PRINT_LATEX;
 		else if (pg_strncasecmp("latex-longtable", value, vallen) == 0)
@@ -2332,7 +2338,7 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 			popt->topt.format = PRINT_TROFF_MS;
 		else
 		{
-			psql_error("\\pset: allowed formats are unaligned, aligned, wrapped, html, latex, troff-ms\n");
+			psql_error("\\pset: allowed formats are unaligned, aligned, wrapped, html, asciidoc, latex, troff-ms\n");
 			return false;
 		}
 
@@ -2519,6 +2525,13 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 			popt->topt.pager = 1;
 	}
 
+	/* set minimum lines for pager use */
+	else if (strcmp(param, "pager_min_lines") == 0)
+	{
+		if (value)
+			popt->topt.pager_min_lines = atoi(value);
+	}
+
 	/* disable "(x rows)" footer */
 	else if (strcmp(param, "footer") == 0)
 	{
@@ -2638,6 +2651,13 @@ printPsetInfo(const char *param, struct printQueryOpt *popt)
 			printf(_("Pager is always used.\n"));
 		else
 			printf(_("Pager usage is off.\n"));
+	}
+
+	/* show minimum lines for pager use */
+	else if (strcmp(param, "pager_min_lines") == 0)
+	{
+		printf(_("Pager won't be used for less than %d lines\n"),
+			   popt->topt.pager_min_lines);
 	}
 
 	/* show record separator for unaligned text */
@@ -2792,6 +2812,8 @@ pset_value_string(const char *param, struct printQueryOpt *popt)
 		return pstrdup(pset_bool_string(popt->topt.numericLocale));
 	else if (strcmp(param, "pager") == 0)
 		return psprintf("%d", popt->topt.pager);
+	else if (strcmp(param, "pager_min_lines") == 0)
+		return psprintf("%d", popt->topt.pager_min_lines);
 	else if (strcmp(param, "recordsep") == 0)
 		return pset_quoted_string(popt->topt.recordSep.separator
 								  ? popt->topt.recordSep.separator
