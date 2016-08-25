@@ -1403,6 +1403,7 @@ typedef struct SetOperationStmt
 
 typedef enum ObjectType
 {
+	OBJECT_ACCESS_METHOD,
 	OBJECT_AGGREGATE,
 	OBJECT_AMOP,
 	OBJECT_AMPROC,
@@ -2094,6 +2095,18 @@ typedef struct AlterPolicyStmt
 	Node	   *with_check;		/* the policy's WITH CHECK condition. */
 } AlterPolicyStmt;
 
+/*----------------------
+ *		Create ACCESS METHOD Statement
+ *----------------------
+ */
+typedef struct CreateAmStmt
+{
+	NodeTag		type;
+	char	   *amname;			/* access method name */
+	List	   *handler_name;	/* handler function name */
+	char		amtype;			/* type of access method */
+} CreateAmStmt;
+
 /* ----------------------
  *		Create TRIGGER Statement
  * ----------------------
@@ -2549,6 +2562,20 @@ typedef struct RenameStmt
 } RenameStmt;
 
 /* ----------------------
+ * ALTER object DEPENDS ON EXTENSION extname
+ * ----------------------
+ */
+typedef struct AlterObjectDependsStmt
+{
+	NodeTag		type;
+	ObjectType	objectType;		/* OBJECT_FUNCTION, OBJECT_TRIGGER, etc */
+	RangeVar   *relation;		/* in case a table is involved */
+	List	   *objname;		/* name of the object */
+	List	   *objargs;		/* argument types, if applicable */
+	Value	   *extname;		/* extension name */
+} AlterObjectDependsStmt;
+
+/* ----------------------
  *		ALTER object SET SCHEMA Statement
  * ----------------------
  */
@@ -2821,7 +2848,8 @@ typedef enum VacuumOption
 	VACOPT_FREEZE = 1 << 3,		/* FREEZE option */
 	VACOPT_FULL = 1 << 4,		/* FULL (non-concurrent) vacuum */
 	VACOPT_NOWAIT = 1 << 5,		/* don't wait to get lock (autovacuum only) */
-	VACOPT_SKIPTOAST = 1 << 6	/* don't process the TOAST table, if any */
+	VACOPT_SKIPTOAST = 1 << 6,	/* don't process the TOAST table, if any */
+	VACOPT_DISABLE_PAGE_SKIPPING = 1 << 7	/* don't skip any pages */
 } VacuumOption;
 
 typedef struct VacuumStmt

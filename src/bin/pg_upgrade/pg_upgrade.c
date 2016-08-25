@@ -260,8 +260,6 @@ prepare_new_cluster(void)
 			  new_cluster.bindir, cluster_conn_opts(&new_cluster),
 			  log_opts.verbose ? "--verbose" : "");
 	check_ok();
-
-	get_pg_database_relfilenode(&new_cluster);
 }
 
 
@@ -334,12 +332,10 @@ create_new_objects(void)
 
 	/*
 	 * We don't have minmxids for databases or relations in pre-9.3 clusters,
-	 * so set those after we have restores the schemas.
+	 * so set those after we have restored the schema.
 	 */
 	if (GET_MAJOR_VERSION(old_cluster.major_version) < 903)
 		set_frozenxids(true);
-
-	optionally_create_toast_tables();
 
 	/* regenerate now that we have objects in the databases */
 	get_db_and_rel_infos(&new_cluster);
@@ -539,9 +535,9 @@ set_frozenxids(bool minmxid_only)
 		/*
 		 * We must update databases where datallowconn = false, e.g.
 		 * template0, because autovacuum increments their datfrozenxids,
-		 * relfrozenxids, and relminmxid even if autovacuum is turned off,
-		 * and even though all the data rows are already frozen.  To enable
-		 * this, we temporarily change datallowconn.
+		 * relfrozenxids, and relminmxid even if autovacuum is turned off, and
+		 * even though all the data rows are already frozen.  To enable this,
+		 * we temporarily change datallowconn.
 		 */
 		if (strcmp(datallowconn, "f") == 0)
 			PQclear(executeQueryOrDie(conn_template1,

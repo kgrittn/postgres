@@ -124,7 +124,7 @@ static void transformFKConstraints(CreateStmtContext *cxt,
 					   bool skipValidation,
 					   bool isAddConstraint);
 static void transformCheckConstraints(CreateStmtContext *cxt,
-						bool skipValidation);
+						  bool skipValidation);
 static void transformConstraintAttrs(CreateStmtContext *cxt,
 						 List *constraintList);
 static void transformColumnType(CreateStmtContext *cxt, ColumnDef *column);
@@ -287,15 +287,14 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 	if (like_found)
 	{
 		/*
-		 * To match INHERITS, the existence of any LIKE table with OIDs
-		 * causes the new table to have oids.  For the same reason,
-		 * WITH/WITHOUT OIDs is also ignored with LIKE.  We prepend
-		 * because the first oid option list entry is honored.  Our
-		 * prepended WITHOUT OIDS clause will be overridden if an
-		 * inherited table has oids.
+		 * To match INHERITS, the existence of any LIKE table with OIDs causes
+		 * the new table to have oids.  For the same reason, WITH/WITHOUT OIDs
+		 * is also ignored with LIKE.  We prepend because the first oid option
+		 * list entry is honored.  Our prepended WITHOUT OIDS clause will be
+		 * overridden if an inherited table has oids.
 		 */
 		stmt->options = lcons(makeDefElem("oids",
-							  (Node *)makeInteger(cxt.hasoids)), stmt->options);
+						  (Node *) makeInteger(cxt.hasoids)), stmt->options);
 	}
 
 	foreach(elements, stmt->tableElts)
@@ -305,6 +304,7 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 		if (nodeTag(element) == T_Constraint)
 			transformTableConstraint(&cxt, (Constraint *) element);
 	}
+
 	/*
 	 * transformIndexConstraints wants cxt.alist to contain only index
 	 * statements, so transfer anything we already have into save_alist.
@@ -1709,7 +1709,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 		 * else dump and reload will produce a different index (breaking
 		 * pg_upgrade in particular).
 		 */
-		if (index_rel->rd_rel->relam != get_am_oid(DEFAULT_INDEX_TYPE, false))
+		if (index_rel->rd_rel->relam != get_index_am_oid(DEFAULT_INDEX_TYPE, false))
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("index \"%s\" is not a btree", index_name),
@@ -1949,8 +1949,8 @@ transformCheckConstraints(CreateStmtContext *cxt, bool skipValidation)
 
 	/*
 	 * If creating a new table, we can safely skip validation of check
-	 * constraints, and nonetheless mark them valid.  (This will override
-	 * any user-supplied NOT VALID flag.)
+	 * constraints, and nonetheless mark them valid.  (This will override any
+	 * user-supplied NOT VALID flag.)
 	 */
 	if (skipValidation)
 	{

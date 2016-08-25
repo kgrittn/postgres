@@ -210,7 +210,7 @@ write_stderr(const char *fmt,...)
 	 * On Win32, we print to stderr if running on a console, or write to
 	 * eventlog if running as a service
 	 */
-	if (!pgwin32_is_service())	/* Running as a service */
+	if (pgwin32_is_service())	/* Running as a service */
 	{
 		char		errbuf[2048];		/* Arbitrary size? */
 
@@ -1747,8 +1747,8 @@ CreateRestrictedProcess(char *cmd, PROCESS_INFORMATION *processInfo, bool as_ser
 	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &origToken))
 	{
 		/*
-		 * Most Windows targets make DWORD a 32-bit unsigned long, but
-		 * in case it doesn't cast DWORD before printing.
+		 * Most Windows targets make DWORD a 32-bit unsigned long, but in case
+		 * it doesn't cast DWORD before printing.
 		 */
 		write_stderr(_("%s: could not open process token: error code %lu\n"),
 					 progname, (unsigned long) GetLastError());

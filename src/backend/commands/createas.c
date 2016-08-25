@@ -62,7 +62,7 @@ typedef struct
 static ObjectAddress CreateAsReladdr = {InvalidOid, InvalidOid, 0};
 
 static void intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
-static void intorel_receive(TupleTableSlot *slot, DestReceiver *self);
+static bool intorel_receive(TupleTableSlot *slot, DestReceiver *self);
 static void intorel_shutdown(DestReceiver *self);
 static void intorel_destroy(DestReceiver *self);
 
@@ -197,7 +197,7 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 	/* save the rowcount if we're given a completionTag to fill */
 	if (completionTag)
 		snprintf(completionTag, COMPLETION_TAG_BUFSIZE,
-				 "SELECT %u", queryDesc->estate->es_processed);
+				 "SELECT " UINT64_FORMAT, queryDesc->estate->es_processed);
 
 	/* and clean up */
 	ExecutorFinish(queryDesc);
@@ -482,7 +482,7 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 /*
  * intorel_receive --- receive one tuple
  */
-static void
+static bool
 intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 {
 	DR_intorel *myState = (DR_intorel *) self;
@@ -507,6 +507,8 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 				myState->bistate);
 
 	/* We know this is a newly created relation, so there are no indexes */
+
+	return true;
 }
 
 /*

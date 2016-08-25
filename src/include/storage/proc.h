@@ -84,7 +84,7 @@ struct PGPROC
 {
 	/* proc->links MUST BE FIRST IN STRUCT (see ProcSleep,ProcWakeup,etc) */
 	SHM_QUEUE	links;			/* list link if process is in a list */
-	PGPROC	  **procgloballist;	/* procglobal list that owns this PGPROC */
+	PGPROC	  **procgloballist; /* procglobal list that owns this PGPROC */
 
 	PGSemaphoreData sem;		/* ONE semaphore to sleep on */
 	int			waitStatus;		/* STATUS_WAITING, STATUS_OK or STATUS_ERROR */
@@ -143,16 +143,19 @@ struct PGPROC
 
 	/* Support for group XID clearing. */
 	/* true, if member of ProcArray group waiting for XID clear */
-	bool			procArrayGroupMember;
+	bool		procArrayGroupMember;
 	/* next ProcArray group member waiting for XID clear */
-	pg_atomic_uint32	procArrayGroupNext;
+	pg_atomic_uint32 procArrayGroupNext;
+
 	/*
 	 * latest transaction id among the transaction's main XID and
 	 * subtransactions
 	 */
-	TransactionId	procArrayGroupMemberXid;
+	TransactionId procArrayGroupMemberXid;
 
-	/* Per-backend LWLock.  Protects fields below. */
+	uint32		wait_event_info;	/* proc's wait information */
+
+	/* Per-backend LWLock.  Protects fields below (but not group fields). */
 	LWLock		backendLock;
 
 	/* Lock manager data, recording fast-path locks taken by this backend. */
@@ -163,13 +166,12 @@ struct PGPROC
 												 * lock */
 
 	/*
-	 * Support for lock groups.  Use LockHashPartitionLockByProc to get the
-	 * LWLock protecting these fields.
+	 * Support for lock groups.  Use LockHashPartitionLockByProc on the group
+	 * leader to get the LWLock protecting these fields.
 	 */
-	int			lockGroupLeaderIdentifier;	/* MyProcPid, if I'm a leader */
-	PGPROC	   *lockGroupLeader;	/* lock group leader, if I'm a follower */
-	dlist_head	lockGroupMembers;	/* list of members, if I'm a leader */
-	dlist_node  lockGroupLink;		/* my member link, if I'm a member */
+	PGPROC	   *lockGroupLeader;	/* lock group leader, if I'm a member */
+	dlist_head	lockGroupMembers;		/* list of members, if I'm a leader */
+	dlist_node	lockGroupLink;	/* my member link, if I'm a member */
 };
 
 /* NOTE: "typedef struct PGPROC PGPROC" appears in storage/lock.h. */
@@ -256,6 +258,7 @@ extern PGPROC *PreparedXactProcs;
 extern int	DeadlockTimeout;
 extern int	StatementTimeout;
 extern int	LockTimeout;
+extern int	IdleInTransactionSessionTimeout;
 extern bool log_lock_waits;
 
 

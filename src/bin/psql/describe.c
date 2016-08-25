@@ -15,12 +15,12 @@
 #include <ctype.h>
 
 #include "catalog/pg_default_acl.h"
+#include "fe_utils/string_utils.h"
 
 #include "common.h"
 #include "describe.h"
-#include "dumputils.h"
-#include "mbprint.h"
-#include "print.h"
+#include "fe_utils/mbprint.h"
+#include "fe_utils/print.h"
 #include "settings.h"
 #include "variables.h"
 
@@ -122,6 +122,70 @@ describeAggregates(const char *pattern, bool verbose, bool showSystem)
 	myopt.nullPrint = NULL;
 	myopt.title = _("List of aggregate functions");
 	myopt.translate_header = true;
+
+	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+
+	PQclear(res);
+	return true;
+}
+
+/* \dA
+ * Takes an optional regexp to select particular access methods
+ */
+bool
+describeAccessMethods(const char *pattern, bool verbose)
+{
+	PQExpBufferData buf;
+	PGresult   *res;
+	printQueryOpt myopt = pset.popt;
+	static const bool translate_columns[] = {false, true, false, false};
+
+	if (pset.sversion < 90600)
+	{
+		psql_error("The server (version %d.%d) does not support access methods.\n",
+				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		return true;
+	}
+
+	initPQExpBuffer(&buf);
+
+	printfPQExpBuffer(&buf,
+					  "SELECT amname AS \"%s\",\n"
+					  "  CASE amtype"
+					  " WHEN 'i' THEN '%s'"
+					  " END AS \"%s\"",
+					  gettext_noop("Name"),
+					  gettext_noop("Index"),
+					  gettext_noop("Type"));
+
+	if (verbose)
+	{
+		appendPQExpBuffer(&buf,
+						  ",\n  amhandler AS \"%s\",\n"
+					  "  pg_catalog.obj_description(oid, 'pg_am') AS \"%s\"",
+						  gettext_noop("Handler"),
+						  gettext_noop("Description"));
+	}
+
+	appendPQExpBufferStr(&buf,
+						 "\nFROM pg_catalog.pg_am\n");
+
+	processSQLNamePattern(pset.db, &buf, pattern, false, false,
+						  NULL, "amname", NULL,
+						  NULL);
+
+	appendPQExpBufferStr(&buf, "ORDER BY 1;");
+
+	res = PSQLexec(buf.data);
+	termPQExpBuffer(&buf);
+	if (!res)
+		return false;
+
+	myopt.nullPrint = NULL;
+	myopt.title = _("List of access methods");
+	myopt.translate_header = true;
+	myopt.translate_columns = translate_columns;
+	myopt.n_translate_columns = lengthof(translate_columns);
 
 	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
 
@@ -2646,7 +2710,7 @@ add_tablespace_footer(printTableContent *const cont, char relkind,
  * Describes roles.  Any schema portion of the pattern is ignored.
  */
 bool
-describeRoles(const char *pattern, bool verbose)
+describeRoles(const char *pattern, bool verbose, bool showSystem)
 {
 	PQExpBufferData buf;
 	PGresult   *res;
@@ -2690,6 +2754,9 @@ describeRoles(const char *pattern, bool verbose)
 		}
 
 		appendPQExpBufferStr(&buf, "\nFROM pg_catalog.pg_roles r\n");
+
+		if (!showSystem && !pattern)
+			appendPQExpBufferStr(&buf, "WHERE r.rolname !~ '^pg_'\n");
 
 		processSQLNamePattern(pset.db, &buf, pattern, false, false,
 							  NULL, "r.rolname", NULL, NULL);

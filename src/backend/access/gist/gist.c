@@ -57,7 +57,7 @@ gisthandler(PG_FUNCTION_ARGS)
 	IndexAmRoutine *amroutine = makeNode(IndexAmRoutine);
 
 	amroutine->amstrategies = 0;
-	amroutine->amsupport = 9;
+	amroutine->amsupport = GISTNProcs;
 	amroutine->amcanorder = false;
 	amroutine->amcanorderbyop = true;
 	amroutine->amcanbackward = false;
@@ -1498,8 +1498,9 @@ static void
 gistvacuumpage(Relation rel, Page page, Buffer buffer)
 {
 	OffsetNumber deletable[MaxIndexTuplesPerPage];
-	int			 ndeletable = 0;
-	OffsetNumber offnum, maxoff;
+	int			ndeletable = 0;
+	OffsetNumber offnum,
+				maxoff;
 
 	Assert(GistPageIsLeaf(page));
 

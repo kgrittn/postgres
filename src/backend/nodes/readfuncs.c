@@ -172,12 +172,6 @@
 	((length) == 0 ? NULL : debackslash(token, length))
 
 
-static Datum readDatum(bool typbyval);
-static bool *readBoolCols(int numCols);
-static int *readIntCols(int numCols);
-static Oid *readOidCols(int numCols);
-static AttrNumber *readAttrNumberCols(int numCols);
-
 /*
  * _readBitmapset
  */
@@ -552,8 +546,11 @@ _readAggref(void)
 
 	READ_OID_FIELD(aggfnoid);
 	READ_OID_FIELD(aggtype);
+	READ_OID_FIELD(aggoutputtype);
 	READ_OID_FIELD(aggcollid);
 	READ_OID_FIELD(inputcollid);
+	READ_OID_FIELD(aggtranstype);
+	READ_NODE_FIELD(aggargtypes);
 	READ_NODE_FIELD(aggdirectargs);
 	READ_NODE_FIELD(args);
 	READ_NODE_FIELD(aggorder);
@@ -561,6 +558,8 @@ _readAggref(void)
 	READ_NODE_FIELD(aggfilter);
 	READ_BOOL_FIELD(aggstar);
 	READ_BOOL_FIELD(aggvariadic);
+	READ_BOOL_FIELD(aggcombine);
+	READ_BOOL_FIELD(aggpartial);
 	READ_CHAR_FIELD(aggkind);
 	READ_UINT_FIELD(agglevelsup);
 	READ_LOCATION_FIELD(location);
@@ -1488,6 +1487,7 @@ _readModifyTable(void)
 	READ_NODE_FIELD(withCheckOptionLists);
 	READ_NODE_FIELD(returningLists);
 	READ_NODE_FIELD(fdwPrivLists);
+	READ_BITMAPSET_FIELD(fdwDirectModifyPlans);
 	READ_NODE_FIELD(rowMarks);
 	READ_INT_FIELD(epqParam);
 	READ_ENUM_FIELD(onConflictAction, OnConflictAction);
@@ -1813,6 +1813,7 @@ _readForeignScan(void)
 
 	ReadCommonScan(&local_node->scan);
 
+	READ_ENUM_FIELD(operation, CmdType);
 	READ_OID_FIELD(fs_server);
 	READ_NODE_FIELD(fdw_exprs);
 	READ_NODE_FIELD(fdw_private);
@@ -1831,8 +1832,7 @@ static CustomScan *
 _readCustomScan(void)
 {
 	READ_LOCALS(CustomScan);
-	char	   *library_name;
-	char	   *symbol_name;
+	char	   *custom_name;
 	const CustomScanMethods *methods;
 
 	ReadCommonScan(&local_node->scan);
@@ -1844,19 +1844,11 @@ _readCustomScan(void)
 	READ_NODE_FIELD(custom_scan_tlist);
 	READ_BITMAPSET_FIELD(custom_relids);
 
-	/*
-	 * Reconstruction of methods using library and symbol name
-	 */
-	token = pg_strtok(&length);		/* skip methods: */
-	token = pg_strtok(&length);		/* LibraryName */
-	library_name = nullable_string(token, length);
-	token = pg_strtok(&length);		/* SymbolName */
-	symbol_name = nullable_string(token, length);
-
-	methods = (const CustomScanMethods *)
-		load_external_function(library_name, symbol_name, true, NULL);
-	Assert(strcmp(methods->LibraryName, library_name) == 0 &&
-		   strcmp(methods->SymbolName, symbol_name) == 0);
+	/* Lookup CustomScanMethods by CustomName */
+	token = pg_strtok(&length); /* skip methods: */
+	token = pg_strtok(&length); /* CustomName */
+	custom_name = nullable_string(token, length);
+	methods = GetCustomScanMethods(custom_name, false);
 	local_node->methods = methods;
 
 	READ_DONE();
@@ -2004,10 +1996,11 @@ _readAgg(void)
 	ReadCommonPlan(&local_node->plan);
 
 	READ_ENUM_FIELD(aggstrategy, AggStrategy);
-	READ_INT_FIELD(numCols);
-	READ_ATTRNUMBER_ARRAY(grpColIdx, local_node->numCols);
 	READ_BOOL_FIELD(combineStates);
 	READ_BOOL_FIELD(finalizeAggs);
+	READ_BOOL_FIELD(serialStates);
+	READ_INT_FIELD(numCols);
+	READ_ATTRNUMBER_ARRAY(grpColIdx, local_node->numCols);
 	READ_OID_ARRAY(grpOperators, local_node->numCols);
 	READ_LONG_FIELD(numGroups);
 	READ_NODE_FIELD(groupingSets);
@@ -2243,11 +2236,12 @@ _readExtensibleNode(void)
 {
 	const ExtensibleNodeMethods *methods;
 	ExtensibleNode *local_node;
-	const char	   *extnodename;
+	const char *extnodename;
+
 	READ_TEMP_LOCALS();
 
-	token = pg_strtok(&length);		/* skip: extnodename */
-	token = pg_strtok(&length);		/* get extnodename */
+	token = pg_strtok(&length); /* skip: extnodename */
+	token = pg_strtok(&length); /* get extnodename */
 
 	extnodename = nullable_string(token, length);
 	if (!extnodename)
@@ -2511,7 +2505,7 @@ parseNodeString(void)
  * Datum.  The string representation embeds length info, but not byValue,
  * so we must be told that.
  */
-static Datum
+Datum
 readDatum(bool typbyval)
 {
 	Size		length,
@@ -2568,7 +2562,7 @@ readDatum(bool typbyval)
 /*
  * readAttrNumberCols
  */
-static AttrNumber *
+AttrNumber *
 readAttrNumberCols(int numCols)
 {
 	int			tokenLength,
@@ -2592,7 +2586,7 @@ readAttrNumberCols(int numCols)
 /*
  * readOidCols
  */
-static Oid *
+Oid *
 readOidCols(int numCols)
 {
 	int			tokenLength,
@@ -2616,7 +2610,7 @@ readOidCols(int numCols)
 /*
  * readIntCols
  */
-static int *
+int *
 readIntCols(int numCols)
 {
 	int			tokenLength,
@@ -2640,7 +2634,7 @@ readIntCols(int numCols)
 /*
  * readBoolCols
  */
-static bool *
+bool *
 readBoolCols(int numCols)
 {
 	int			tokenLength,

@@ -435,9 +435,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 		 * subselects in WHEN clauses; it would fail to examine the contents
 		 * of subselects.
 		 */
-		varList = pull_var_clause(whenClause,
-								  PVC_REJECT_AGGREGATES,
-								  PVC_REJECT_PLACEHOLDERS);
+		varList = pull_var_clause(whenClause, 0);
 		foreach(lc, varList)
 		{
 			Var		   *var = (Var *) lfirst(lc);
@@ -523,8 +521,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-					 errmsg("function %s must return type \"trigger\"",
-							NameListToString(stmt->funcname))));
+					 errmsg("function %s must return type %s",
+							NameListToString(stmt->funcname), "trigger")));
 	}
 
 	/*
@@ -617,8 +615,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	 * can skip this for internally generated triggers, since the name
 	 * modification above should be sufficient.
 	 *
-	 * NOTE that this is cool only because we have AccessExclusiveLock on the
-	 * relation, so the trigger set won't be changing underneath us.
+	 * NOTE that this is cool only because we have ShareRowExclusiveLock on
+	 * the relation, so the trigger set won't be changing underneath us.
 	 */
 	if (!isInternal)
 	{

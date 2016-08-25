@@ -780,7 +780,6 @@ explain (costs off)
                  ->  Index Only Scan Backward using minmaxtest2i on minmaxtest2
                        Index Cond: (f1 IS NOT NULL)
                  ->  Index Only Scan using minmaxtest3i on minmaxtest3
-                       Index Cond: (f1 IS NOT NULL)
    InitPlan 2 (returns $1)
      ->  Limit
            ->  Merge Append
@@ -792,8 +791,7 @@ explain (costs off)
                  ->  Index Only Scan using minmaxtest2i on minmaxtest2 minmaxtest2_1
                        Index Cond: (f1 IS NOT NULL)
                  ->  Index Only Scan Backward using minmaxtest3i on minmaxtest3 minmaxtest3_1
-                       Index Cond: (f1 IS NOT NULL)
-(25 rows)
+(23 rows)
 
 select min(f1), max(f1) from minmaxtest;
  min | max 
@@ -806,8 +804,7 @@ explain (costs off)
   select distinct min(f1), max(f1) from minmaxtest;
                                           QUERY PLAN                                          
 ----------------------------------------------------------------------------------------------
- HashAggregate
-   Group Key: $0, $1
+ Unique
    InitPlan 1 (returns $0)
      ->  Limit
            ->  Merge Append
@@ -819,7 +816,6 @@ explain (costs off)
                  ->  Index Only Scan Backward using minmaxtest2i on minmaxtest2
                        Index Cond: (f1 IS NOT NULL)
                  ->  Index Only Scan using minmaxtest3i on minmaxtest3
-                       Index Cond: (f1 IS NOT NULL)
    InitPlan 2 (returns $1)
      ->  Limit
            ->  Merge Append
@@ -831,9 +827,10 @@ explain (costs off)
                  ->  Index Only Scan using minmaxtest2i on minmaxtest2 minmaxtest2_1
                        Index Cond: (f1 IS NOT NULL)
                  ->  Index Only Scan Backward using minmaxtest3i on minmaxtest3 minmaxtest3_1
-                       Index Cond: (f1 IS NOT NULL)
-   ->  Result
-(27 rows)
+   ->  Sort
+         Sort Key: ($0), ($1)
+         ->  Result
+(26 rows)
 
 select distinct min(f1), max(f1) from minmaxtest;
  min | max 

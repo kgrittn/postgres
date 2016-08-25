@@ -138,8 +138,8 @@ ExecGather(GatherState *node)
 	/*
 	 * Initialize the parallel context and workers on first execution. We do
 	 * this on first execution rather than during node initialization, as it
-	 * needs to allocate large dynamic segment, so it is better to do if it
-	 * is really needed.
+	 * needs to allocate large dynamic segment, so it is better to do if it is
+	 * really needed.
 	 */
 	if (!node->initialized)
 	{
@@ -147,13 +147,12 @@ ExecGather(GatherState *node)
 		Gather	   *gather = (Gather *) node->ps.plan;
 
 		/*
-		 * Sometimes we might have to run without parallelism; but if
-		 * parallel mode is active then we can try to fire up some workers.
+		 * Sometimes we might have to run without parallelism; but if parallel
+		 * mode is active then we can try to fire up some workers.
 		 */
 		if (gather->num_workers > 0 && IsInParallelMode())
 		{
 			ParallelContext *pcxt;
-			bool	got_any_worker = false;
 
 			/* Initialize the workers required to execute Gather node. */
 			if (!node->pei)
@@ -167,31 +166,29 @@ ExecGather(GatherState *node)
 			 */
 			pcxt = node->pei->pcxt;
 			LaunchParallelWorkers(pcxt);
+			node->nworkers_launched = pcxt->nworkers_launched;
 
 			/* Set up tuple queue readers to read the results. */
-			if (pcxt->nworkers > 0)
+			if (pcxt->nworkers_launched > 0)
 			{
 				node->nreaders = 0;
 				node->reader =
-					palloc(pcxt->nworkers * sizeof(TupleQueueReader *));
+					palloc(pcxt->nworkers_launched * sizeof(TupleQueueReader *));
 
-				for (i = 0; i < pcxt->nworkers; ++i)
+				for (i = 0; i < pcxt->nworkers_launched; ++i)
 				{
-					if (pcxt->worker[i].bgwhandle == NULL)
-						continue;
-
 					shm_mq_set_handle(node->pei->tqueue[i],
 									  pcxt->worker[i].bgwhandle);
 					node->reader[node->nreaders++] =
 						CreateTupleQueueReader(node->pei->tqueue[i],
 											   fslot->tts_tupleDescriptor);
-					got_any_worker = true;
 				}
 			}
-
-			/* No workers?  Then never mind. */
-			if (!got_any_worker)
+			else
+			{
+				/* No workers?	Then never mind. */
 				ExecShutdownGatherWorkers(node);
+			}
 		}
 
 		/* Run plan locally if no workers or not single-copy. */
@@ -317,7 +314,7 @@ gather_getnext(GatherState *gatherstate)
 static HeapTuple
 gather_readnext(GatherState *gatherstate)
 {
-	int		waitpos = gatherstate->nextreader;
+	int			waitpos = gatherstate->nextreader;
 
 	for (;;)
 	{
@@ -333,8 +330,8 @@ gather_readnext(GatherState *gatherstate)
 		tup = TupleQueueReaderNext(reader, true, &readerdone);
 
 		/*
-		 * If this reader is done, remove it.  If all readers are done,
-		 * clean up remaining worker state.
+		 * If this reader is done, remove it.  If all readers are done, clean
+		 * up remaining worker state.
 		 */
 		if (readerdone)
 		{
@@ -405,7 +402,7 @@ ExecShutdownGatherWorkers(GatherState *node)
 	/* Shut down tuple queue readers before shutting down workers. */
 	if (node->reader != NULL)
 	{
-		int		i;
+		int			i;
 
 		for (i = 0; i < node->nreaders; ++i)
 			DestroyTupleQueueReader(node->reader[i]);
@@ -455,10 +452,10 @@ void
 ExecReScanGather(GatherState *node)
 {
 	/*
-	 * Re-initialize the parallel workers to perform rescan of relation.
-	 * We want to gracefully shutdown all the workers so that they
-	 * should be able to propagate any error or other information to master
-	 * backend before dying.  Parallel context will be reused for rescan.
+	 * Re-initialize the parallel workers to perform rescan of relation. We
+	 * want to gracefully shutdown all the workers so that they should be able
+	 * to propagate any error or other information to master backend before
+	 * dying.  Parallel context will be reused for rescan.
 	 */
 	ExecShutdownGatherWorkers(node);
 

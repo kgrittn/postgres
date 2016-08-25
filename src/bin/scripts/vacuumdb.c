@@ -13,7 +13,8 @@
 #include "postgres_fe.h"
 
 #include "common.h"
-#include "dumputils.h"
+#include "fe_utils/simple_list.h"
+#include "fe_utils/string_utils.h"
 
 
 #define ERRCODE_UNDEFINED_TABLE  "42P01"
@@ -70,7 +71,7 @@ static void DisconnectDatabase(ParallelSlot *slot);
 
 static int	select_loop(int maxFd, fd_set *workerset, bool *aborting);
 
-static void init_slot(ParallelSlot *slot, PGconn *conn);
+static void init_slot(ParallelSlot *slot, PGconn *conn, const char *progname);
 
 static void help(const char *progname);
 
@@ -421,14 +422,14 @@ vacuum_one_database(const char *dbname, vacuumingOptions *vacopts,
 	 * array contains the connection.
 	 */
 	slots = (ParallelSlot *) pg_malloc(sizeof(ParallelSlot) * concurrentCons);
-	init_slot(slots, conn);
+	init_slot(slots, conn, progname);
 	if (parallel)
 	{
 		for (i = 1; i < concurrentCons; i++)
 		{
 			conn = connectDatabase(dbname, host, port, username, prompt_password,
 								   progname, false, true);
-			init_slot(slots + i, conn);
+			init_slot(slots + i, conn, progname);
 		}
 	}
 
@@ -917,11 +918,18 @@ select_loop(int maxFd, fd_set *workerset, bool *aborting)
 }
 
 static void
-init_slot(ParallelSlot *slot, PGconn *conn)
+init_slot(ParallelSlot *slot, PGconn *conn, const char *progname)
 {
 	slot->connection = conn;
 	slot->isFree = true;
 	slot->sock = PQsocket(conn);
+
+	if (slot->sock < 0)
+	{
+		fprintf(stderr, _("%s: invalid socket: %s"), progname,
+				PQerrorMessage(conn));
+		exit(1);
+	}
 }
 
 static void
