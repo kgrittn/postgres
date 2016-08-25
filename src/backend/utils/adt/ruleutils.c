@@ -5990,7 +5990,8 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 
 		tle = get_tle_by_resno(dpns->inner_tlist, var->varattno);
 		if (!tle)
-			elog(ERROR, "bogus varattno for subquery var: %d", var->varattno);
+			elog(ERROR, "invalid attnum %d for relation \"%s\"",
+				 var->varattno, rte->eref->aliasname);
 
 		Assert(netlevelsup == 0);
 		push_child_plan(dpns, dpns->inner_planstate, &save_dpns);
@@ -6051,9 +6052,13 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 	else if (attnum > 0)
 	{
 		/* Get column name to use from the colinfo struct */
-		Assert(attnum <= colinfo->num_cols);
+		if (attnum > colinfo->num_cols)
+			elog(ERROR, "invalid attnum %d for relation \"%s\"",
+				 attnum, rte->eref->aliasname);
 		attname = colinfo->colnames[attnum - 1];
-		Assert(attname != NULL);
+		if (attname == NULL)	/* dropped column? */
+			elog(ERROR, "invalid attnum %d for relation \"%s\"",
+				 attnum, rte->eref->aliasname);
 	}
 	else
 	{
@@ -8309,7 +8314,7 @@ get_agg_expr(Aggref *aggref, deparse_context *context,
 	 * one element, which will point to a partial Aggref that supplies us with
 	 * transition states to combine.
 	 */
-	if (aggref->aggcombine)
+	if (DO_AGGSPLIT_COMBINE(aggref->aggsplit))
 	{
 		TargetEntry *tle = linitial(aggref->args);
 
@@ -8320,8 +8325,11 @@ get_agg_expr(Aggref *aggref, deparse_context *context,
 		return;
 	}
 
-	/* Mark as PARTIAL, if appropriate. */
-	if (original_aggref->aggpartial)
+	/*
+	 * Mark as PARTIAL, if appropriate.  We look to the original aggref so as
+	 * to avoid printing this when recursing from the code just above.
+	 */
+	if (DO_AGGSPLIT_SKIPFINAL(original_aggref->aggsplit))
 		appendStringInfoString(buf, "PARTIAL ");
 
 	/* Extract the argument types as seen by the parser */

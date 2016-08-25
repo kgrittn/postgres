@@ -715,9 +715,7 @@ _outAgg(StringInfo str, const Agg *node)
 	_outPlanInfo(str, (const Plan *) node);
 
 	WRITE_ENUM_FIELD(aggstrategy, AggStrategy);
-	WRITE_BOOL_FIELD(combineStates);
-	WRITE_BOOL_FIELD(finalizeAggs);
-	WRITE_BOOL_FIELD(serialStates);
+	WRITE_ENUM_FIELD(aggsplit, AggSplit);
 	WRITE_INT_FIELD(numCols);
 
 	appendStringInfoString(str, " :grpColIdx");
@@ -1041,7 +1039,6 @@ _outAggref(StringInfo str, const Aggref *node)
 
 	WRITE_OID_FIELD(aggfnoid);
 	WRITE_OID_FIELD(aggtype);
-	WRITE_OID_FIELD(aggoutputtype);
 	WRITE_OID_FIELD(aggcollid);
 	WRITE_OID_FIELD(inputcollid);
 	WRITE_OID_FIELD(aggtranstype);
@@ -1053,10 +1050,9 @@ _outAggref(StringInfo str, const Aggref *node)
 	WRITE_NODE_FIELD(aggfilter);
 	WRITE_BOOL_FIELD(aggstar);
 	WRITE_BOOL_FIELD(aggvariadic);
-	WRITE_BOOL_FIELD(aggcombine);
-	WRITE_BOOL_FIELD(aggpartial);
 	WRITE_CHAR_FIELD(aggkind);
 	WRITE_UINT_FIELD(agglevelsup);
+	WRITE_ENUM_FIELD(aggsplit, AggSplit);
 	WRITE_LOCATION_FIELD(location);
 }
 
@@ -1864,6 +1860,7 @@ _outAggPath(StringInfo str, const AggPath *node)
 
 	WRITE_NODE_FIELD(subpath);
 	WRITE_ENUM_FIELD(aggstrategy, AggStrategy);
+	WRITE_ENUM_FIELD(aggsplit, AggSplit);
 	WRITE_FLOAT_FIELD(numGroups, "%.0f");
 	WRITE_NODE_FIELD(groupClause);
 	WRITE_NODE_FIELD(qual);
@@ -2031,7 +2028,6 @@ _outPlannerGlobal(StringInfo str, const PlannerGlobal *node)
 	WRITE_BOOL_FIELD(hasRowSecurity);
 	WRITE_BOOL_FIELD(parallelModeOK);
 	WRITE_BOOL_FIELD(parallelModeNeeded);
-	WRITE_BOOL_FIELD(wholePlanParallelSafe);
 	WRITE_BOOL_FIELD(hasForeignJoin);
 }
 
