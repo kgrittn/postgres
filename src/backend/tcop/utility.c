@@ -848,7 +848,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(parsetree, queryString,
-									   context, params,
+									   context, params, tsrcache,
 									   dest, completionTag);
 				else
 					ExecAlterObjectDependsStmt(stmt, NULL);
