@@ -127,15 +127,15 @@ tqueueReceiveSlot(TupleTableSlot *slot, DestReceiver *self)
 	 * new tupledesc.  This is a strange test both because the executor really
 	 * shouldn't change the tupledesc, and also because it would be unsafe if
 	 * the old tupledesc could be freed and a new one allocated at the same
-	 * address.  But since some very old code in printtup.c uses this test, we
-	 * adopt it here as well.
+	 * address.  But since some very old code in printtup.c uses a similar
+	 * test, we adopt it here as well.
 	 */
-	if (tqueue->tupledesc != tupledesc ||
-		tqueue->remapinfo->natts != tupledesc->natts)
+	if (tqueue->tupledesc != tupledesc)
 	{
 		if (tqueue->remapinfo != NULL)
 			pfree(tqueue->remapinfo);
 		tqueue->remapinfo = BuildRemapInfo(tupledesc);
+		tqueue->tupledesc = tupledesc;
 	}
 
 	tuple = ExecMaterializeSlot(slot);
@@ -892,9 +892,6 @@ BuildRemapInfo(TupleDesc tupledesc)
 	Size		size;
 	AttrNumber	i;
 	bool		noop = true;
-	StringInfoData buf;
-
-	initStringInfo(&buf);
 
 	size = offsetof(RemapInfo, mapping) +
 		sizeof(RemapClass) * tupledesc->natts;
@@ -917,7 +914,6 @@ BuildRemapInfo(TupleDesc tupledesc)
 
 	if (noop)
 	{
-		appendStringInfo(&buf, "noop");
 		pfree(remapinfo);
 		remapinfo = NULL;
 	}
