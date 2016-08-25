@@ -259,6 +259,7 @@ _outPlannedStmt(StringInfo str, const PlannedStmt *node)
 	WRITE_INT_FIELD(nParamExec);
 	WRITE_BOOL_FIELD(hasRowSecurity);
 	WRITE_BOOL_FIELD(parallelModeNeeded);
+	WRITE_BOOL_FIELD(hasForeignJoin);
 }
 
 /*
@@ -704,6 +705,9 @@ _outAgg(StringInfo str, const Agg *node)
 	appendStringInfoString(str, " :grpColIdx");
 	for (i = 0; i < node->numCols; i++)
 		appendStringInfo(str, " %d", node->grpColIdx[i]);
+
+	WRITE_BOOL_FIELD(combineStates);
+	WRITE_BOOL_FIELD(finalizeAggs);
 
 	appendStringInfoString(str, " :grpOperators");
 	for (i = 0; i < node->numCols; i++)
@@ -1598,6 +1602,8 @@ _outPathInfo(StringInfo str, const Path *node)
 	else
 		_outBitmapset(str, NULL);
 	WRITE_BOOL_FIELD(parallel_aware);
+	WRITE_BOOL_FIELD(parallel_safe);
+	WRITE_INT_FIELD(parallel_degree);
 	WRITE_FLOAT_FIELD(rows, "%.0f");
 	WRITE_FLOAT_FIELD(startup_cost, "%.2f");
 	WRITE_FLOAT_FIELD(total_cost, "%.2f");
@@ -1775,7 +1781,6 @@ _outGatherPath(StringInfo str, const GatherPath *node)
 	_outPathInfo(str, (const Path *) node);
 
 	WRITE_NODE_FIELD(subpath);
-	WRITE_INT_FIELD(num_workers);
 	WRITE_BOOL_FIELD(single_copy);
 }
 
@@ -1831,6 +1836,7 @@ _outPlannerGlobal(StringInfo str, const PlannerGlobal *node)
 	WRITE_BOOL_FIELD(hasRowSecurity);
 	WRITE_BOOL_FIELD(parallelModeOK);
 	WRITE_BOOL_FIELD(parallelModeNeeded);
+	WRITE_BOOL_FIELD(hasForeignJoin);
 }
 
 static void
@@ -1897,6 +1903,7 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_NODE_FIELD(reltargetlist);
 	WRITE_NODE_FIELD(pathlist);
 	WRITE_NODE_FIELD(ppilist);
+	WRITE_NODE_FIELD(partial_pathlist);
 	WRITE_NODE_FIELD(cheapest_startup_path);
 	WRITE_NODE_FIELD(cheapest_total_path);
 	WRITE_NODE_FIELD(cheapest_unique_path);
@@ -1945,7 +1952,7 @@ _outIndexOptInfo(StringInfo str, const IndexOptInfo *node)
 	WRITE_BOOL_FIELD(unique);
 	WRITE_BOOL_FIELD(immediate);
 	WRITE_BOOL_FIELD(hypothetical);
-	/* we don't bother with fields copied from the pg_am entry */
+	/* we don't bother with fields copied from the index AM's API struct */
 }
 
 static void

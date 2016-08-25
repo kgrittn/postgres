@@ -899,7 +899,7 @@ static const pgsql_thing_t words_after_create[] = {
 	{"GROUP", Query_for_list_of_roles},
 	{"LANGUAGE", Query_for_list_of_languages},
 	{"INDEX", NULL, &Query_for_list_of_indexes},
-	{"MATERIALIZED VIEW", NULL, NULL},
+	{"MATERIALIZED VIEW", NULL, &Query_for_list_of_matviews},
 	{"OPERATOR", NULL, NULL},	/* Querying for this is probably not such a
 								 * good idea. */
 	{"OWNED", NULL, NULL, THING_NO_CREATE},		/* for DROP OWNED BY ... */
@@ -1264,7 +1264,8 @@ psql_completion(const char *text, int start, int end)
 		"DELETE FROM", "DISCARD", "DO", "DROP", "END", "EXECUTE", "EXPLAIN",
 		"FETCH", "GRANT", "IMPORT", "INSERT", "LISTEN", "LOAD", "LOCK",
 		"MOVE", "NOTIFY", "PREPARE",
-		"REASSIGN", "REFRESH", "REINDEX", "RELEASE", "RESET", "REVOKE", "ROLLBACK",
+		"REASSIGN", "REFRESH MATERIALIZED VIEW", "REINDEX", "RELEASE",
+		"RESET", "REVOKE", "ROLLBACK",
 		"SAVEPOINT", "SECURITY LABEL", "SELECT", "SET", "SHOW", "START",
 		"TABLE", "TRUNCATE", "UNLISTEN", "UPDATE", "VACUUM", "VALUES", "WITH",
 		NULL
@@ -1417,7 +1418,7 @@ psql_completion(const char *text, int start, int end)
 
 	/* ALTER FOREIGN DATA WRAPPER <name> */
 	else if (Matches5("ALTER", "FOREIGN", "DATA", "WRAPPER", MatchAny))
-		COMPLETE_WITH_LIST4("HANDLER", "VALIDATOR", "OPTIONS", "OWNER TO");
+		COMPLETE_WITH_LIST5("HANDLER", "VALIDATOR", "OPTIONS", "OWNER TO", "RENAME TO");
 
 	/* ALTER FOREIGN TABLE <name> */
 	else if (Matches4("ALTER", "FOREIGN", "TABLE", MatchAny))
@@ -1544,7 +1545,10 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_LIST3("MINVALUE", "MAXVALUE", "CYCLE");
 	/* ALTER SERVER <name> */
 	else if (Matches3("ALTER", "SERVER", MatchAny))
-		COMPLETE_WITH_LIST3("VERSION", "OPTIONS", "OWNER TO");
+		COMPLETE_WITH_LIST4("VERSION", "OPTIONS", "OWNER TO", "RENAME TO");
+	/* ALTER SERVER <name> VERSION <version>*/
+	else if (Matches5("ALTER", "SERVER", MatchAny, "VERSION", MatchAny))
+		COMPLETE_WITH_CONST("OPTIONS");
 	/* ALTER SYSTEM SET, RESET, RESET ALL */
 	else if (Matches2("ALTER", "SYSTEM"))
 		COMPLETE_WITH_LIST2("SET", "RESET");
@@ -1934,11 +1938,18 @@ psql_completion(const char *text, int start, int end)
 /* COPY */
 
 	/*
-	 * If we have COPY [BINARY] (which you'd have to type yourself), offer
-	 * list of tables (Also cover the analogous backslash command)
+	 * If we have COPY, offer list of tables or "(" (Also cover the analogous
+	 * backslash command).
 	 */
-	else if (Matches1("COPY|\\copy") || Matches2("COPY", "BINARY"))
+	else if (Matches1("COPY|\\copy"))
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tables,
+								   " UNION ALL SELECT '('");
+	/* If we have COPY BINARY, complete with list of tables */
+	else if (Matches2("COPY", "BINARY"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tables, NULL);
+	/* If we have COPY (, complete it with legal commands */
+	else if (Matches2("COPY|\\copy", "("))
+		COMPLETE_WITH_LIST7("SELECT", "TABLE", "VALUES", "INSERT", "UPDATE", "DELETE", "WITH");
 	/* If we have COPY [BINARY] <sth>, complete it with "TO" or "FROM" */
 	else if (Matches2("COPY|\\copy", MatchAny) ||
 			 Matches3("COPY", "BINARY", MatchAny))
@@ -1993,28 +2004,30 @@ psql_completion(const char *text, int start, int end)
 
 	/* CREATE FOREIGN DATA WRAPPER */
 	else if (Matches5("CREATE", "FOREIGN", "DATA", "WRAPPER", MatchAny))
-		COMPLETE_WITH_LIST2("HANDLER", "VALIDATOR");
+		COMPLETE_WITH_LIST3("HANDLER", "VALIDATOR", "OPTIONS");
 
 	/* CREATE INDEX --- is allowed inside CREATE SCHEMA, so use TailMatches */
 	/* First off we complete CREATE UNIQUE with "INDEX" */
 	else if (TailMatches2("CREATE", "UNIQUE"))
 		COMPLETE_WITH_CONST("INDEX");
-	/* If we have CREATE|UNIQUE INDEX, then add "ON" and existing indexes */
+	/* If we have CREATE|UNIQUE INDEX, then add "ON", "CONCURRENTLY",
+	   and existing indexes */
 	else if (TailMatches2("CREATE|UNIQUE", "INDEX"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexes,
 								   " UNION SELECT 'ON'"
 								   " UNION SELECT 'CONCURRENTLY'");
-	/* Complete ... INDEX [<name>] ON with a list of tables  */
-	else if (TailMatches3("INDEX", MatchAny, "ON") ||
+	/* Complete ... INDEX|CONCURRENTLY [<name>] ON with a list of tables  */
+	else if (TailMatches3("INDEX|CONCURRENTLY", MatchAny, "ON") ||
 			 TailMatches2("INDEX|CONCURRENTLY", "ON"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tm, NULL);
-	/* If we have CREATE|UNIQUE INDEX <sth> CONCURRENTLY, then add "ON" */
-	else if (TailMatches3("INDEX", MatchAny, "CONCURRENTLY") ||
-			 TailMatches2("INDEX", "CONCURRENTLY"))
+	/* Complete CREATE|UNIQUE INDEX CONCURRENTLY with "ON" and existing indexes */
+	else if (TailMatches3("CREATE|UNIQUE", "INDEX", "CONCURRENTLY"))
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexes,
+								   " UNION SELECT 'ON'");
+	/* Complete CREATE|UNIQUE INDEX [CONCURRENTLY] <sth> with "ON" */
+	else if (TailMatches3("CREATE|UNIQUE", "INDEX", MatchAny) ||
+			 TailMatches4("CREATE|UNIQUE", "INDEX", "CONCURRENTLY", MatchAny))
 		COMPLETE_WITH_CONST("ON");
-	/* If we have CREATE|UNIQUE INDEX <sth>, then add "ON" or "CONCURRENTLY" */
-	else if (TailMatches3("CREATE|UNIQUE", "INDEX", MatchAny))
-		COMPLETE_WITH_LIST2("CONCURRENTLY", "ON");
 
 	/*
 	 * Complete INDEX <name> ON <table> with a list of table columns (which
@@ -2245,7 +2258,7 @@ psql_completion(const char *text, int start, int end)
 /* DROP */
 	/* Complete DROP object with CASCADE / RESTRICT */
 	else if (Matches3("DROP",
-					  "COLLATION|CONVERSION|DOMAIN|EXTENSION|INDEX|LANGUAGE|SCHEMA|SEQUENCE|SERVER|TABLE|TYPE|VIEW",
+					  "COLLATION|CONVERSION|DOMAIN|EXTENSION|LANGUAGE|SCHEMA|SEQUENCE|SERVER|TABLE|TYPE|VIEW",
 					  MatchAny) ||
 			 (Matches4("DROP", "AGGREGATE|FUNCTION", MatchAny, MatchAny) &&
 			  ends_with(prev_wd, ')')) ||
@@ -2262,6 +2275,17 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_FUNCTION_ARG(prev2_wd);
 	else if (Matches2("DROP", "FOREIGN"))
 		COMPLETE_WITH_LIST2("DATA WRAPPER", "TABLE");
+
+	/* DROP INDEX */
+	else if (Matches2("DROP", "INDEX"))
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexes,
+								   " UNION SELECT 'CONCURRENTLY'");
+	else if (Matches3("DROP", "INDEX", "CONCURRENTLY"))
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexes, NULL);
+	else if (Matches3("DROP", "INDEX", MatchAny))
+		COMPLETE_WITH_LIST2("CASCADE", "RESTRICT");
+	else if (Matches4("DROP", "INDEX", "CONCURRENTLY", MatchAny))
+		COMPLETE_WITH_LIST2("CASCADE", "RESTRICT");
 
 	/* DROP MATERIALIZED VIEW */
 	else if (Matches2("DROP", "MATERIALIZED"))
@@ -2359,6 +2383,10 @@ psql_completion(const char *text, int start, int end)
 	else if (TailMatches3("FOREIGN", "DATA", "WRAPPER") &&
 			 !TailMatches4("CREATE", MatchAny, MatchAny, MatchAny))
 		COMPLETE_WITH_QUERY(Query_for_list_of_fdws);
+	/* applies in CREATE SERVER */
+	else if (TailMatches4("FOREIGN", "DATA", "WRAPPER", MatchAny) &&
+			 HeadMatches2("CREATE", "SERVER"))
+		COMPLETE_WITH_CONST("OPTIONS");
 
 /* FOREIGN TABLE */
 	else if (TailMatches2("FOREIGN", "TABLE") &&
@@ -2626,12 +2654,14 @@ psql_completion(const char *text, int start, int end)
 	else if (Matches4("REFRESH", "MATERIALIZED", "VIEW", MatchAny))
 		COMPLETE_WITH_CONST("WITH");
 	else if (Matches5("REFRESH", "MATERIALIZED", "VIEW", "CONCURRENTLY", MatchAny))
-		COMPLETE_WITH_CONST("WITH DATA");
+		COMPLETE_WITH_CONST("WITH");
 	else if (Matches5("REFRESH", "MATERIALIZED", "VIEW", MatchAny, "WITH"))
 		COMPLETE_WITH_LIST2("NO DATA", "DATA");
 	else if (Matches6("REFRESH", "MATERIALIZED", "VIEW", "CONCURRENTLY", MatchAny, "WITH"))
-		COMPLETE_WITH_CONST("DATA");
+		COMPLETE_WITH_LIST2("NO DATA", "DATA");
 	else if (Matches6("REFRESH", "MATERIALIZED", "VIEW", MatchAny, "WITH", "NO"))
+		COMPLETE_WITH_CONST("DATA");
+	else if (Matches7("REFRESH", "MATERIALIZED", "VIEW", "CONCURRENTLY", MatchAny, "WITH", "NO"))
 		COMPLETE_WITH_CONST("DATA");
 
 /* REINDEX */
@@ -2803,6 +2833,8 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_QUERY(Query_for_list_of_user_mappings);
 	else if (Matches5("CREATE|ALTER|DROP", "USER", "MAPPING", "FOR", MatchAny))
 		COMPLETE_WITH_CONST("SERVER");
+	else if (Matches7("CREATE|ALTER", "USER", "MAPPING", "FOR", MatchAny, "SERVER", MatchAny))
+		COMPLETE_WITH_CONST("OPTIONS");
 
 /*
  * VACUUM [ FULL | FREEZE ] [ VERBOSE ] [ table ]

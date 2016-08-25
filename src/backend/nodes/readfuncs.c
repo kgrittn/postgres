@@ -1403,6 +1403,7 @@ _readPlannedStmt(void)
 	READ_INT_FIELD(nParamExec);
 	READ_BOOL_FIELD(hasRowSecurity);
 	READ_BOOL_FIELD(parallelModeNeeded);
+	READ_BOOL_FIELD(hasForeignJoin);
 
 	READ_DONE();
 }
@@ -1996,6 +1997,8 @@ _readAgg(void)
 	READ_ENUM_FIELD(aggstrategy, AggStrategy);
 	READ_INT_FIELD(numCols);
 	READ_ATTRNUMBER_ARRAY(grpColIdx, local_node->numCols);
+	READ_BOOL_FIELD(combineStates);
+	READ_BOOL_FIELD(finalizeAggs);
 	READ_OID_ARRAY(grpOperators, local_node->numCols);
 	READ_LONG_FIELD(numGroups);
 	READ_NODE_FIELD(groupingSets);

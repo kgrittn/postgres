@@ -852,6 +852,19 @@
       <row>
        <entry>
         <indexterm>
+         <primary>scale</primary>
+        </indexterm>
+        <literal><function>scale(<type>numeric</type>)</function></literal>
+       </entry>
+       <entry><type>numeric</type></entry>
+       <entry>scale of the argument (the number of decimal digits in the fractional part)</entry>
+       <entry><literal>scale(8.41)</literal></entry>
+       <entry><literal>2</literal></entry>
+      </row>
+
+      <row>
+       <entry>
+        <indexterm>
          <primary>sign</primary>
         </indexterm>
         <literal><function>sign(<type>dp</type> or <type>numeric</type>)</function></literal>
@@ -993,20 +1006,19 @@
    Finally, <xref linkend="functions-math-trig-table"> shows the
    available trigonometric functions.  All trigonometric functions
    take arguments and return values of type <type>double
-   precision</type>. Trigonometric functions arguments are expressed
-   in radians. Inverse functions return values are expressed in
-   radians.  See unit transformation functions
-   <literal><function>radians()</function></literal> and
-   <literal><function>degrees()</function></literal> above.
+   precision</type>.  Each of the trigonometric functions comes in
+   two variants, one that measures angles in radians and one that
+   measures angles in degrees.
   </para>
 
    <table id="functions-math-trig-table">
     <title>Trigonometric Functions</title>
 
-    <tgroup cols="2">
+    <tgroup cols="3">
      <thead>
       <row>
-       <entry>Function</entry>
+       <entry>Function (radians)</entry>
+       <entry>Function (degrees)</entry>
        <entry>Description</entry>
       </row>
      </thead>
@@ -1018,6 +1030,11 @@
          <primary>acos</primary>
         </indexterm><literal><function>acos(<replaceable>x</replaceable>)</function></literal>
        </entry>
+       <entry>
+        <indexterm>
+         <primary>acosd</primary>
+        </indexterm><literal><function>acosd(<replaceable>x</replaceable>)</function></literal>
+       </entry>
        <entry>inverse cosine</entry>
       </row>
 
@@ -1027,6 +1044,12 @@
          <primary>asin</primary>
         </indexterm>
         <literal><function>asin(<replaceable>x</replaceable>)</function></literal>
+       </entry>
+       <entry>
+        <indexterm>
+         <primary>asind</primary>
+        </indexterm>
+        <literal><function>asind(<replaceable>x</replaceable>)</function></literal>
        </entry>
        <entry>inverse sine</entry>
       </row>
@@ -1038,6 +1061,12 @@
         </indexterm>
         <literal><function>atan(<replaceable>x</replaceable>)</function></literal>
        </entry>
+       <entry>
+        <indexterm>
+         <primary>atand</primary>
+        </indexterm>
+        <literal><function>atand(<replaceable>x</replaceable>)</function></literal>
+       </entry>
        <entry>inverse tangent</entry>
       </row>
 
@@ -1047,6 +1076,13 @@
          <primary>atan2</primary>
         </indexterm>
         <literal><function>atan2(<replaceable>y</replaceable>,
+        <replaceable>x</replaceable>)</function></literal>
+       </entry>
+       <entry>
+        <indexterm>
+         <primary>atan2d</primary>
+        </indexterm>
+        <literal><function>atan2d(<replaceable>y</replaceable>,
         <replaceable>x</replaceable>)</function></literal>
        </entry>
        <entry>inverse tangent of
@@ -1060,6 +1096,12 @@
         </indexterm>
         <literal><function>cos(<replaceable>x</replaceable>)</function></literal>
        </entry>
+       <entry>
+        <indexterm>
+         <primary>cosd</primary>
+        </indexterm>
+        <literal><function>cosd(<replaceable>x</replaceable>)</function></literal>
+       </entry>
        <entry>cosine</entry>
       </row>
 
@@ -1069,6 +1111,12 @@
          <primary>cot</primary>
         </indexterm>
         <literal><function>cot(<replaceable>x</replaceable>)</function></literal>
+       </entry>
+       <entry>
+        <indexterm>
+         <primary>cotd</primary>
+        </indexterm>
+        <literal><function>cotd(<replaceable>x</replaceable>)</function></literal>
        </entry>
        <entry>cotangent</entry>
       </row>
@@ -1080,6 +1128,12 @@
         </indexterm>
         <literal><function>sin(<replaceable>x</replaceable>)</function></literal>
        </entry>
+       <entry>
+        <indexterm>
+         <primary>sind</primary>
+        </indexterm>
+        <literal><function>sind(<replaceable>x</replaceable>)</function></literal>
+       </entry>
        <entry>sine</entry>
       </row>
 
@@ -1090,11 +1144,28 @@
         </indexterm>
         <literal><function>tan(<replaceable>x</replaceable>)</function></literal>
        </entry>
+       <entry>
+        <indexterm>
+         <primary>tand</primary>
+        </indexterm>
+        <literal><function>tand(<replaceable>x</replaceable>)</function></literal>
+       </entry>
        <entry>tangent</entry>
       </row>
      </tbody>
     </tgroup>
    </table>
+
+  <note>
+   <para>
+    Another way to work with angles measured in degrees is to use the unit
+    transformation functions <literal><function>radians()</function></literal>
+    and <literal><function>degrees()</function></literal> shown earlier.
+    However, using the degree-based trigonometric functions is preferred,
+    as that way avoids roundoff error for special cases such
+    as <literal>sind(30)</>.
+   </para>
+  </note>
 
   </sect1>
 
@@ -7507,6 +7578,17 @@ SELECT EXTRACT(YEAR FROM TIMESTAMP '2001-02-16 20:38:40');
 
     </variablelist>
    </para>
+
+   <note>
+    <para>
+     When the input value is +/-Infinity, <function>extract</> returns
+     +/-Infinity for monotonically-increasing fields (<literal>epoch</>,
+     <literal>julian</>, <literal>year</>, <literal>isoyear</>,
+     <literal>decade</>, <literal>century</>, and <literal>millennium</>).
+     For other fields, NULL is returned.  <productname>PostgreSQL</>
+     versions before 9.6 returned zero for all cases of infinite input.
+    </para>
+   </note>
 
    <para>
     The <function>extract</function> function is primarily intended
@@ -16776,6 +16858,9 @@ SELECT set_config('log_statement_stats', 'off', false);
     <primary>pg_create_restore_point</primary>
    </indexterm>
    <indexterm>
+    <primary>pg_current_xlog_flush_location</primary>
+   </indexterm>
+   <indexterm>
     <primary>pg_current_xlog_insert_location</primary>
    </indexterm>
    <indexterm>
@@ -16829,6 +16914,13 @@ SELECT set_config('log_statement_stats', 'off', false);
         </entry>
        <entry><type>pg_lsn</type></entry>
        <entry>Create a named point for performing restore (restricted to superusers)</entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>pg_current_xlog_flush_location()</function></literal>
+        </entry>
+       <entry><type>pg_lsn</type></entry>
+       <entry>Get current transaction log flush location</entry>
       </row>
       <row>
        <entry>
@@ -16964,13 +17056,14 @@ postgres=# select pg_start_backup('label_goes_here');
     <function>pg_current_xlog_location</> displays the current transaction log write
     location in the same format used by the above functions.  Similarly,
     <function>pg_current_xlog_insert_location</> displays the current transaction log
-    insertion point.  The insertion point is the <quote>logical</> end
-    of the transaction log
-    at any instant, while the write location is the end of what has actually
-    been written out from the server's internal buffers.  The write location
-    is the end of what can be examined from outside the server, and is usually
+    insertion point and <function>pg_current_xlog_flush_location</> displays the
+    current transaction log flush point. The insertion point is the <quote>logical</>
+    end of the transaction log at any instant, while the write location is the end of
+    what has actually been written out from the server's internal buffers and flush
+    location is the location guaranteed to be written to durable storage. The write
+    location is the end of what can be examined from outside the server, and is usually
     what you want if you are interested in archiving partially-complete transaction log
-    files.  The insertion point is made available primarily for server
+    files.  The insertion and flush points are made available primarily for server
     debugging purposes.  These are both read-only operations and do not
     require superuser permissions.
    </para>
@@ -17943,9 +18036,16 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
     <primary>brin_summarize_new_values</primary>
    </indexterm>
 
+   <indexterm>
+    <primary>gin_clean_pending_list</primary>
+   </indexterm>
+
    <para>
     <xref linkend="functions-admin-index-table"> shows the functions
     available for index maintenance tasks.
+    These functions cannot be executed during recovery.
+    Use of these functions is restricted to superusers and the owner
+    of the given index.
    </para>
 
    <table id="functions-admin-index-table">
@@ -17963,6 +18063,13 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        <entry><type>integer</type></entry>
        <entry>summarize page ranges not already summarized</entry>
       </row>
+      <row>
+       <entry>
+        <literal><function>gin_clean_pending_list(<parameter>index</> <type>regclass</>)</function></literal>
+       </entry>
+       <entry><type>bigint</type></entry>
+       <entry>move GIN pending list entries into main index structure</entry>
+      </row>
      </tbody>
     </tgroup>
    </table>
@@ -17974,6 +18081,18 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
     it creates a new summary index tuple by scanning the table pages.
     It returns the number of new page range summaries that were inserted
     into the index.
+   </para>
+
+   <para>
+    <function>gin_clean_pending_list</> accepts the OID or name of
+    a GIN index and cleans up the pending list of the specified GIN index
+    by moving entries in it to the main GIN data structure in bulk.
+    It returns the number of pages cleaned up from the pending list.
+    Note that if the argument is a GIN index built with <literal>fastupdate</>
+    option disabled, the cleanup does not happen and the return value is 0
+    because the index doesn't have a pending list.
+    Please see <xref linkend="gin-fast-update"> and <xref linkend="gin-tips">
+    for details of the pending list and <literal>fastupdate</> option.
    </para>
 
   </sect2>
