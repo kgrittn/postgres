@@ -1985,7 +1985,9 @@ typedef struct GatherState
 	PlanState	ps;				/* its first field is NodeTag */
 	bool		initialized;
 	struct ParallelExecutorInfo *pei;
-	struct TupleQueueFunnel *funnel;
+	int			nreaders;
+	int			nextreader;
+	struct TupleQueueReader **reader;
 	TupleTableSlot *funnel_slot;
 	bool		need_to_scan_locally;
 } GatherState;

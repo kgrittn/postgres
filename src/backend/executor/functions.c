@@ -914,6 +914,7 @@ postquel_sub_params(SQLFunctionCachePtr fcache,
 			paramLI->parserSetup = NULL;
 			paramLI->parserSetupArg = NULL;
 			paramLI->numParams = nargs;
+			paramLI->paramMask = NULL;
 			fcache->paramLI = paramLI;
 		}
 		else

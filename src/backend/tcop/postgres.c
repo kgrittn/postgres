@@ -1632,6 +1632,7 @@ exec_bind_message(StringInfo input_message)
 		params->parserSetup = NULL;
 		params->parserSetupArg = NULL;
 		params->numParams = numParams;
+		params->paramMask = NULL;
 
 		for (paramno = 0; paramno < numParams; paramno++)
 		{
