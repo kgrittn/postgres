@@ -67,6 +67,7 @@
 #include "getaddrinfo.h"
 #include "getopt_long.h"
 #include "miscadmin.h"
+#include "fe_utils/string_utils.h"
 
 
 /* Define PG_FLUSH_DATA_WORKS if we have an implementation for pg_flush_data */
@@ -330,14 +331,6 @@ do { \
 	if (fprintf(cmdfd, fmt, arg1, arg2, arg3) < 0 || fflush(cmdfd) < 0) \
 		output_failed = true, output_errno = errno; \
 } while (0)
-
-#ifndef WIN32
-#define QUOTE_PATH	""
-#define DIR_SEP "/"
-#else
-#define QUOTE_PATH	"\""
-#define DIR_SEP "\\"
-#endif
 
 static char *
 escape_quotes(const char *src)
@@ -1292,6 +1285,12 @@ setup_config(void)
 							  "#effective_io_concurrency = 0");
 #endif
 
+#ifdef WIN32
+	conflines = replace_token(conflines,
+							  "#update_process_title = on",
+							  "#update_process_title = off");
+#endif
+
 	snprintf(path, sizeof(path), "%s/postgresql.conf", pg_data);
 
 	writefile(path, conflines);
@@ -2002,6 +2001,9 @@ setup_dictionary(FILE *cmdfd)
  * time.  This is used by pg_dump to allow users to change privileges
  * on catalog objects and to have those privilege changes preserved
  * across dump/reload and pg_upgrade.
+ *
+ * Note that pg_init_privs is only for per-database objects and therefore
+ * we don't include databases or tablespaces.
  */
 static void
 setup_privileges(FILE *cmdfd)
@@ -2107,30 +2109,6 @@ setup_privileges(FILE *cmdfd)
 		"        pg_namespace"
 		"    WHERE"
 		"        nspacl IS NOT NULL;",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class WHERE relname = 'pg_database'),"
-		"        0,"
-		"        datacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_database"
-		"    WHERE"
-		"        datacl IS NOT NULL;",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class WHERE relname = 'pg_tablespace'),"
-		"        0,"
-		"        spcacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_tablespace"
-		"    WHERE"
-		"        spcacl IS NOT NULL;",
 		"INSERT INTO pg_init_privs "
 		"  (objoid, classoid, objsubid, initprivs, privtype)"
 		"    SELECT"
@@ -3374,7 +3352,8 @@ main(int argc, char *argv[])
 	int			c;
 	int			option_index;
 	char	   *effective_user;
-	char		bin_dir[MAXPGPATH];
+	PQExpBuffer start_db_cmd;
+	char		pg_ctl_path[MAXPGPATH];
 
 	/*
 	 * Ensure that buffering behavior of stdout and stderr matches what it is
@@ -3602,14 +3581,33 @@ main(int argc, char *argv[])
 	if (authwarning != NULL)
 		fprintf(stderr, "%s", authwarning);
 
-	/* Get directory specification used to start this executable */
-	strlcpy(bin_dir, argv[0], sizeof(bin_dir));
-	get_parent_directory(bin_dir);
+	/*
+	 * Build up a shell command to tell the user how to start the server
+	 */
+	start_db_cmd = createPQExpBuffer();
+
+	/* Get directory specification used to start initdb ... */
+	strlcpy(pg_ctl_path, argv[0], sizeof(pg_ctl_path));
+	canonicalize_path(pg_ctl_path);
+	get_parent_directory(pg_ctl_path);
+	/* ... and tag on pg_ctl instead */
+	join_path_components(pg_ctl_path, pg_ctl_path, "pg_ctl");
+
+	/* path to pg_ctl, properly quoted */
+	appendShellString(start_db_cmd, pg_ctl_path);
+
+	/* add -D switch, with properly quoted data directory */
+	appendPQExpBufferStr(start_db_cmd, " -D ");
+	appendShellString(start_db_cmd, pgdata_native);
+
+	/* add suggested -l switch and "start" command */
+	appendPQExpBufferStr(start_db_cmd, " -l logfile start");
 
 	printf(_("\nSuccess. You can now start the database server using:\n\n"
-			 "    %s%s%spg_ctl%s -D %s%s%s -l logfile start\n\n"),
-	   QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
-		   QUOTE_PATH, pgdata_native, QUOTE_PATH);
+			 "	  %s\n\n"),
+		   start_db_cmd->data);
+
+	destroyPQExpBuffer(start_db_cmd);
 
 	return 0;
 }

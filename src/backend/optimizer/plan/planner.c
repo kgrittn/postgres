@@ -23,6 +23,7 @@
 #include "access/sysattr.h"
 #include "access/xact.h"
 #include "catalog/pg_constraint_fn.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "executor/executor.h"
 #include "executor/nodeAgg.h"
@@ -219,8 +220,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	glob->lastRowMarkId = 0;
 	glob->lastPlanNodeId = 0;
 	glob->transientPlan = false;
-	glob->hasRowSecurity = false;
-	glob->hasForeignJoin = false;
+	glob->dependsOnRole = false;
 
 	/*
 	 * Assess whether it's feasible to use parallel mode for this query. We
@@ -242,12 +242,26 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	 * time and execution time, so don't generate a parallel plan if we're in
 	 * serializable mode.
 	 */
-	glob->parallelModeOK = (cursorOptions & CURSOR_OPT_PARALLEL_OK) != 0 &&
-		IsUnderPostmaster && dynamic_shared_memory_type != DSM_IMPL_NONE &&
-		parse->commandType == CMD_SELECT && !parse->hasModifyingCTE &&
-		parse->utilityStmt == NULL && max_parallel_workers_per_gather > 0 &&
-		!IsParallelWorker() && !IsolationIsSerializable() &&
-		!has_parallel_hazard((Node *) parse, true);
+	if ((cursorOptions & CURSOR_OPT_PARALLEL_OK) != 0 &&
+		IsUnderPostmaster &&
+		dynamic_shared_memory_type != DSM_IMPL_NONE &&
+		parse->commandType == CMD_SELECT &&
+		parse->utilityStmt == NULL &&
+		!parse->hasModifyingCTE &&
+		max_parallel_workers_per_gather > 0 &&
+		!IsParallelWorker() &&
+		!IsolationIsSerializable())
+	{
+		/* all the cheap tests pass, so scan the query tree */
+		glob->maxParallelHazard = max_parallel_hazard(parse);
+		glob->parallelModeOK = (glob->maxParallelHazard != PROPARALLEL_UNSAFE);
+	}
+	else
+	{
+		/* skip the query tree scan, just assume it's unsafe */
+		glob->maxParallelHazard = PROPARALLEL_UNSAFE;
+		glob->parallelModeOK = false;
+	}
 
 	/*
 	 * glob->parallelModeNeeded should tell us whether it's necessary to
@@ -405,6 +419,8 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->hasModifyingCTE = parse->hasModifyingCTE;
 	result->canSetTag = parse->canSetTag;
 	result->transientPlan = glob->transientPlan;
+	result->dependsOnRole = glob->dependsOnRole;
+	result->parallelModeNeeded = glob->parallelModeNeeded;
 	result->planTree = top_plan;
 	result->rtable = glob->finalrtable;
 	result->resultRelations = glob->resultRelations;
@@ -415,9 +431,6 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->relationOids = glob->relationOids;
 	result->invalItems = glob->invalItems;
 	result->nParamExec = glob->nParamExec;
-	result->hasRowSecurity = glob->hasRowSecurity;
-	result->parallelModeNeeded = glob->parallelModeNeeded;
-	result->hasForeignJoin = glob->hasForeignJoin;
 
 	return result;
 }
@@ -1628,8 +1641,6 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		 * This may add new security barrier subquery RTEs to the rangetable.
 		 */
 		expand_security_quals(root, tlist);
-		if (parse->hasRowSecurity)
-			root->glob->hasRowSecurity = true;
 
 		/*
 		 * We are now done hacking up the query's targetlist.  Most of the
@@ -1806,7 +1817,7 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		 * computed by partial paths.
 		 */
 		if (current_rel->partial_pathlist &&
-			!has_parallel_hazard((Node *) scanjoin_target->exprs, false))
+			is_parallel_safe(root, (Node *) scanjoin_target->exprs))
 		{
 			/* Apply the scan/join target to each partial path */
 			foreach(lc, current_rel->partial_pathlist)
@@ -1952,15 +1963,16 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 	 * query.
 	 */
 	if (current_rel->consider_parallel &&
-		!has_parallel_hazard(parse->limitOffset, false) &&
-		!has_parallel_hazard(parse->limitCount, false))
+		is_parallel_safe(root, parse->limitOffset) &&
+		is_parallel_safe(root, parse->limitCount))
 		final_rel->consider_parallel = true;
 
 	/*
 	 * If the current_rel belongs to a single FDW, so does the final_rel.
 	 */
 	final_rel->serverid = current_rel->serverid;
-	final_rel->umid = current_rel->umid;
+	final_rel->userid = current_rel->userid;
+	final_rel->useridiscurrent = current_rel->useridiscurrent;
 	final_rel->fdwroutine = current_rel->fdwroutine;
 
 	/*
@@ -3329,15 +3341,16 @@ create_grouping_paths(PlannerInfo *root,
 	 * target list and HAVING quals are parallel-safe.
 	 */
 	if (input_rel->consider_parallel &&
-		!has_parallel_hazard((Node *) target->exprs, false) &&
-		!has_parallel_hazard((Node *) parse->havingQual, false))
+		is_parallel_safe(root, (Node *) target->exprs) &&
+		is_parallel_safe(root, (Node *) parse->havingQual))
 		grouped_rel->consider_parallel = true;
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the grouped rel.
 	 */
 	grouped_rel->serverid = input_rel->serverid;
-	grouped_rel->umid = input_rel->umid;
+	grouped_rel->userid = input_rel->userid;
+	grouped_rel->useridiscurrent = input_rel->useridiscurrent;
 	grouped_rel->fdwroutine = input_rel->fdwroutine;
 
 	/*
@@ -3883,15 +3896,16 @@ create_window_paths(PlannerInfo *root,
 	 * target list and active windows for non-parallel-safe constructs.
 	 */
 	if (input_rel->consider_parallel &&
-		!has_parallel_hazard((Node *) output_target->exprs, false) &&
-		!has_parallel_hazard((Node *) activeWindows, false))
+		is_parallel_safe(root, (Node *) output_target->exprs) &&
+		is_parallel_safe(root, (Node *) activeWindows))
 		window_rel->consider_parallel = true;
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the window rel.
 	 */
 	window_rel->serverid = input_rel->serverid;
-	window_rel->umid = input_rel->umid;
+	window_rel->userid = input_rel->userid;
+	window_rel->useridiscurrent = input_rel->useridiscurrent;
 	window_rel->fdwroutine = input_rel->fdwroutine;
 
 	/*
@@ -4071,7 +4085,8 @@ create_distinct_paths(PlannerInfo *root,
 	 * If the input rel belongs to a single FDW, so does the distinct_rel.
 	 */
 	distinct_rel->serverid = input_rel->serverid;
-	distinct_rel->umid = input_rel->umid;
+	distinct_rel->userid = input_rel->userid;
+	distinct_rel->useridiscurrent = input_rel->useridiscurrent;
 	distinct_rel->fdwroutine = input_rel->fdwroutine;
 
 	/* Estimate number of distinct rows there will be */
@@ -4272,14 +4287,15 @@ create_ordered_paths(PlannerInfo *root,
 	 * target list is parallel-safe.
 	 */
 	if (input_rel->consider_parallel &&
-		!has_parallel_hazard((Node *) target->exprs, false))
+		is_parallel_safe(root, (Node *) target->exprs))
 		ordered_rel->consider_parallel = true;
 
 	/*
 	 * If the input rel belongs to a single FDW, so does the ordered_rel.
 	 */
 	ordered_rel->serverid = input_rel->serverid;
-	ordered_rel->umid = input_rel->umid;
+	ordered_rel->userid = input_rel->userid;
+	ordered_rel->useridiscurrent = input_rel->useridiscurrent;
 	ordered_rel->fdwroutine = input_rel->fdwroutine;
 
 	foreach(lc, input_rel->pathlist)

@@ -475,8 +475,8 @@ sub backup
 	my $name        = $self->name;
 
 	print "# Taking pg_basebackup $backup_name from node \"$name\"\n";
-	TestLib::system_or_bail('pg_basebackup', '-D', $backup_path,
-							'-p', $port, '-x');
+	TestLib::system_or_bail('pg_basebackup', '-D', $backup_path, '-p', $port,
+		'-x');
 	print "# Backup finished\n";
 }
 
@@ -1192,7 +1192,7 @@ sub poll_query_until
 {
 	my ($self, $dbname, $query) = @_;
 
-	my $max_attempts = 90;
+	my $max_attempts = 180;
 	my $attempts     = 0;
 	my ($stdout, $stderr);
 

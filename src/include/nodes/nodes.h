@@ -168,6 +168,7 @@ typedef enum NodeTag
 	T_RowCompareExpr,
 	T_CoalesceExpr,
 	T_MinMaxExpr,
+	T_SQLValueFunction,
 	T_XmlExpr,
 	T_NullTest,
 	T_BooleanTest,

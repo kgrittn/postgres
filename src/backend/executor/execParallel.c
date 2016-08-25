@@ -145,10 +145,12 @@ ExecSerializePlan(Plan *plan, EState *estate)
 	pstmt = makeNode(PlannedStmt);
 	pstmt->commandType = CMD_SELECT;
 	pstmt->queryId = 0;
-	pstmt->hasReturning = 0;
-	pstmt->hasModifyingCTE = 0;
-	pstmt->canSetTag = 1;
-	pstmt->transientPlan = 0;
+	pstmt->hasReturning = false;
+	pstmt->hasModifyingCTE = false;
+	pstmt->canSetTag = true;
+	pstmt->transientPlan = false;
+	pstmt->dependsOnRole = false;
+	pstmt->parallelModeNeeded = false;
 	pstmt->planTree = plan;
 	pstmt->rtable = estate->es_range_table;
 	pstmt->resultRelations = NIL;
@@ -156,11 +158,9 @@ ExecSerializePlan(Plan *plan, EState *estate)
 	pstmt->subplans = NIL;
 	pstmt->rewindPlanIDs = NULL;
 	pstmt->rowMarks = NIL;
-	pstmt->nParamExec = estate->es_plannedstmt->nParamExec;
 	pstmt->relationOids = NIL;
 	pstmt->invalItems = NIL;	/* workers can't replan anyway... */
-	pstmt->hasRowSecurity = false;
-	pstmt->hasForeignJoin = false;
+	pstmt->nParamExec = estate->es_plannedstmt->nParamExec;
 
 	/* Return serialized copy of our dummy PlannedStmt. */
 	return nodeToString(pstmt);
@@ -500,6 +500,7 @@ ExecParallelRetrieveInstrumentation(PlanState *planstate,
 	int			n;
 	int			ibytes;
 	int			plan_node_id = planstate->plan->plan_node_id;
+	MemoryContext oldcontext;
 
 	/* Find the instumentation for this node. */
 	for (i = 0; i < instrumentation->num_plan_nodes; ++i)
@@ -514,10 +515,19 @@ ExecParallelRetrieveInstrumentation(PlanState *planstate,
 	for (n = 0; n < instrumentation->num_workers; ++n)
 		InstrAggNode(planstate->instrument, &instrument[n]);
 
-	/* Also store the per-worker detail. */
+	/*
+	 * Also store the per-worker detail.
+	 *
+	 * Worker instrumentation should be allocated in the same context as
+	 * the regular instrumentation information, which is the per-query
+	 * context. Switch into per-query memory context.
+	 */
+	oldcontext = MemoryContextSwitchTo(planstate->state->es_query_cxt);
 	ibytes = mul_size(instrumentation->num_workers, sizeof(Instrumentation));
 	planstate->worker_instrument =
 		palloc(ibytes + offsetof(WorkerInstrumentation, instrument));
+	MemoryContextSwitchTo(oldcontext);
+
 	planstate->worker_instrument->num_workers = instrumentation->num_workers;
 	memcpy(&planstate->worker_instrument->instrument, instrument, ibytes);
 

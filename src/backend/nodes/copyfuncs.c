@@ -85,6 +85,8 @@ _copyPlannedStmt(const PlannedStmt *from)
 	COPY_SCALAR_FIELD(hasModifyingCTE);
 	COPY_SCALAR_FIELD(canSetTag);
 	COPY_SCALAR_FIELD(transientPlan);
+	COPY_SCALAR_FIELD(dependsOnRole);
+	COPY_SCALAR_FIELD(parallelModeNeeded);
 	COPY_NODE_FIELD(planTree);
 	COPY_NODE_FIELD(rtable);
 	COPY_NODE_FIELD(resultRelations);
@@ -95,9 +97,6 @@ _copyPlannedStmt(const PlannedStmt *from)
 	COPY_NODE_FIELD(relationOids);
 	COPY_NODE_FIELD(invalItems);
 	COPY_SCALAR_FIELD(nParamExec);
-	COPY_SCALAR_FIELD(hasRowSecurity);
-	COPY_SCALAR_FIELD(parallelModeNeeded);
-	COPY_SCALAR_FIELD(hasForeignJoin);
 
 	return newnode;
 }
@@ -1769,6 +1768,22 @@ _copyMinMaxExpr(const MinMaxExpr *from)
 	COPY_SCALAR_FIELD(inputcollid);
 	COPY_SCALAR_FIELD(op);
 	COPY_NODE_FIELD(args);
+	COPY_LOCATION_FIELD(location);
+
+	return newnode;
+}
+
+/*
+ * _copySQLValueFunction
+ */
+static SQLValueFunction *
+_copySQLValueFunction(const SQLValueFunction *from)
+{
+	SQLValueFunction *newnode = makeNode(SQLValueFunction);
+
+	COPY_SCALAR_FIELD(op);
+	COPY_SCALAR_FIELD(type);
+	COPY_SCALAR_FIELD(typmod);
 	COPY_LOCATION_FIELD(location);
 
 	return newnode;
@@ -4563,6 +4578,9 @@ copyObject(const void *from)
 			break;
 		case T_MinMaxExpr:
 			retval = _copyMinMaxExpr(from);
+			break;
+		case T_SQLValueFunction:
+			retval = _copySQLValueFunction(from);
 			break;
 		case T_XmlExpr:
 			retval = _copyXmlExpr(from);

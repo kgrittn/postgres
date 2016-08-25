@@ -1042,6 +1042,22 @@ _readMinMaxExpr(void)
 }
 
 /*
+ * _readSQLValueFunction
+ */
+static SQLValueFunction *
+_readSQLValueFunction(void)
+{
+	READ_LOCALS(SQLValueFunction);
+
+	READ_ENUM_FIELD(op, SQLValueFunctionOp);
+	READ_OID_FIELD(type);
+	READ_INT_FIELD(typmod);
+	READ_LOCATION_FIELD(location);
+
+	READ_DONE();
+}
+
+/*
  * _readXmlExpr
  */
 static XmlExpr *
@@ -1397,6 +1413,8 @@ _readPlannedStmt(void)
 	READ_BOOL_FIELD(hasModifyingCTE);
 	READ_BOOL_FIELD(canSetTag);
 	READ_BOOL_FIELD(transientPlan);
+	READ_BOOL_FIELD(dependsOnRole);
+	READ_BOOL_FIELD(parallelModeNeeded);
 	READ_NODE_FIELD(planTree);
 	READ_NODE_FIELD(rtable);
 	READ_NODE_FIELD(resultRelations);
@@ -1407,9 +1425,6 @@ _readPlannedStmt(void)
 	READ_NODE_FIELD(relationOids);
 	READ_NODE_FIELD(invalItems);
 	READ_INT_FIELD(nParamExec);
-	READ_BOOL_FIELD(hasRowSecurity);
-	READ_BOOL_FIELD(parallelModeNeeded);
-	READ_BOOL_FIELD(hasForeignJoin);
 
 	READ_DONE();
 }
@@ -2356,6 +2371,8 @@ parseNodeString(void)
 		return_value = _readCoalesceExpr();
 	else if (MATCH("MINMAX", 6))
 		return_value = _readMinMaxExpr();
+	else if (MATCH("SQLVALUEFUNCTION", 16))
+		return_value = _readSQLValueFunction();
 	else if (MATCH("XMLEXPR", 7))
 		return_value = _readXmlExpr();
 	else if (MATCH("NULLTEST", 8))
