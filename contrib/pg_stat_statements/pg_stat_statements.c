@@ -405,7 +405,7 @@ _PG_init(void)
 	 * resources in pgss_shmem_startup().
 	 */
 	RequestAddinShmemSpace(pgss_memsize());
-	RequestAddinLWLocks(1);
+	RequestNamedLWLockTranche("pg_stat_statements", 1);
 
 	/*
 	 * Install hooks.
@@ -481,7 +481,7 @@ pgss_shmem_startup(void)
 	if (!found)
 	{
 		/* First time through ... */
-		pgss->lock = LWLockAssign();
+		pgss->lock = &(GetNamedLWLockTranche("pg_stat_statements"))->lock;
 		pgss->cur_median_usage = ASSUMED_MEDIAN_INIT;
 		pgss->mean_query_len = ASSUMED_LENGTH_INIT;
 		SpinLockInit(&pgss->mutex);
