@@ -2068,7 +2068,7 @@ create_tuplestorescan_plan(PlannerInfo *root, Path *best_path,
 	scan_plan = make_tuplestorescan(tlist, scan_clauses, scan_relid,
 									rte->tsrname);
 
-	copy_path_costsize(&scan_plan->scan.plan, best_path);
+	copy_generic_path_info(&scan_plan->scan.plan, best_path);
 
 	return scan_plan;
 }
