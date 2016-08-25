@@ -5,7 +5,7 @@
  *	  Planning is complete, we just need to convert the selected
  *	  Path into a Plan.
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -570,7 +570,8 @@ use_physical_tlist(PlannerInfo *root, RelOptInfo *rel)
  * If the plan node immediately above a scan would prefer to get only
  * needed Vars and not a physical tlist, it must call this routine to
  * undo the decision made by use_physical_tlist().  Currently, Hash, Sort,
- * and Material nodes want this, so they don't have to store useless columns.
+ * Material, and Gather nodes want this, so they don't have to store or
+ * transfer useless columns.
  */
 static void
 disuse_physical_tlist(PlannerInfo *root, Plan *plan, Path *path)
@@ -1135,6 +1136,8 @@ create_gather_plan(PlannerInfo *root, GatherPath *best_path)
 	Plan	   *subplan;
 
 	subplan = create_plan_recurse(root, best_path->subpath);
+
+	disuse_physical_tlist(root, subplan, best_path->subpath);
 
 	gather_plan = make_gather(subplan->targetlist,
 							  NIL,
