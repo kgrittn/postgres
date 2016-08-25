@@ -100,6 +100,7 @@
 #include "executor/nodeMergejoin.h"
 #include "executor/nodeModifyTable.h"
 #include "executor/nodeNestloop.h"
+#include "executor/nodeGather.h"
 #include "executor/nodeRecursiveunion.h"
 #include "executor/nodeResult.h"
 #include "executor/nodeSamplescan.h"
@@ -114,6 +115,7 @@
 #include "executor/nodeValuesscan.h"
 #include "executor/nodeWindowAgg.h"
 #include "executor/nodeWorktablescan.h"
+#include "nodes/nodeFuncs.h"
 #include "miscadmin.h"
 
 
@@ -310,6 +312,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 
 		case T_Unique:
 			result = (PlanState *) ExecInitUnique((Unique *) node,
+												  estate, eflags);
+			break;
+
+		case T_Gather:
+			result = (PlanState *) ExecInitGather((Gather *) node,
 												  estate, eflags);
 			break;
 
@@ -514,6 +521,10 @@ ExecProcNode(PlanState *node)
 			result = ExecUnique((UniqueState *) node);
 			break;
 
+		case T_GatherState:
+			result = ExecGather((GatherState *) node);
+			break;
+
 		case T_HashState:
 			result = ExecHash((HashState *) node);
 			break;
@@ -668,6 +679,10 @@ ExecEndNode(PlanState *node)
 			ExecEndSampleScan((SampleScanState *) node);
 			break;
 
+		case T_GatherState:
+			ExecEndGather((GatherState *) node);
+			break;
+
 		case T_IndexScanState:
 			ExecEndIndexScan((IndexScanState *) node);
 			break;
@@ -782,4 +797,35 @@ ExecEndNode(PlanState *node)
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(node));
 			break;
 	}
+}
+
+/*
+ * ExecShutdownNode
+ *
+ * Give execution nodes a chance to stop asynchronous resource consumption
+ * and release any resources still held.  Currently, this is only used for
+ * parallel query, but we might want to extend it to other cases also (e.g.
+ * FDW).  We might also want to call it sooner, as soon as it's evident that
+ * no more rows will be needed (e.g. when a Limit is filled) rather than only
+ * at the end of ExecutorRun.
+ */
+bool
+ExecShutdownNode(PlanState *node)
+{
+	if (node == NULL)
+		return false;
+
+	switch (nodeTag(node))
+	{
+		case T_GatherState:
+			{
+				ExecShutdownGather((GatherState *) node);
+				return true;
+			}
+			break;
+		default:
+			break;
+	}
+
+	return planstate_tree_walker(node, ExecShutdownNode, NULL);
 }

@@ -19,6 +19,8 @@
 #include <math.h>
 
 #include "access/htup_details.h"
+#include "access/parallel.h"
+#include "access/xact.h"
 #include "executor/executor.h"
 #include "executor/nodeAgg.h"
 #include "foreign/fdwapi.h"
@@ -43,6 +45,7 @@
 #include "parser/parsetree.h"
 #include "parser/parse_agg.h"
 #include "rewrite/rewriteManip.h"
+#include "storage/dsm_impl.h"
 #include "utils/rel.h"
 #include "utils/selfuncs.h"
 
@@ -194,8 +197,60 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	glob->nParamExec = 0;
 	glob->lastPHId = 0;
 	glob->lastRowMarkId = 0;
+	glob->lastPlanNodeId = 0;
 	glob->transientPlan = false;
 	glob->hasRowSecurity = false;
+
+	/*
+	 * Assess whether it's feasible to use parallel mode for this query.
+	 * We can't do this in a standalone backend, or if the command will
+	 * try to modify any data, or if this is a cursor operation, or if any
+	 * parallel-unsafe functions are present in the query tree.
+	 *
+	 * For now, we don't try to use parallel mode if we're running inside
+	 * a parallel worker.  We might eventually be able to relax this
+	 * restriction, but for now it seems best not to have parallel workers
+	 * trying to create their own parallel workers.
+	 *
+	 * We can't use parallelism in serializable mode because the predicate
+	 * locking code is not parallel-aware.  It's not catastrophic if someone
+	 * tries to run a parallel plan in serializable mode; it just won't get
+	 * any workers and will run serially.  But it seems like a good heuristic
+	 * to assume that the same serialization level will be in effect at plan
+	 * time and execution time, so don't generate a parallel plan if we're
+	 * in serializable mode.
+	 */
+	glob->parallelModeOK = (cursorOptions & CURSOR_OPT_PARALLEL_OK) != 0 &&
+		IsUnderPostmaster && dynamic_shared_memory_type != DSM_IMPL_NONE &&
+		parse->commandType == CMD_SELECT && !parse->hasModifyingCTE &&
+		parse->utilityStmt == NULL && !IsParallelWorker() &&
+		!IsolationIsSerializable() &&
+		!contain_parallel_unsafe((Node *) parse);
+
+	/*
+	 * glob->parallelModeOK should tell us whether it's necessary to impose
+	 * the parallel mode restrictions, but we don't actually want to impose
+	 * them unless we choose a parallel plan, so that people who mislabel
+	 * their functions but don't use parallelism anyway aren't harmed.
+	 * However, it's useful for testing purposes to be able to force the
+	 * restrictions to be imposed whenever a parallel plan is actually chosen
+	 * or not.
+	 *
+	 * (It's been suggested that we should always impose these restrictions
+	 * whenever glob->parallelModeOK is true, so that it's easier to notice
+	 * incorrectly-labeled functions sooner.  That might be the right thing
+	 * to do, but for now I've taken this approach.  We could also control
+	 * this with a GUC.)
+	 *
+	 * FIXME: It's assumed that code further down will set parallelModeNeeded
+	 * to true if a parallel path is actually chosen.  Since the core
+	 * parallelism code isn't committed yet, this currently never happens.
+	 */
+#ifdef FORCE_PARALLEL_MODE
+	glob->parallelModeNeeded = glob->parallelModeOK;
+#else
+	glob->parallelModeNeeded = false;
+#endif
 
 	/* Determine what fraction of the plan is likely to be scanned */
 	if (cursorOptions & CURSOR_OPT_FAST_PLAN)
@@ -293,6 +348,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->invalItems = glob->invalItems;
 	result->nParamExec = glob->nParamExec;
 	result->hasRowSecurity = glob->hasRowSecurity;
+	result->parallelModeNeeded = glob->parallelModeNeeded;
 
 	return result;
 }

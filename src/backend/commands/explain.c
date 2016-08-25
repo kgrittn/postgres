@@ -55,10 +55,7 @@ static void ExplainOneQuery(Query *query, IntoClause *into, ExplainState *es,
 static void report_triggers(ResultRelInfo *rInfo, bool show_relname,
 				ExplainState *es);
 static double elapsed_time(instr_time *starttime);
-static void ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used);
-static void ExplainPreScanMemberNodes(List *plans, PlanState **planstates,
-						  Bitmapset **rels_used);
-static void ExplainPreScanSubPlans(List *plans, Bitmapset **rels_used);
+static bool ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used);
 static void ExplainNode(PlanState *planstate, List *ancestors,
 			const char *relationship, const char *plan_name,
 			ExplainState *es);
@@ -348,7 +345,7 @@ ExplainOneQuery(Query *query, IntoClause *into, ExplainState *es,
 		INSTR_TIME_SET_CURRENT(planstart);
 
 		/* plan the query */
-		plan = pg_plan_query(query, 0, params);
+		plan = pg_plan_query(query, CURSOR_OPT_PARALLEL_OK, params);
 
 		INSTR_TIME_SET_CURRENT(planduration);
 		INSTR_TIME_SUBTRACT(planduration, planstart);
@@ -725,7 +722,7 @@ elapsed_time(instr_time *starttime)
  * This ensures that we don't confusingly assign un-suffixed aliases to RTEs
  * that never appear in the EXPLAIN output (such as inheritance parents).
  */
-static void
+static bool
 ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 {
 	Plan	   *plan = planstate->plan;
@@ -766,91 +763,7 @@ ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 			break;
 	}
 
-	/* initPlan-s */
-	if (planstate->initPlan)
-		ExplainPreScanSubPlans(planstate->initPlan, rels_used);
-
-	/* lefttree */
-	if (outerPlanState(planstate))
-		ExplainPreScanNode(outerPlanState(planstate), rels_used);
-
-	/* righttree */
-	if (innerPlanState(planstate))
-		ExplainPreScanNode(innerPlanState(planstate), rels_used);
-
-	/* special child plans */
-	switch (nodeTag(plan))
-	{
-		case T_ModifyTable:
-			ExplainPreScanMemberNodes(((ModifyTable *) plan)->plans,
-								  ((ModifyTableState *) planstate)->mt_plans,
-									  rels_used);
-			break;
-		case T_Append:
-			ExplainPreScanMemberNodes(((Append *) plan)->appendplans,
-									((AppendState *) planstate)->appendplans,
-									  rels_used);
-			break;
-		case T_MergeAppend:
-			ExplainPreScanMemberNodes(((MergeAppend *) plan)->mergeplans,
-								((MergeAppendState *) planstate)->mergeplans,
-									  rels_used);
-			break;
-		case T_BitmapAnd:
-			ExplainPreScanMemberNodes(((BitmapAnd *) plan)->bitmapplans,
-								 ((BitmapAndState *) planstate)->bitmapplans,
-									  rels_used);
-			break;
-		case T_BitmapOr:
-			ExplainPreScanMemberNodes(((BitmapOr *) plan)->bitmapplans,
-								  ((BitmapOrState *) planstate)->bitmapplans,
-									  rels_used);
-			break;
-		case T_SubqueryScan:
-			ExplainPreScanNode(((SubqueryScanState *) planstate)->subplan,
-							   rels_used);
-			break;
-		default:
-			break;
-	}
-
-	/* subPlan-s */
-	if (planstate->subPlan)
-		ExplainPreScanSubPlans(planstate->subPlan, rels_used);
-}
-
-/*
- * Prescan the constituent plans of a ModifyTable, Append, MergeAppend,
- * BitmapAnd, or BitmapOr node.
- *
- * Note: we don't actually need to examine the Plan list members, but
- * we need the list in order to determine the length of the PlanState array.
- */
-static void
-ExplainPreScanMemberNodes(List *plans, PlanState **planstates,
-						  Bitmapset **rels_used)
-{
-	int			nplans = list_length(plans);
-	int			j;
-
-	for (j = 0; j < nplans; j++)
-		ExplainPreScanNode(planstates[j], rels_used);
-}
-
-/*
- * Prescan a list of SubPlans (or initPlans, which also use SubPlan nodes).
- */
-static void
-ExplainPreScanSubPlans(List *plans, Bitmapset **rels_used)
-{
-	ListCell   *lst;
-
-	foreach(lst, plans)
-	{
-		SubPlanState *sps = (SubPlanState *) lfirst(lst);
-
-		ExplainPreScanNode(sps->planstate, rels_used);
-	}
+	return planstate_tree_walker(planstate, ExplainPreScanNode, rels_used);
 }
 
 /*
@@ -941,6 +854,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_SampleScan:
 			pname = sname = "Sample Scan";
+			break;
+		case T_Gather:
+			pname = sname = "Gather";
 			break;
 		case T_IndexScan:
 			pname = sname = "Index Scan";
@@ -1368,6 +1284,22 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
+			break;
+		case T_Gather:
+			{
+				Gather *gather = (Gather *) plan;
+
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				if (plan->qual)
+					show_instrumentation_count("Rows Removed by Filter", 1,
+											   planstate, es);
+				ExplainPropertyInteger("Number of Workers",
+									   gather->num_workers, es);
+				if (gather->single_copy)
+					ExplainPropertyText("Single Copy",
+										gather->single_copy ? "true" : "false",
+										es);
+			}
 			break;
 		case T_FunctionScan:
 			if (es->verbose)

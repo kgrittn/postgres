@@ -76,6 +76,7 @@ static void CheckValidRowMarkRel(Relation rel, RowMarkType markType);
 static void ExecPostprocessPlan(EState *estate);
 static void ExecEndPlan(PlanState *planstate, EState *estate);
 static void ExecutePlan(EState *estate, PlanState *planstate,
+			bool use_parallel_mode,
 			CmdType operation,
 			bool sendTuples,
 			long numberTuples,
@@ -341,6 +342,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	if (!ScanDirectionIsNoMovement(direction))
 		ExecutePlan(estate,
 					queryDesc->planstate,
+					queryDesc->plannedstmt->parallelModeNeeded,
 					operation,
 					sendTuples,
 					count,
@@ -1521,6 +1523,7 @@ ExecEndPlan(PlanState *planstate, EState *estate)
 static void
 ExecutePlan(EState *estate,
 			PlanState *planstate,
+			bool use_parallel_mode,
 			CmdType operation,
 			bool sendTuples,
 			long numberTuples,
@@ -1541,6 +1544,20 @@ ExecutePlan(EState *estate,
 	estate->es_direction = direction;
 
 	/*
+	 * If a tuple count was supplied, we must force the plan to run without
+	 * parallelism, because we might exit early.
+	 */
+	if (numberTuples != 0)
+		use_parallel_mode = false;
+
+	/*
+	 * If a tuple count was supplied, we must force the plan to run without
+	 * parallelism, because we might exit early.
+	 */
+	if (use_parallel_mode)
+		EnterParallelMode();
+
+	/*
 	 * Loop until we've processed the proper number of tuples from the plan.
 	 */
 	for (;;)
@@ -1558,7 +1575,11 @@ ExecutePlan(EState *estate,
 		 * process so we just end the loop...
 		 */
 		if (TupIsNull(slot))
+		{
+			/* Allow nodes to release or shut down resources. */
+			(void) ExecShutdownNode(planstate);
 			break;
+		}
 
 		/*
 		 * If we have a junk filter, then project a new tuple with the junk
@@ -1595,6 +1616,9 @@ ExecutePlan(EState *estate,
 		if (numberTuples && numberTuples == current_tuple_count)
 			break;
 	}
+
+	if (use_parallel_mode)
+		ExitParallelMode();
 }
 
 
@@ -1820,14 +1844,26 @@ ExecWithCheckOptions(WCOKind kind, ResultRelInfo *resultRelInfo,
 					break;
 				case WCO_RLS_INSERT_CHECK:
 				case WCO_RLS_UPDATE_CHECK:
-					ereport(ERROR,
-							(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					if (wco->polname != NULL)
+						ereport(ERROR,
+								(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+							 errmsg("new row violates row level security policy \"%s\" for \"%s\"",
+									wco->polname, wco->relname)));
+					else
+						ereport(ERROR,
+								(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 							 errmsg("new row violates row level security policy for \"%s\"",
 									wco->relname)));
 					break;
 				case WCO_RLS_CONFLICT_CHECK:
-					ereport(ERROR,
-							(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					if (wco->polname != NULL)
+						ereport(ERROR,
+								(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+							 errmsg("new row violates row level security policy \"%s\" (USING expression) for \"%s\"",
+									wco->polname, wco->relname)));
+					else
+						ereport(ERROR,
+								(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 							 errmsg("new row violates row level security policy (USING expression) for \"%s\"",
 									wco->relname)));
 					break;

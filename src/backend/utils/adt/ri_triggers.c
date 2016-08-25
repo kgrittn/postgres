@@ -40,6 +40,7 @@
 #include "commands/trigger.h"
 #include "executor/executor.h"
 #include "executor/spi.h"
+#include "lib/ilist.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_relation.h"
 #include "miscadmin.h"
@@ -125,6 +126,7 @@ typedef struct RI_ConstraintInfo
 												 * PK) */
 	Oid			ff_eq_oprs[RI_MAX_NUMKEYS];		/* equality operators (FK =
 												 * FK) */
+	dlist_node	valid_link;		/* Link in list of valid entries */
 } RI_ConstraintInfo;
 
 
@@ -183,9 +185,10 @@ typedef struct RI_CompareHashEntry
  * ----------
  */
 static HTAB *ri_constraint_cache = NULL;
-static long  ri_constraint_cache_seq_count = 0;
 static HTAB *ri_query_cache = NULL;
 static HTAB *ri_compare_cache = NULL;
+static dlist_head ri_constraint_cache_valid_list;
+static int	ri_constraint_cache_valid_count = 0;
 
 
 /* ----------
@@ -216,7 +219,6 @@ static bool ri_KeysEqual(Relation rel, HeapTuple oldtup, HeapTuple newtup,
 static bool ri_AttributesEqual(Oid eq_opr, Oid typeid,
 				   Datum oldvalue, Datum newvalue);
 
-static void ri_InitConstraintCache(void);
 static void ri_InitHashTables(void);
 static void InvalidateConstraintCacheCallBack(Datum arg, int cacheid, uint32 hashvalue);
 static SPIPlanPtr ri_FetchPreparedPlan(RI_QueryKey *key);
@@ -2926,6 +2928,13 @@ ri_LoadConstraintInfo(Oid constraintOid)
 
 	ReleaseSysCache(tup);
 
+	/*
+	 * For efficient processing of invalidation messages below, we keep a
+	 * doubly-linked list, and a count, of all currently valid entries.
+	 */
+	dlist_push_tail(&ri_constraint_cache_valid_list, &riinfo->valid_link);
+	ri_constraint_cache_valid_count++;
+
 	riinfo->valid = true;
 
 	return riinfo;
@@ -2938,35 +2947,41 @@ ri_LoadConstraintInfo(Oid constraintOid)
  * gets enough update traffic that it's probably worth being smarter.
  * Invalidate any ri_constraint_cache entry associated with the syscache
  * entry with the specified hash value, or all entries if hashvalue == 0.
+ *
+ * Note: at the time a cache invalidation message is processed there may be
+ * active references to the cache.  Because of this we never remove entries
+ * from the cache, but only mark them invalid, which is harmless to active
+ * uses.  (Any query using an entry should hold a lock sufficient to keep that
+ * data from changing under it --- but we may get cache flushes anyway.)
  */
 static void
 InvalidateConstraintCacheCallBack(Datum arg, int cacheid, uint32 hashvalue)
 {
-	HASH_SEQ_STATUS status;
-	RI_ConstraintInfo *hentry;
+	dlist_mutable_iter iter;
 
 	Assert(ri_constraint_cache != NULL);
 
 	/*
-	 * Prevent an O(N^2) problem when creating large amounts of foreign
-	 * key constraints with ALTER TABLE, like it happens at the end of
-	 * a pg_dump with hundred-thousands of tables having references.
+	 * If the list of currently valid entries gets excessively large, we mark
+	 * them all invalid so we can empty the list.  This arrangement avoids
+	 * O(N^2) behavior in situations where a session touches many foreign keys
+	 * and also does many ALTER TABLEs, such as a restore from pg_dump.
 	 */
-	ri_constraint_cache_seq_count += hash_get_num_entries(ri_constraint_cache);
-	if (ri_constraint_cache_seq_count > 1000000)
-	{
-		hash_destroy(ri_constraint_cache);
-		ri_InitConstraintCache();
-		ri_constraint_cache_seq_count = 0;
-		return;
-	}
+	if (ri_constraint_cache_valid_count > 1000)
+		hashvalue = 0;			/* pretend it's a cache reset */
 
-	hash_seq_init(&status, ri_constraint_cache);
-	while ((hentry = (RI_ConstraintInfo *) hash_seq_search(&status)) != NULL)
+	dlist_foreach_modify(iter, &ri_constraint_cache_valid_list)
 	{
-		if (hentry->valid &&
-			(hashvalue == 0 || hentry->oidHashValue == hashvalue))
-			hentry->valid = false;
+		RI_ConstraintInfo *riinfo = dlist_container(RI_ConstraintInfo,
+													valid_link, iter.cur);
+
+		if (hashvalue == 0 || riinfo->oidHashValue == hashvalue)
+		{
+			riinfo->valid = false;
+			/* Remove invalidated entries from the list, too */
+			dlist_delete(iter.cur);
+			ri_constraint_cache_valid_count--;
+		}
 	}
 }
 
@@ -2986,7 +3001,6 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	Relation	query_rel;
 	Oid			save_userid;
 	int			save_sec_context;
-	int			temp_sec_context;
 
 	/*
 	 * Use the query type code to determine whether the query is run against
@@ -2999,22 +3013,9 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 
 	/* Switch to proper UID to perform check as */
 	GetUserIdAndSecContext(&save_userid, &save_sec_context);
-
-	/*
-	 * Row-level security should be disabled in the case where a foreign-key
-	 * relation is queried to check existence of tuples that references the
-	 * primary-key being modified.
-	 */
-	temp_sec_context = save_sec_context | SECURITY_LOCAL_USERID_CHANGE;
-	if (qkey->constr_queryno == RI_PLAN_CHECK_LOOKUPPK
-		|| qkey->constr_queryno == RI_PLAN_CHECK_LOOKUPPK_FROM_PK
-		|| qkey->constr_queryno == RI_PLAN_RESTRICT_DEL_CHECKREF
-		|| qkey->constr_queryno == RI_PLAN_RESTRICT_UPD_CHECKREF)
-		temp_sec_context |= SECURITY_ROW_LEVEL_DISABLED;
-
-
 	SetUserIdAndSecContext(RelationGetForm(query_rel)->relowner,
-						   temp_sec_context);
+						   save_sec_context | SECURITY_LOCAL_USERID_CHANGE |
+						   SECURITY_NOFORCE_RLS);
 
 	/* Create the plan */
 	qplan = SPI_prepare(querystr, nargs, argtypes);
@@ -3134,7 +3135,8 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 	/* Switch to proper UID to perform check as */
 	GetUserIdAndSecContext(&save_userid, &save_sec_context);
 	SetUserIdAndSecContext(RelationGetForm(query_rel)->relowner,
-						   save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+						   save_sec_context | SECURITY_LOCAL_USERID_CHANGE |
+						   SECURITY_NOFORCE_RLS);
 
 	/* Finally we can run the query. */
 	spi_result = SPI_execute_snapshot(qplan,
@@ -3380,27 +3382,6 @@ ri_NullCheck(HeapTuple tup,
 
 
 /* ----------
- * ri_InitConstraintCache
- *
- * Initialize ri_constraint_cache when new or being rebuilt.
- *
- * This needs to be done from two places, so split it out to prevent drift.
- * ----------
- */
-static void
-ri_InitConstraintCache(void)
-{
-	HASHCTL		ctl;
-
-	memset(&ctl, 0, sizeof(ctl));
-	ctl.keysize = sizeof(Oid);
-	ctl.entrysize = sizeof(RI_ConstraintInfo);
-	ri_constraint_cache = hash_create("RI constraint cache",
-									  RI_INIT_CONSTRAINTHASHSIZE,
-									  &ctl, HASH_ELEM | HASH_BLOBS);
-}
-
-/* ----------
  * ri_InitHashTables -
  *
  *	Initialize our internal hash tables.
@@ -3411,7 +3392,12 @@ ri_InitHashTables(void)
 {
 	HASHCTL		ctl;
 
-	ri_InitConstraintCache();
+	memset(&ctl, 0, sizeof(ctl));
+	ctl.keysize = sizeof(Oid);
+	ctl.entrysize = sizeof(RI_ConstraintInfo);
+	ri_constraint_cache = hash_create("RI constraint cache",
+									  RI_INIT_CONSTRAINTHASHSIZE,
+									  &ctl, HASH_ELEM | HASH_BLOBS);
 
 	/* Arrange to flush cache on pg_constraint changes */
 	CacheRegisterSyscacheCallback(CONSTROID,
