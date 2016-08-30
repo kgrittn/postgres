@@ -108,6 +108,14 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 		tuplestore_alloc_read_pointer(scanstate->table, 0);
 
 	/*
+	 * The new read pointer copies its position from read pointer 0, which
+	 * could be anywhere, so explicitly rewind it.
+	 */
+	tuplestore_rescan(scanstate->table);
+
+	/* TODO: Add a function to free that read pointer when done. */
+
+	/*
 	 * Miscellaneous initialization
 	 *
 	 * create expression context for node

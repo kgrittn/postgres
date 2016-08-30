@@ -2465,6 +2465,11 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 			context.paramids = bms_add_members(context.paramids, scan_params);
 			break;
 
+		case T_TuplestoreScan:
+			/* TODO: anything else? */
+			context.paramids = bms_add_members(context.paramids, scan_params);
+			break;
+
 		case T_ForeignScan:
 			{
 				ForeignScan *fscan = (ForeignScan *) plan;
