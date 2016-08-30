@@ -1816,8 +1816,12 @@ create_tuplestorescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_o
 
 	pathnode->pathtype = T_TuplestoreScan;
 	pathnode->parent = rel;
+	pathnode->pathtarget = rel->reltarget;
 	pathnode->param_info = get_baserel_parampathinfo(root, rel,
 													 required_outer);
+	pathnode->parallel_aware = false;
+	pathnode->parallel_safe = rel->consider_parallel;
+	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* result is always unordered */
 
 	cost_tuplestorescan(pathnode, root, rel, pathnode->param_info);
