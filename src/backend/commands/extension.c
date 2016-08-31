@@ -708,8 +708,7 @@ execute_sql_string(const char *sql, const char *filename)
 		stmt_list = pg_analyze_and_rewrite(parsetree,
 										   sql,
 										   NULL,
-										   0,
-										   NULL);
+										   0);
 		stmt_list = pg_plan_queries(stmt_list, CURSOR_OPT_PARALLEL_OK, NULL);
 
 		foreach(lc2, stmt_list)
@@ -733,7 +732,7 @@ execute_sql_string(const char *sql, const char *filename)
 				qdesc = CreateQueryDesc((PlannedStmt *) stmt,
 										sql,
 										GetActiveSnapshot(), NULL,
-										dest, NULL, NULL, 0);
+										dest, NULL, 0);
 
 				ExecutorStart(qdesc, 0);
 				ExecutorRun(qdesc, ForwardScanDirection, 0);
@@ -747,7 +746,6 @@ execute_sql_string(const char *sql, const char *filename)
 				ProcessUtility(stmt,
 							   sql,
 							   PROCESS_UTILITY_QUERY,
-							   NULL,
 							   NULL,
 							   dest,
 							   NULL);

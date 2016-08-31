@@ -14,7 +14,6 @@
 #define SPI_PRIV_H
 
 #include "executor/spi.h"
-#include "utils/tsrcache.h"
 
 
 #define _SPI_PLAN_MAGIC		569278163
@@ -32,7 +31,6 @@ typedef struct
 	MemoryContext execCxt;		/* executor context */
 	MemoryContext savedcxt;		/* context of SPI_connect's caller */
 	SubTransactionId connectSubid;		/* ID of connecting subtransaction */
-	Tsrcache   *tuplestores;		/* registered named tuplestores */
 } _SPI_connection;
 
 /*

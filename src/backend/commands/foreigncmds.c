@@ -1596,7 +1596,7 @@ ImportForeignSchema(ImportForeignSchemaStmt *stmt)
 			/* Execute statement */
 			ProcessUtility((Node *) cstmt,
 						   cmd,
-						   PROCESS_UTILITY_SUBCOMMAND, NULL, NULL,
+						   PROCESS_UTILITY_SUBCOMMAND, NULL,
 						   None_Receiver, NULL);
 
 			/* Be sure to advance the command counter between subcommands */

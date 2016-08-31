@@ -93,7 +93,7 @@ static bool test_raw_expression_coverage(Node *node, void *context);
  */
 Query *
 parse_analyze(Node *parseTree, const char *sourceText,
-			  Oid *paramTypes, int numParams, Tsrcache *tsrcache)
+			  Oid *paramTypes, int numParams)
 {
 	ParseState *pstate = make_parsestate(NULL);
 	Query	   *query;
@@ -105,7 +105,7 @@ parse_analyze(Node *parseTree, const char *sourceText,
 	if (numParams > 0)
 		parse_fixed_parameters(pstate, paramTypes, numParams);
 
-	pstate->p_tsrcache = tsrcache;
+	/* FIXME: Set parameters for tuplestore relations. */
 
 	query = transformTopLevelStmt(pstate, parseTree);
 

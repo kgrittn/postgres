@@ -1390,7 +1390,7 @@ BeginCopy(bool is_from,
 		 * DECLARE CURSOR and PREPARE.)  XXX FIXME someday.
 		 */
 		rewritten = pg_analyze_and_rewrite((Node *) copyObject(raw_query),
-										   queryString, NULL, 0, NULL);
+										   queryString, NULL, 0);
 
 		/* check that we got back something we can work with */
 		if (rewritten == NIL)
@@ -1493,7 +1493,7 @@ BeginCopy(bool is_from,
 		cstate->queryDesc = CreateQueryDesc(plan, queryString,
 											GetActiveSnapshot(),
 											InvalidSnapshot,
-											dest, NULL, NULL, 0);
+											dest, NULL, 0);
 
 		/*
 		 * Call ExecutorStart to prepare the plan for execution.

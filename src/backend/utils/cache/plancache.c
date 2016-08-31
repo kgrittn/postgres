@@ -683,14 +683,12 @@ RevalidateCachedQuery(CachedPlanSource *plansource)
 		tlist = pg_analyze_and_rewrite_params(rawtree,
 											  plansource->query_string,
 											  plansource->parserSetup,
-											  plansource->parserSetupArg,
-											  NULL);
+											  plansource->parserSetupArg);
 	else
 		tlist = pg_analyze_and_rewrite(rawtree,
 									   plansource->query_string,
 									   plansource->param_types,
-									   plansource->num_params,
-									   NULL);
+									   plansource->num_params);
 
 	/* Release snapshot if we got one */
 	if (snapshot_set)

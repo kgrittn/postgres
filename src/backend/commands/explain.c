@@ -54,7 +54,7 @@ explain_get_index_name_hook_type explain_get_index_name_hook = NULL;
 #define X_NOWHITESPACE 4
 
 static void ExplainOneQuery(Query *query, IntoClause *into, ExplainState *es,
-				const char *queryString, ParamListInfo params, Tsrcache *tsrcache);
+				const char *queryString, ParamListInfo params);
 static void report_triggers(ResultRelInfo *rInfo, bool show_relname,
 				ExplainState *es);
 static double elapsed_time(instr_time *starttime);
@@ -141,7 +141,7 @@ static void escape_yaml(StringInfo buf, const char *str);
  */
 void
 ExplainQuery(ExplainStmt *stmt, const char *queryString,
-			 ParamListInfo params, Tsrcache *tsrcache, DestReceiver *dest)
+			 ParamListInfo params, DestReceiver *dest)
 {
 	ExplainState *es = NewExplainState();
 	TupOutputState *tstate;
@@ -244,7 +244,7 @@ ExplainQuery(ExplainStmt *stmt, const char *queryString,
 		foreach(l, rewritten)
 		{
 			ExplainOneQuery((Query *) lfirst(l), NULL, es,
-							queryString, params, tsrcache);
+							queryString, params);
 
 			/* Separate plans with an appropriate separator */
 			if (lnext(l) != NULL)
@@ -328,12 +328,12 @@ ExplainResultDesc(ExplainStmt *stmt)
  */
 static void
 ExplainOneQuery(Query *query, IntoClause *into, ExplainState *es,
-				const char *queryString, ParamListInfo params, Tsrcache *tsrcache)
+				const char *queryString, ParamListInfo params)
 {
 	/* planner will not cope with utility statements */
 	if (query->commandType == CMD_UTILITY)
 	{
-		ExplainOneUtility(query->utilityStmt, into, es, queryString, params, tsrcache);
+		ExplainOneUtility(query->utilityStmt, into, es, queryString, params);
 		return;
 	}
 
@@ -355,7 +355,7 @@ ExplainOneQuery(Query *query, IntoClause *into, ExplainState *es,
 		INSTR_TIME_SUBTRACT(planduration, planstart);
 
 		/* run it (if needed) and produce output */
-		ExplainOnePlan(plan, into, es, queryString, params, tsrcache, &planduration);
+		ExplainOnePlan(plan, into, es, queryString, params, &planduration);
 	}
 }
 
@@ -372,8 +372,7 @@ ExplainOneQuery(Query *query, IntoClause *into, ExplainState *es,
  */
 void
 ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
-				  const char *queryString, ParamListInfo params,
-				  Tsrcache *tsrcache)
+				  const char *queryString, ParamListInfo params)
 {
 	if (utilityStmt == NULL)
 		return;
@@ -392,11 +391,11 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
 		rewritten = QueryRewrite((Query *) copyObject(ctas->query));
 		Assert(list_length(rewritten) == 1);
 		ExplainOneQuery((Query *) linitial(rewritten), ctas->into, es,
-						queryString, params, tsrcache);
+						queryString, params);
 	}
 	else if (IsA(utilityStmt, ExecuteStmt))
 		ExplainExecuteQuery((ExecuteStmt *) utilityStmt, into, es,
-							queryString, params, tsrcache);
+							queryString, params);
 	else if (IsA(utilityStmt, NotifyStmt))
 	{
 		if (es->format == EXPLAIN_FORMAT_TEXT)
@@ -433,7 +432,7 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
  */
 void
 ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
-			   const char *queryString, ParamListInfo params, Tsrcache *tsrcache,
+			   const char *queryString, ParamListInfo params,
 			   const instr_time *planduration)
 {
 	DestReceiver *dest;
@@ -477,7 +476,7 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 	/* Create a QueryDesc for the query */
 	queryDesc = CreateQueryDesc(plannedstmt, queryString,
 								GetActiveSnapshot(), InvalidSnapshot,
-								dest, params, tsrcache, instrument_option);
+								dest, params, instrument_option);
 
 	/* Select execution options */
 	if (es->analyze)

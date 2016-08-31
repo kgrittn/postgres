@@ -131,7 +131,6 @@ SPI_connect(void)
 	_SPI_current->procCxt = NULL;		/* in case we fail to create 'em */
 	_SPI_current->execCxt = NULL;
 	_SPI_current->connectSubid = GetCurrentSubTransactionId();
-	_SPI_current->tuplestores = NULL;
 
 	/*
 	 * Create memory contexts for this procedure
@@ -1616,10 +1615,6 @@ SPI_result_code_string(int code)
 			return "SPI_ERROR_NOOUTFUNC";
 		case SPI_ERROR_TYPUNKNOWN:
 			return "SPI_ERROR_TYPUNKNOWN";
-		case SPI_ERROR_TSR_DUPLICATE:
-			return "SPI_ERROR_TSR_DUPLICATE";
-		case SPI_ERROR_TSR_NOT_FOUND:
-			return "SPI_ERROR_TSR_NOT_FOUND";
 		case SPI_OK_CONNECT:
 			return "SPI_OK_CONNECT";
 		case SPI_OK_FINISH:
@@ -1648,10 +1643,6 @@ SPI_result_code_string(int code)
 			return "SPI_OK_UPDATE_RETURNING";
 		case SPI_OK_REWRITTEN:
 			return "SPI_OK_REWRITTEN";
-		case SPI_OK_TSR_REGISTER:
-			return "SPI_OK_TSR_REGISTER";
-		case SPI_OK_TSR_UNREGISTER:
-			return "SPI_OK_TSR_UNREGISTER";
 	}
 	/* Unrecognized code ... return something useful ... */
 	sprintf(buf, "Unrecognized SPI code %d", code);
@@ -1883,16 +1874,14 @@ _SPI_prepare_plan(const char *src, SPIPlanPtr plan)
 			stmt_list = pg_analyze_and_rewrite_params(parsetree,
 													  src,
 													  plan->parserSetup,
-													  plan->parserSetupArg,
-													  _SPI_current->tuplestores);
+													  plan->parserSetupArg);
 		}
 		else
 		{
 			stmt_list = pg_analyze_and_rewrite(parsetree,
 											   src,
 											   plan->argtypes,
-											   plan->nargs,
-											   _SPI_current->tuplestores);
+											   plan->nargs);
 		}
 
 		/* Finish filling in the CachedPlanSource */
@@ -2081,16 +2070,14 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 				stmt_list = pg_analyze_and_rewrite_params(parsetree,
 														  src,
 														  plan->parserSetup,
-													   plan->parserSetupArg,
-													  _SPI_current->tuplestores);
+													   plan->parserSetupArg);
 			}
 			else
 			{
 				stmt_list = pg_analyze_and_rewrite(parsetree,
 												   src,
 												   plan->argtypes,
-												   plan->nargs,
-												   _SPI_current->tuplestores);
+												   plan->nargs);
 			}
 
 			/* Finish filling in the CachedPlanSource */
@@ -2197,8 +2184,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 										plansource->query_string,
 										snap, crosscheck_snapshot,
 										dest,
-										paramLI, _SPI_current->tuplestores,
-										0);
+										paramLI, 0);
 				res = _SPI_pquery(qdesc, fire_triggers,
 								  canSetTag ? tcount : 0);
 				FreeQueryDesc(qdesc);
@@ -2211,7 +2197,6 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 							   plansource->query_string,
 							   PROCESS_UTILITY_QUERY,
 							   paramLI,
-							   _SPI_current->tuplestores,
 							   dest,
 							   completionTag);
 
@@ -2745,114 +2730,4 @@ _SPI_save_plan(SPIPlanPtr plan)
 	}
 
 	return newplan;
-}
-
-/*
- * Internal lookup of Tsr by name.
- */
-static Tsr
-_SPI_find_tsr_by_name(const char *name)
-{
-	/* internal static function; any error is bug in SPI itself */
-	Assert(name != NULL);
-	Assert(_SPI_curid >= 0);
-	Assert(_SPI_curid == _SPI_connected);
-	Assert(_SPI_current == &(_SPI_stack[_SPI_curid]));
-
-	/* fast exit if no tuplestores have been added */
-	if (_SPI_current->tuplestores == NULL)
-		return NULL;
-
-	return get_tsr(_SPI_current->tuplestores, name);
-}
-
-/*
- * Register a named tuplestore for use by the planner and executor on
- * subsequent calls using this SPI connection.
- */
-int
-SPI_register_tuplestore(Tsr tsr)
-{
-	Tsr			match;
-	int			res;
-
-	if (tsr == NULL || tsr->md.name == NULL)
-		return SPI_ERROR_ARGUMENT;
-
-	res = _SPI_begin_call(false);	/* keep current memory context */
-	if (res < 0)
-		return res;
-
-	match = _SPI_find_tsr_by_name(tsr->md.name);
-	if (match)
-		res = SPI_ERROR_TSR_DUPLICATE;
-	else
-	{
-		if (_SPI_current->tuplestores == NULL)
-			_SPI_current->tuplestores = create_tsrcache();
-
-		register_tsr(_SPI_current->tuplestores, tsr);
-		res = SPI_OK_TSR_REGISTER;
-	}
-
-	_SPI_end_call(false);
-
-	return res;
-}
-
-/*
- * Unregister a named tuplestore by name.  This will probably be a rarely used
- * function, since SPI_finish will clear it automatically.
- */
-int
-SPI_unregister_tuplestore(const char *name)
-{
-	Tsr			match;
-	int			res;
-
-	if (name == NULL)
-		return SPI_ERROR_ARGUMENT;
-
-	res = _SPI_begin_call(false);	/* keep current memory context */
-	if (res < 0)
-		return res;
-
-	match = _SPI_find_tsr_by_name(name);
-	if (match)
-	{
-		unregister_tsr(_SPI_current->tuplestores, match->md.name);
-		res = SPI_OK_TSR_UNREGISTER;
-	}
-	else
-		res = SPI_ERROR_TSR_NOT_FOUND;
-
-	_SPI_end_call(false);
-
-	return res;
-}
-
-/*
- * This returns a Tsr if there is a name match at the caller level.  It must
- * quietly return NULL if there is no SPI caller or if no match is found.
- *
- * Normally a tuplestore is expected to be used on a specific depth of SPI
- * connection, but we tolerate a call if the next level has been opened in
- * case someone wants to pass through the Tsr.
- */
-Tsr
-SPI_get_caller_tuplestore(const char *name)
-{
-	if (name == NULL)
-	{
-		SPI_result = SPI_ERROR_ARGUMENT;
-		return NULL;
-	}
-
-	if (_SPI_curid < 0)
-	{
-		SPI_result = SPI_ERROR_UNCONNECTED;
-		return NULL;
-	}
-
-	return _SPI_find_tsr_by_name(name);
 }

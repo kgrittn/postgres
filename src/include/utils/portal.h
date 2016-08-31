@@ -137,7 +137,6 @@ typedef struct PortalData
 	CachedPlan *cplan;			/* CachedPlan, if stmts are from one */
 
 	ParamListInfo portalParams; /* params to pass to query */
-	Tsrcache   *tsrcache;		/* any named tuplestores it will need */
 
 	/* Features/options */
 	PortalStrategy strategy;	/* see above */

@@ -18,11 +18,10 @@
 #include "nodes/params.h"
 #include "nodes/parsenodes.h"
 #include "tcop/dest.h"
-#include "utils/tsrcache.h"
 
 
 extern ObjectAddress ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
-				  ParamListInfo params, Tsrcache *tsrcache, char *completionTag);
+				  ParamListInfo params, char *completionTag);
 
 extern int	GetIntoRelEFlags(IntoClause *intoClause);
 

@@ -627,7 +627,7 @@ ExecParallelGetQueryDesc(shm_toc *toc, DestReceiver *receiver,
 	return CreateQueryDesc(pstmt,
 						   "<parallel query>",
 						   GetActiveSnapshot(), InvalidSnapshot,
-						   receiver, paramLI, NULL, instrument_options);
+						   receiver, paramLI, instrument_options);
 }
 
 /*

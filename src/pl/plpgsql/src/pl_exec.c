@@ -694,7 +694,6 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 	 */
 	if (trigdata->tg_newtable || trigdata->tg_oldtable)
 	{
-		estate.tsrcache = create_tsrcache();
 		if (trigdata->tg_newtable)
 		{
 			Tsr tsr = palloc(sizeof(TsrData));
@@ -702,8 +701,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 			tsr->md.name = trigdata->tg_trigger->tgnewtable;
 			tsr->md.tupdesc = trigdata->tg_relation->rd_att;
 			tsr->tstate = trigdata->tg_newtable;
-			register_tsr(estate.tsrcache, tsr);
-			SPI_register_tuplestore(tsr);
+			/* FIXME: Store somewhere. */
 		}
 		if (trigdata->tg_oldtable)
 		{
@@ -712,8 +710,7 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 			tsr->md.name = trigdata->tg_trigger->tgoldtable;
 			tsr->md.tupdesc = trigdata->tg_relation->rd_att;
 			tsr->tstate = trigdata->tg_oldtable;
-			register_tsr(estate.tsrcache, tsr);
-			SPI_register_tuplestore(tsr);
+			/* FIXME: Store somewhere. */
 		}
 	}
 
@@ -3482,9 +3479,6 @@ plpgsql_estate_setup(PLpgSQL_execstate *estate,
 	estate->paramLI->numParams = estate->ndatums;
 	estate->paramLI->paramMask = NULL;
 	estate->params_dirty = false;
-
-	/* default tuplestore cache to "none" */
-	estate->tsrcache = NULL;
 
 	/* set up for use of appropriate simple-expression EState and cast hash */
 	if (simple_eval_estate)
@@ -7392,9 +7386,6 @@ exec_dynquery_with_params(PLpgSQL_execstate *estate,
 
 	/* Release transient data */
 	MemoryContextReset(stmt_mcontext);
-
-	/* Make sure the portal knows about any named tuplestores. */
-	portal->tsrcache = estate->tsrcache;
 
 	return portal;
 }

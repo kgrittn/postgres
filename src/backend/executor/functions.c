@@ -701,8 +701,7 @@ init_sql_fcache(FmgrInfo *finfo, Oid collation, bool lazyEvalOK)
 		queryTree_sublist = pg_analyze_and_rewrite_params(parsetree,
 														  fcache->src,
 									   (ParserSetupHook) sql_fn_parser_setup,
-														  fcache->pinfo,
-														  NULL);
+														  fcache->pinfo);
 		queryTree_list = lappend(queryTree_list, queryTree_sublist);
 		flat_query_list = list_concat(flat_query_list,
 									  list_copy(queryTree_sublist));
@@ -799,9 +798,7 @@ postquel_start(execution_state *es, SQLFunctionCachePtr fcache)
 								 GetActiveSnapshot(),
 								 InvalidSnapshot,
 								 dest,
-								 fcache->paramLI,
-								 es->qd ? es->qd->tsrcache : NULL,
-								 0);
+								 fcache->paramLI, 0);
 	else
 		es->qd = CreateUtilityQueryDesc(es->stmt,
 										fcache->src,
@@ -847,7 +844,6 @@ postquel_getnext(execution_state *es, SQLFunctionCachePtr fcache)
 					   fcache->src,
 					   PROCESS_UTILITY_QUERY,
 					   es->qd->params,
-					   es->qd->tsrcache,
 					   es->qd->dest,
 					   NULL);
 		result = true;			/* never stops early */

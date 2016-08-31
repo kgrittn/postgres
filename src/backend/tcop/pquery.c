@@ -36,7 +36,6 @@ Portal		ActivePortal = NULL;
 static void ProcessQuery(PlannedStmt *plan,
 			 const char *sourceText,
 			 ParamListInfo params,
-			 Tsrcache *tsrcache,
 			 DestReceiver *dest,
 			 char *completionTag);
 static void FillPortalStore(Portal portal, bool isTopLevel);
@@ -68,7 +67,6 @@ CreateQueryDesc(PlannedStmt *plannedstmt,
 				Snapshot crosscheck_snapshot,
 				DestReceiver *dest,
 				ParamListInfo params,
-				Tsrcache *tsrcache,
 				int instrument_options)
 {
 	QueryDesc  *qd = (QueryDesc *) palloc(sizeof(QueryDesc));
@@ -82,7 +80,6 @@ CreateQueryDesc(PlannedStmt *plannedstmt,
 	qd->crosscheck_snapshot = RegisterSnapshot(crosscheck_snapshot);
 	qd->dest = dest;			/* output dest */
 	qd->params = params;		/* parameter values passed into query */
-	qd->tsrcache = tsrcache;	/* named tuplestores passed into the query */
 	qd->instrument_options = instrument_options;		/* instrumentation
 														 * wanted? */
 
@@ -165,7 +162,6 @@ static void
 ProcessQuery(PlannedStmt *plan,
 			 const char *sourceText,
 			 ParamListInfo params,
-			 Tsrcache *tsrcache,
 			 DestReceiver *dest,
 			 char *completionTag)
 {
@@ -178,7 +174,7 @@ ProcessQuery(PlannedStmt *plan,
 	 */
 	queryDesc = CreateQueryDesc(plan, sourceText,
 								GetActiveSnapshot(), InvalidSnapshot,
-								dest, params, tsrcache, 0);
+								dest, params, 0);
 
 	/*
 	 * Call ExecutorStart to prepare the plan for execution
@@ -525,7 +521,6 @@ PortalStart(Portal portal, ParamListInfo params,
 											InvalidSnapshot,
 											None_Receiver,
 											params,
-											portal->tsrcache,
 											0);
 
 				/*
@@ -1199,7 +1194,6 @@ PortalRunUtility(Portal portal, Node *utilityStmt,
 				   portal->sourceText,
 			   isTopLevel ? PROCESS_UTILITY_TOPLEVEL : PROCESS_UTILITY_QUERY,
 				   portal->portalParams,
-				   portal->tsrcache,
 				   dest,
 				   completionTag);
 
@@ -1309,7 +1303,6 @@ PortalRunMulti(Portal portal,
 				ProcessQuery(pstmt,
 							 portal->sourceText,
 							 portal->portalParams,
-							 portal->tsrcache,
 							 dest, completionTag);
 			}
 			else
@@ -1318,7 +1311,6 @@ PortalRunMulti(Portal portal,
 				ProcessQuery(pstmt,
 							 portal->sourceText,
 							 portal->portalParams,
-							 portal->tsrcache,
 							 altdest, NULL);
 			}
 

@@ -222,7 +222,7 @@ create_ctas_nodata(List *tlist, IntoClause *into)
  */
 ObjectAddress
 ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
-				  ParamListInfo params, Tsrcache *tsrcache, char *completionTag)
+				  ParamListInfo params, char *completionTag)
 {
 	Query	   *query = (Query *) stmt->query;
 	IntoClause *into = stmt->into;
@@ -342,7 +342,7 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 		/* Create a QueryDesc, redirecting output to our tuple receiver */
 		queryDesc = CreateQueryDesc(plan, queryString,
 									GetActiveSnapshot(), InvalidSnapshot,
-									dest, params, tsrcache, 0);
+									dest, params, 0);
 
 		/* call ExecutorStart to prepare the plan for execution */
 		ExecutorStart(queryDesc, GetIntoRelEFlags(into));

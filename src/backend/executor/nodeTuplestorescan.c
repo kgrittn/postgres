@@ -98,7 +98,9 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 	scanstate->ss.ps.plan = (Plan *) node;
 	scanstate->ss.ps.state = estate;
 
-	tsr = get_tsr(estate->es_tsrcache, node->tsrname);
+	/* FIXME: Get tuplestore. */
+	tsr = NULL;
+
 	if (!tsr)
 		elog(ERROR, "executor could not find named tuplestore \"%s\"",
 			 node->tsrname);

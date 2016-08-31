@@ -642,7 +642,7 @@ pg_parse_query(const char *query_string)
  */
 List *
 pg_analyze_and_rewrite(Node *parsetree, const char *query_string,
-					   Oid *paramTypes, int numParams, Tsrcache *tsrcache)
+					   Oid *paramTypes, int numParams)
 {
 	Query	   *query;
 	List	   *querytree_list;
@@ -655,8 +655,7 @@ pg_analyze_and_rewrite(Node *parsetree, const char *query_string,
 	if (log_parser_stats)
 		ResetUsage();
 
-	query = parse_analyze(parsetree, query_string, paramTypes, numParams,
-						  tsrcache);
+	query = parse_analyze(parsetree, query_string, paramTypes, numParams);
 
 	if (log_parser_stats)
 		ShowUsage("PARSE ANALYSIS STATISTICS");
@@ -680,8 +679,7 @@ List *
 pg_analyze_and_rewrite_params(Node *parsetree,
 							  const char *query_string,
 							  ParserSetupHook parserSetup,
-							  void *parserSetupArg,
-							  Tsrcache *tsrcache)
+							  void *parserSetupArg)
 {
 	ParseState *pstate;
 	Query	   *query;
@@ -699,7 +697,6 @@ pg_analyze_and_rewrite_params(Node *parsetree,
 
 	pstate = make_parsestate(NULL);
 	pstate->p_sourcetext = query_string;
-	pstate->p_tsrcache = tsrcache;
 	(*parserSetup) (pstate, parserSetupArg);
 
 	query = transformTopLevelStmt(pstate, parsetree);
@@ -1020,7 +1017,7 @@ exec_simple_query(const char *query_string)
 		oldcontext = MemoryContextSwitchTo(MessageContext);
 
 		querytree_list = pg_analyze_and_rewrite(parsetree, query_string,
-												NULL, 0, NULL);
+												NULL, 0);
 
 		plantree_list = pg_plan_queries(querytree_list,
 										CURSOR_OPT_PARALLEL_OK, NULL);
