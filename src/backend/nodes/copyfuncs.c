@@ -2698,6 +2698,7 @@ _copyDefElem(const DefElem *from)
 	COPY_STRING_FIELD(defname);
 	COPY_NODE_FIELD(arg);
 	COPY_SCALAR_FIELD(defaction);
+	COPY_LOCATION_FIELD(location);
 
 	return newnode;
 }
@@ -3408,10 +3409,11 @@ _copyAlterEnumStmt(const AlterEnumStmt *from)
 	AlterEnumStmt *newnode = makeNode(AlterEnumStmt);
 
 	COPY_NODE_FIELD(typeName);
+	COPY_STRING_FIELD(oldVal);
 	COPY_STRING_FIELD(newVal);
 	COPY_STRING_FIELD(newValNeighbor);
 	COPY_SCALAR_FIELD(newValIsAfter);
-	COPY_SCALAR_FIELD(skipIfExists);
+	COPY_SCALAR_FIELD(skipIfNewValExists);
 
 	return newnode;
 }
