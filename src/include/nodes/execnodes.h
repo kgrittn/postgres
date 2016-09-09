@@ -1813,7 +1813,7 @@ typedef struct SortState
 
 /* ---------------------
  *	GroupState information
- * -------------------------
+ * ---------------------
  */
 typedef struct GroupState
 {
@@ -1832,7 +1832,7 @@ typedef struct GroupState
  *	input group during evaluation of an Agg node's output tuple(s).  We
  *	create a second ExprContext, tmpcontext, in which to evaluate input
  *	expressions and run the aggregate transition functions.
- * -------------------------
+ * ---------------------
  */
 /* these structs are private in nodeAgg.c: */
 typedef struct AggStatePerAggData *AggStatePerAgg;

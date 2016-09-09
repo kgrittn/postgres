@@ -81,7 +81,7 @@ bool
 PageIsVerified(Page page, BlockNumber blkno)
 {
 	PageHeader	p = (PageHeader) page;
-	char	   *pagebytes;
+	size_t	   *pagebytes;
 	int			i;
 	bool		checksum_failure = false;
 	bool		header_sane = false;
@@ -118,10 +118,17 @@ PageIsVerified(Page page, BlockNumber blkno)
 			return true;
 	}
 
-	/* Check all-zeroes case */
+	/*
+	 * Check all-zeroes case. Luckily BLCKSZ is guaranteed to always be a
+	 * multiple of size_t - and it's much faster to compare memory using the
+	 * native word size.
+	 */
+	StaticAssertStmt(BLCKSZ == (BLCKSZ / sizeof(size_t)) * sizeof(size_t),
+					 "BLCKSZ has to be a multiple of sizeof(size_t)");
+
 	all_zeroes = true;
-	pagebytes = (char *) page;
-	for (i = 0; i < BLCKSZ; i++)
+	pagebytes = (size_t *) page;
+	for (i = 0; i < (BLCKSZ / sizeof(size_t)); i++)
 	{
 		if (pagebytes[i] != 0)
 		{
@@ -731,7 +738,8 @@ PageIndexTupleDelete(Page page, OffsetNumber offnum)
 	if (phdr->pd_lower < SizeOfPageHeaderData ||
 		phdr->pd_lower > phdr->pd_upper ||
 		phdr->pd_upper > phdr->pd_special ||
-		phdr->pd_special > BLCKSZ)
+		phdr->pd_special > BLCKSZ ||
+		phdr->pd_special != MAXALIGN(phdr->pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg("corrupted page pointers: lower = %u, upper = %u, special = %u",
@@ -750,11 +758,14 @@ PageIndexTupleDelete(Page page, OffsetNumber offnum)
 	offset = ItemIdGetOffset(tup);
 
 	if (offset < phdr->pd_upper || (offset + size) > phdr->pd_special ||
-		offset != MAXALIGN(offset) || size != MAXALIGN(size))
+		offset != MAXALIGN(offset))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg("corrupted item pointer: offset = %u, size = %u",
 						offset, (unsigned int) size)));
+
+	/* Amount of space to actually be deleted */
+	size = MAXALIGN(size);
 
 	/*
 	 * First, we want to get rid of the pd_linp entry for the index tuple. We
