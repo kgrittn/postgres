@@ -942,7 +942,7 @@ transformInsertRow(ParseState *pstate, List *exprlist,
 }
 
 /*
- * transformSelectStmt -
+ * transformOnConflictClause -
  *	  transforms an OnConflictClause in an INSERT
  */
 static OnConflictExpr *
