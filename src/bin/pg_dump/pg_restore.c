@@ -85,6 +85,7 @@ main(int argc, char **argv)
 		{"data-only", 0, NULL, 'a'},
 		{"dbname", 1, NULL, 'd'},
 		{"exit-on-error", 0, NULL, 'e'},
+		{"exclude-schema", 1, NULL, 'N'},
 		{"file", 1, NULL, 'f'},
 		{"format", 1, NULL, 'F'},
 		{"function", 1, NULL, 'P'},
@@ -148,7 +149,7 @@ main(int argc, char **argv)
 		}
 	}
 
-	while ((c = getopt_long(argc, argv, "acCd:ef:F:h:I:j:lL:n:Op:P:RsS:t:T:U:vwWx1",
+	while ((c = getopt_long(argc, argv, "acCd:ef:F:h:I:j:lL:n:N:Op:P:RsS:t:T:U:vwWx1",
 							cmdopts, NULL)) != -1)
 	{
 		switch (c)
@@ -194,6 +195,10 @@ main(int argc, char **argv)
 
 			case 'n':			/* Dump data for this schema only */
 				simple_string_list_append(&opts->schemaNames, optarg);
+				break;
+
+			case 'N':			/* Do not dump data for this schema */
+				simple_string_list_append(&opts->schemaExcludeNames, optarg);
 				break;
 
 			case 'O':
@@ -377,6 +382,8 @@ main(int argc, char **argv)
 
 	AH = OpenArchive(inputFileSpec, opts->format);
 
+	SetArchiveOptions(AH, NULL, opts);
+
 	/*
 	 * We don't have a connection yet but that doesn't matter. The connection
 	 * is initialized to NULL and if we terminate through exit_nicely() while
@@ -393,7 +400,7 @@ main(int argc, char **argv)
 	AH->exit_on_error = opts->exit_on_error;
 
 	if (opts->tocFile)
-		SortTocFromFile(AH, opts);
+		SortTocFromFile(AH);
 
 	/* See comments in pg_dump.c */
 #ifdef WIN32
@@ -408,10 +415,10 @@ main(int argc, char **argv)
 	AH->numWorkers = numWorkers;
 
 	if (opts->tocSummary)
-		PrintTOCSummary(AH, opts);
+		PrintTOCSummary(AH);
 	else
 	{
-		SetArchiveRestoreOptions(AH, opts);
+		ProcessArchiveRestoreOptions(AH);
 		RestoreArchive(AH);
 	}
 
@@ -423,7 +430,7 @@ main(int argc, char **argv)
 	/* AH may be freed in CloseArchive? */
 	exit_code = AH->n_errors ? 1 : 0;
 
-	CloseArchive(AH, NULL);
+	CloseArchive(AH);
 
 	return exit_code;
 }
@@ -454,11 +461,12 @@ usage(const char *progname)
 	printf(_("  -L, --use-list=FILENAME      use table of contents from this file for\n"
 			 "                               selecting/ordering output\n"));
 	printf(_("  -n, --schema=NAME            restore only objects in this schema\n"));
+	printf(_("  -N, --exclude-schema=NAME    do not restore objects in this schema\n"));
 	printf(_("  -O, --no-owner               skip restoration of object ownership\n"));
 	printf(_("  -P, --function=NAME(args)    restore named function\n"));
 	printf(_("  -s, --schema-only            restore only the schema, no data\n"));
 	printf(_("  -S, --superuser=NAME         superuser user name to use for disabling triggers\n"));
-	printf(_("  -t, --table=NAME             restore named relation (table, view, etc)\n"));
+	printf(_("  -t, --table=NAME             restore named relation (table, view, etc.)\n"));
 	printf(_("  -T, --trigger=NAME           restore named trigger\n"));
 	printf(_("  -x, --no-privileges          skip restoration of access privileges (grant/revoke)\n"));
 	printf(_("  -1, --single-transaction     restore as a single transaction\n"));
@@ -471,7 +479,7 @@ usage(const char *progname)
 	printf(_("  --no-tablespaces             do not restore tablespace assignments\n"));
 	printf(_("  --section=SECTION            restore named section (pre-data, data, or post-data)\n"));
 	printf(_("  --strict-names               require table and/or schema include patterns to\n"
-			 "                               match at least one entity each\n"));
+		 "                               match at least one entity each\n"));
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));

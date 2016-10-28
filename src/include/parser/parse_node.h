@@ -4,7 +4,7 @@
  *		Internal definitions for parser
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/parser/parse_node.h
@@ -16,6 +16,7 @@
 
 #include "nodes/parsenodes.h"
 #include "utils/relcache.h"
+#include "utils/tsrcache.h"
 
 
 /*
@@ -27,7 +28,7 @@
  * by extension code that might need to call transformExpr().  The core code
  * will not enforce any context-driven restrictions on EXPR_KIND_OTHER
  * expressions, so the caller would have to check for sub-selects, aggregates,
- * and window functions if those need to be disallowed.
+ * window functions, SRFs, etc if those need to be disallowed.
  */
 typedef enum ParseExprKind
 {
@@ -151,12 +152,14 @@ struct ParseState
 	Node	   *p_value_substitute;		/* what to replace VALUE with, if any */
 	bool		p_hasAggs;
 	bool		p_hasWindowFuncs;
+	bool		p_hasTargetSRFs;
 	bool		p_hasSubLinks;
 	bool		p_hasModifyingCTE;
 	bool		p_is_insert;
 	bool		p_locked_from_parent;
 	Relation	p_target_relation;
 	RangeTblEntry *p_target_rangetblentry;
+	Tsrcache	*p_tsrcache;	/* visible named tuplestore relations */
 
 	/*
 	 * Optional hook functions for parser callbacks.  These are null unless

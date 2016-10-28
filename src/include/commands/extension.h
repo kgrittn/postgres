@@ -4,7 +4,7 @@
  *		Extension management commands (create/drop extension).
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/commands/extension.h
@@ -28,7 +28,7 @@ extern PGDLLIMPORT bool creating_extension;
 extern Oid	CurrentExtensionObject;
 
 
-extern ObjectAddress CreateExtension(CreateExtensionStmt *stmt);
+extern ObjectAddress CreateExtension(ParseState *pstate, CreateExtensionStmt *stmt);
 
 extern void RemoveExtensionById(Oid extId);
 
@@ -37,7 +37,7 @@ extern ObjectAddress InsertExtensionTuple(const char *extName, Oid extOwner,
 					 Datum extConfig, Datum extCondition,
 					 List *requiredExtensions);
 
-extern ObjectAddress ExecAlterExtensionStmt(AlterExtensionStmt *stmt);
+extern ObjectAddress ExecAlterExtensionStmt(ParseState *pstate, AlterExtensionStmt *stmt);
 
 extern ObjectAddress ExecAlterExtensionContentsStmt(AlterExtensionContentsStmt *stmt,
 							   ObjectAddress *objAddress);

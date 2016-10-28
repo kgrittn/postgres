@@ -110,11 +110,12 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 	scanstate->tupdesc = tsr->md.tupdesc;
 	scanstate->readptr = tuplestore_alloc_read_pointer(scanstate->table, 0);
 
+	tuplestore_select_read_pointer(scanstate->table, scanstate->readptr);
+
 	/*
 	 * The new read pointer copies its position from read pointer 0, which
 	 * could be anywhere, so explicitly rewind it.
 	 */
-	tuplestore_select_read_pointer(scanstate->table, scanstate->readptr);
 	tuplestore_rescan(scanstate->table);
 
 	/*

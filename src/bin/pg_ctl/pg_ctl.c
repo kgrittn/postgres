@@ -2,7 +2,7 @@
  *
  * pg_ctl --- start/stops/restarts the PostgreSQL server
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  *
  * src/bin/pg_ctl/pg_ctl.c
  *
@@ -19,6 +19,8 @@
 
 #include "postgres_fe.h"
 
+#include "catalog/pg_control.h"
+#include "common/controldata_utils.h"
 #include "libpq-fe.h"
 #include "pqexpbuffer.h"
 
@@ -38,13 +40,6 @@
 
 #include "getopt_long.h"
 #include "miscadmin.h"
-
-#if defined(__CYGWIN__)
-#include <sys/cygwin.h>
-#include <windows.h>
-/* Cygwin defines WIN32 in windows.h, but we don't want it. */
-#undef WIN32
-#endif
 
 /* PID can be negative for standalone backend */
 typedef long pgpid_t;
@@ -79,6 +74,7 @@ typedef enum
 static bool do_wait = false;
 static bool wait_set = false;
 static int	wait_seconds = DEFAULT_WAIT;
+static bool wait_seconds_arg = false;
 static bool silent_mode = false;
 static ShutdownMode shutdown_mode = FAST_MODE;
 static int	sig = SIGINT;		/* default */
@@ -102,10 +98,9 @@ static char postopts_file[MAXPGPATH];
 static char version_file[MAXPGPATH];
 static char pid_file[MAXPGPATH];
 static char backup_file[MAXPGPATH];
-static char recovery_file[MAXPGPATH];
 static char promote_file[MAXPGPATH];
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 static DWORD pgctl_start_type = SERVICE_AUTO_START;
 static SERVICE_STATUS status;
 static SERVICE_STATUS_HANDLE hStatus = (SERVICE_STATUS_HANDLE) 0;
@@ -133,7 +128,7 @@ static void do_kill(pgpid_t pid);
 static void print_msg(const char *msg);
 static void adjust_data_dir(void);
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 #if (_MSC_VER >= 1800)
 #include <versionhelpers.h>
 #else
@@ -164,8 +159,10 @@ static bool postmaster_is_alive(pid_t pid);
 static void unlimit_core_size(void);
 #endif
 
+static DBState get_control_dbstate(void);
 
-#if defined(WIN32) || defined(__CYGWIN__)
+
+#ifdef WIN32
 static void
 write_eventlog(int level, const char *line)
 {
@@ -207,7 +204,7 @@ write_stderr(const char *fmt,...)
 	va_list		ap;
 
 	va_start(ap, fmt);
-#if !defined(WIN32) && !defined(__CYGWIN__)
+#ifndef WIN32
 	/* On Unix, we just fprintf to stderr */
 	vfprintf(stderr, fmt, ap);
 #else
@@ -216,7 +213,7 @@ write_stderr(const char *fmt,...)
 	 * On Win32, we print to stderr if running on a console, or write to
 	 * eventlog if running as a service
 	 */
-	if (!isatty(fileno(stderr)))	/* Running as a service */
+	if (pgwin32_is_service())	/* Running as a service */
 	{
 		char		errbuf[2048];		/* Arbitrary size? */
 
@@ -709,7 +706,7 @@ test_postmaster_connection(pgpid_t pm_pid, bool do_checkpoint)
 #endif
 
 		/* No response, or startup still in process; wait */
-#if defined(WIN32)
+#ifdef WIN32
 		if (do_checkpoint)
 		{
 			/*
@@ -994,12 +991,12 @@ do_stop(void)
 		/*
 		 * If backup_label exists, an online backup is running. Warn the user
 		 * that smart shutdown will wait for it to finish. However, if
-		 * recovery.conf is also present, we're recovering from an online
+		 * the server is in archive recovery, we're recovering from an online
 		 * backup instead of performing one.
 		 */
 		if (shutdown_mode == SMART_MODE &&
 			stat(backup_file, &statbuf) == 0 &&
-			stat(recovery_file, &statbuf) != 0)
+			get_control_dbstate() != DB_IN_ARCHIVE_RECOVERY)
 		{
 			print_msg(_("WARNING: online backup mode is active\n"
 						"Shutdown will not complete until pg_stop_backup() is called.\n\n"));
@@ -1082,12 +1079,12 @@ do_restart(void)
 		/*
 		 * If backup_label exists, an online backup is running. Warn the user
 		 * that smart shutdown will wait for it to finish. However, if
-		 * recovery.conf is also present, we're recovering from an online
+		 * the server is in archive recovery, we're recovering from an online
 		 * backup instead of performing one.
 		 */
 		if (shutdown_mode == SMART_MODE &&
 			stat(backup_file, &statbuf) == 0 &&
-			stat(recovery_file, &statbuf) != 0)
+			get_control_dbstate() != DB_IN_ARCHIVE_RECOVERY)
 		{
 			print_msg(_("WARNING: online backup mode is active\n"
 						"Shutdown will not complete until pg_stop_backup() is called.\n\n"));
@@ -1174,7 +1171,6 @@ do_promote(void)
 {
 	FILE	   *prmfile;
 	pgpid_t		pid;
-	struct stat statbuf;
 
 	pid = get_pgpid(false);
 
@@ -1193,8 +1189,7 @@ do_promote(void)
 		exit(1);
 	}
 
-	/* If recovery.conf doesn't exist, the server is not in standby mode */
-	if (stat(recovery_file, &statbuf) != 0)
+	if (get_control_dbstate() != DB_IN_ARCHIVE_RECOVERY)
 	{
 		write_stderr(_("%s: cannot promote server; "
 					   "server is not in standby mode\n"),
@@ -1233,7 +1228,34 @@ do_promote(void)
 		exit(1);
 	}
 
-	print_msg(_("server promoting\n"));
+	if (do_wait)
+	{
+		DBState state = DB_STARTUP;
+
+		print_msg(_("waiting for server to promote..."));
+		while (wait_seconds > 0)
+		{
+			state = get_control_dbstate();
+			if (state == DB_IN_PRODUCTION)
+				break;
+
+			print_msg(".");
+			pg_usleep(1000000);     /* 1 sec */
+			wait_seconds--;
+		}
+		if (state == DB_IN_PRODUCTION)
+		{
+			print_msg(_(" done\n"));
+			print_msg(_("server promoted\n"));
+		}
+		else
+		{
+			print_msg(_(" stopped waiting\n"));
+			print_msg(_("server is still promoting\n"));
+		}
+	}
+	else
+		print_msg(_("server promoting\n"));
 }
 
 
@@ -1333,7 +1355,7 @@ do_kill(pgpid_t pid)
 	}
 }
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 
 #if (_MSC_VER < 1800)
 static bool
@@ -1399,20 +1421,6 @@ pgwin32_CommandLine(bool registration)
 		}
 	}
 
-#ifdef __CYGWIN__
-	/* need to convert to windows path */
-	{
-		char		buf[MAXPGPATH];
-
-#if CYGWIN_VERSION_DLL_MAJOR >= 1007
-		cygwin_conv_path(CCP_POSIX_TO_WIN_A, cmdPath, buf, sizeof(buf));
-#else
-		cygwin_conv_to_full_win32_path(cmdPath, buf);
-#endif
-		strcpy(cmdPath, buf);
-	}
-#endif
-
 	/* if path does not end in .exe, append it */
 	if (strlen(cmdPath) < 4 ||
 		pg_strcasecmp(cmdPath + strlen(cmdPath) - 4, ".exe") != 0)
@@ -1452,7 +1460,8 @@ pgwin32_CommandLine(bool registration)
 	if (registration && do_wait)
 		appendPQExpBuffer(cmdLine, " -w");
 
-	if (registration && wait_seconds != DEFAULT_WAIT)
+	/* Don't propagate a value from an environment variable. */
+	if (registration && wait_seconds_arg && wait_seconds != DEFAULT_WAIT)
 		appendPQExpBuffer(cmdLine, " -t %d", wait_seconds);
 
 	if (registration && silent_mode)
@@ -1766,10 +1775,8 @@ CreateRestrictedProcess(char *cmd, PROCESS_INFORMATION *processInfo, bool as_ser
 	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &origToken))
 	{
 		/*
-		 * Most Windows targets make DWORD a 32-bit unsigned long.  Cygwin
-		 * x86_64, an LP64 target, makes it a 32-bit unsigned int.  In code
-		 * built for Cygwin as well as for native Windows targets, cast DWORD
-		 * before printing.
+		 * Most Windows targets make DWORD a 32-bit unsigned long, but in case
+		 * it doesn't cast DWORD before printing.
 		 */
 		write_stderr(_("%s: could not open process token: error code %lu\n"),
 					 progname, (unsigned long) GetLastError());
@@ -1810,10 +1817,7 @@ CreateRestrictedProcess(char *cmd, PROCESS_INFORMATION *processInfo, bool as_ser
 		return 0;
 	}
 
-#ifndef __CYGWIN__
 	AddUserToTokenDacl(restrictedToken);
-#endif
-
 	r = CreateProcessAsUser(restrictedToken, NULL, cmd, NULL, NULL, TRUE, CREATE_SUSPENDED, NULL, NULL, &si, processInfo);
 
 	Kernel32Handle = LoadLibrary("KERNEL32.DLL");
@@ -1917,7 +1921,7 @@ CreateRestrictedProcess(char *cmd, PROCESS_INFORMATION *processInfo, bool as_ser
 	 */
 	return r;
 }
-#endif   /* defined(WIN32) || defined(__CYGWIN__) */
+#endif   /* WIN32 */
 
 static void
 do_advice(void)
@@ -1937,11 +1941,11 @@ do_help(void)
 	printf(_("  %s stop    [-W] [-t SECS] [-D DATADIR] [-s] [-m SHUTDOWN-MODE]\n"), progname);
 	printf(_("  %s restart [-w] [-t SECS] [-D DATADIR] [-s] [-m SHUTDOWN-MODE]\n"
 			 "                 [-o \"OPTIONS\"]\n"), progname);
-	printf(_("  %s reload  [-D DATADIR] [-s]\n"), progname);
-	printf(_("  %s status  [-D DATADIR]\n"), progname);
-	printf(_("  %s promote [-D DATADIR] [-s]\n"), progname);
+	printf(_("  %s reload                 [-D DATADIR] [-s]\n"), progname);
+	printf(_("  %s status                 [-D DATADIR]\n"), progname);
+	printf(_("  %s promote [-w] [-t SECS] [-D DATADIR] [-s]\n"), progname);
 	printf(_("  %s kill    SIGNALNAME PID\n"), progname);
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 	printf(_("  %s register   [-N SERVICENAME] [-U USERNAME] [-P PASSWORD] [-D DATADIR]\n"
 			 "                    [-S START-TYPE] [-w] [-t SECS] [-o \"OPTIONS\"]\n"), progname);
 	printf(_("  %s unregister [-N SERVICENAME]\n"), progname);
@@ -1949,14 +1953,14 @@ do_help(void)
 
 	printf(_("\nCommon options:\n"));
 	printf(_("  -D, --pgdata=DATADIR   location of the database storage area\n"));
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 	printf(_("  -e SOURCE              event source for logging when running as a service\n"));
 #endif
 	printf(_("  -s, --silent           only print errors, no informational messages\n"));
 	printf(_("  -t, --timeout=SECS     seconds to wait when using -w option\n"));
 	printf(_("  -V, --version          output version information, then exit\n"));
-	printf(_("  -w                     wait until operation completes\n"));
-	printf(_("  -W                     do not wait until operation completes\n"));
+	printf(_("  -w, --wait             wait until operation completes\n"));
+	printf(_("  -W, --no-wait          do not wait until operation completes\n"));
 	printf(_("  -?, --help             show this help, then exit\n"));
 	printf(_("(The default is to wait for shutdown, but not for start or restart.)\n\n"));
 	printf(_("If the -D option is omitted, the environment variable PGDATA is used.\n"));
@@ -1968,7 +1972,7 @@ do_help(void)
 	printf(_("  -c, --core-files       not applicable on this platform\n"));
 #endif
 	printf(_("  -l, --log=FILENAME     write (or append) server log to FILENAME\n"));
-	printf(_("  -o OPTIONS             command line options to pass to postgres\n"
+	printf(_("  -o, --options=OPTIONS  command line options to pass to postgres\n"
 	 "                         (PostgreSQL server executable) or initdb\n"));
 	printf(_("  -p PATH-TO-POSTGRES    normally not necessary\n"));
 	printf(_("\nOptions for stop or restart:\n"));
@@ -1982,7 +1986,7 @@ do_help(void)
 	printf(_("\nAllowed signal names for kill:\n"));
 	printf("  ABRT HUP INT QUIT TERM USR1 USR2\n");
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 	printf(_("\nOptions for register and unregister:\n"));
 	printf(_("  -N SERVICENAME  service name with which to register PostgreSQL server\n"));
 	printf(_("  -P PASSWORD     password of account to register PostgreSQL server\n"));
@@ -2058,7 +2062,7 @@ set_sig(char *signame)
 }
 
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 static void
 set_starttype(char *starttypeopt)
 {
@@ -2139,6 +2143,25 @@ adjust_data_dir(void)
 }
 
 
+static DBState
+get_control_dbstate(void)
+{
+	DBState ret;
+	bool	crc_ok;
+	ControlFileData *control_file_data = get_controlfile(pg_data, progname, &crc_ok);
+
+	if (!crc_ok)
+	{
+		write_stderr(_("%s: control file appears to be corrupt\n"), progname);
+		exit(1);
+	}
+
+	ret = control_file_data->state;
+	pfree(control_file_data);
+	return ret;
+}
+
+
 int
 main(int argc, char **argv)
 {
@@ -2148,17 +2171,21 @@ main(int argc, char **argv)
 		{"log", required_argument, NULL, 'l'},
 		{"mode", required_argument, NULL, 'm'},
 		{"pgdata", required_argument, NULL, 'D'},
+		{"options", required_argument, NULL, 'o'},
 		{"silent", no_argument, NULL, 's'},
 		{"timeout", required_argument, NULL, 't'},
 		{"core-files", no_argument, NULL, 'c'},
+		{"wait", no_argument, NULL, 'w'},
+		{"no-wait", no_argument, NULL, 'W'},
 		{NULL, 0, NULL, 0}
 	};
 
+	char	   *env_wait;
 	int			option_index;
 	int			c;
 	pgpid_t		killproc = 0;
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 	setvbuf(stderr, NULL, _IONBF, 0);
 #endif
 
@@ -2203,6 +2230,10 @@ main(int argc, char **argv)
 		exit(1);
 	}
 #endif
+
+	env_wait = getenv("PGCTLTIMEOUT");
+	if (env_wait != NULL)
+		wait_seconds = atoi(env_wait);
 
 	/*
 	 * 'Action' can be before or after args so loop over both. Some
@@ -2271,7 +2302,7 @@ main(int argc, char **argv)
 					silent_mode = true;
 					break;
 				case 'S':
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 					set_starttype(optarg);
 #else
 					write_stderr(_("%s: -S option not supported on this platform\n"),
@@ -2281,6 +2312,7 @@ main(int argc, char **argv)
 					break;
 				case 't':
 					wait_seconds = atoi(optarg);
+					wait_seconds_arg = true;
 					break;
 				case 'U':
 					if (strchr(optarg, '\\'))
@@ -2344,7 +2376,7 @@ main(int argc, char **argv)
 				set_sig(argv[++optind]);
 				killproc = atol(argv[++optind]);
 			}
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 			else if (strcmp(argv[optind], "register") == 0)
 				ctl_command = REGISTER_COMMAND;
 			else if (strcmp(argv[optind], "unregister") == 0)
@@ -2393,18 +2425,10 @@ main(int argc, char **argv)
 
 	if (!wait_set)
 	{
-		switch (ctl_command)
-		{
-			case RESTART_COMMAND:
-			case START_COMMAND:
-				do_wait = false;
-				break;
-			case STOP_COMMAND:
-				do_wait = true;
-				break;
-			default:
-				break;
-		}
+		if (ctl_command == STOP_COMMAND)
+			do_wait = true;
+		else
+			do_wait = false;
 	}
 
 	if (ctl_command == RELOAD_COMMAND)
@@ -2419,7 +2443,6 @@ main(int argc, char **argv)
 		snprintf(version_file, MAXPGPATH, "%s/PG_VERSION", pg_data);
 		snprintf(pid_file, MAXPGPATH, "%s/postmaster.pid", pg_data);
 		snprintf(backup_file, MAXPGPATH, "%s/backup_label", pg_data);
-		snprintf(recovery_file, MAXPGPATH, "%s/recovery.conf", pg_data);
 	}
 
 	switch (ctl_command)
@@ -2448,7 +2471,7 @@ main(int argc, char **argv)
 		case KILL_COMMAND:
 			do_kill(killproc);
 			break;
-#if defined(WIN32) || defined(__CYGWIN__)
+#ifdef WIN32
 		case REGISTER_COMMAND:
 			pgwin32_doRegister();
 			break;

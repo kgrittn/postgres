@@ -4,7 +4,7 @@
  *	  Support routines for various kinds of object creation.
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -318,13 +318,4 @@ defGetTypeLength(DefElem *def)
 			 errmsg("invalid argument for %s: \"%s\"",
 					def->defname, defGetString(def))));
 	return 0;					/* keep compiler quiet */
-}
-
-/*
- * Create a DefElem setting "oids" to the specified value.
- */
-DefElem *
-defWithOids(bool value)
-{
-	return makeDefElem("oids", (Node *) makeInteger(value));
 }

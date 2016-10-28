@@ -575,7 +575,7 @@ WITH outermost(x) AS (
          SELECT * FROM innermost
          UNION SELECT 3)
 )
-SELECT * FROM outermost;
+SELECT * FROM outermost ORDER BY 1;
 
 WITH outermost(x) AS (
   SELECT 1
@@ -583,7 +583,7 @@ WITH outermost(x) AS (
          SELECT * FROM outermost  -- fail
          UNION SELECT * FROM innermost)
 )
-SELECT * FROM outermost;
+SELECT * FROM outermost ORDER BY 1;
 
 WITH RECURSIVE outermost(x) AS (
   SELECT 1
@@ -591,14 +591,14 @@ WITH RECURSIVE outermost(x) AS (
          SELECT * FROM outermost
          UNION SELECT * FROM innermost)
 )
-SELECT * FROM outermost;
+SELECT * FROM outermost ORDER BY 1;
 
 WITH RECURSIVE outermost(x) AS (
   WITH innermost as (SELECT 2 FROM outermost) -- fail
     SELECT * FROM innermost
     UNION SELECT * from outermost
 )
-SELECT * FROM outermost;
+SELECT * FROM outermost ORDER BY 1;
 
 --
 -- This test will fail with the old implementation of PARAM_EXEC parameter
@@ -838,8 +838,9 @@ WITH aa AS (SELECT 1 a, 2 b)
 INSERT INTO z VALUES(1, (SELECT b || ' insert' FROM aa WHERE a = 1 ))
 ON CONFLICT (k) DO UPDATE SET v = (SELECT b || ' update' FROM aa WHERE a = 1 LIMIT 1);
 
--- This shows an attempt to update an invisible row, which should really be
--- reported as a cardinality violation, but it doesn't seem worth fixing:
+-- Update a row more than once, in different parts of a wCTE. That is
+-- an allowed, presumably very rare, edge case, but since it was
+-- broken in the past, having a test seems worthwhile.
 WITH simpletup AS (
   SELECT 2 k, 'Green' v),
 upsert_cte AS (

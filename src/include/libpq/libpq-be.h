@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * libpq_be.h
+ * libpq-be.h
  *	  This file contains definitions for structures and externs used
  *	  by the postmaster during client authentication.
  *
@@ -8,7 +8,7 @@
  *	  Structs that need to be client-visible are in pqcomm.h.
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/libpq/libpq-be.h
@@ -192,7 +192,6 @@ typedef struct Port
 #ifdef USE_OPENSSL
 	SSL		   *ssl;
 	X509	   *peer;
-	unsigned long count;
 #endif
 } Port;
 

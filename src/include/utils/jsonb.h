@@ -3,7 +3,7 @@
  * jsonb.h
  *	  Declarations for jsonb data type support.
  *
- * Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Copyright (c) 1996-2016, PostgreSQL Global Development Group
  *
  * src/include/utils/jsonb.h
  *
@@ -219,6 +219,20 @@ typedef struct
 #define JB_ROOT_IS_ARRAY(jbp_)	( *(uint32*) VARDATA(jbp_) & JB_FARRAY)
 
 
+enum jbvType
+{
+	/* Scalar types */
+	jbvNull = 0x0,
+	jbvString,
+	jbvNumeric,
+	jbvBool,
+	/* Composite types */
+	jbvArray = 0x10,
+	jbvObject,
+	/* Binary (i.e. struct Jsonb) jbvArray/jbvObject */
+	jbvBinary
+};
+
 /*
  * JsonbValue:	In-memory representation of Jsonb.  This is a convenient
  * deserialized representation, that can easily support using the "val"
@@ -227,24 +241,12 @@ typedef struct
  */
 struct JsonbValue
 {
-	enum
-	{
-		/* Scalar types */
-		jbvNull = 0x0,
-		jbvString,
-		jbvNumeric,
-		jbvBool,
-		/* Composite types */
-		jbvArray = 0x10,
-		jbvObject,
-		/* Binary (i.e. struct Jsonb) jbvArray/jbvObject */
-		jbvBinary
-	}			type;			/* Influences sort order */
+	enum jbvType	type;			/* Influences sort order */
 
 	union
 	{
 		Numeric numeric;
-		bool boolean;
+		bool		boolean;
 		struct
 		{
 			int			len;
@@ -407,6 +409,9 @@ extern Datum jsonb_delete_path(PG_FUNCTION_ARGS);
 
 /* replacement */
 extern Datum jsonb_set(PG_FUNCTION_ARGS);
+
+/* insert after or before (for arrays) */
+extern Datum jsonb_insert(PG_FUNCTION_ARGS);
 
 /* Support functions */
 extern uint32 getJsonbOffset(const JsonbContainer *jc, int index);

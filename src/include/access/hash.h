@@ -4,7 +4,7 @@
  *	  header file for postgres hash access method implementation
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/hash.h
@@ -17,10 +17,9 @@
 #ifndef HASH_H
 #define HASH_H
 
-#include "access/genam.h"
+#include "access/amapi.h"
 #include "access/itup.h"
 #include "access/sdir.h"
-#include "access/xlogreader.h"
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "storage/bufmgr.h"
@@ -120,7 +119,7 @@ typedef HashScanOpaqueData *HashScanOpaque;
 #define HASH_VERSION	2		/* 2 signifies only hash key value is stored */
 
 /*
- * Spares[] holds the number of overflow pages currently allocated at or
+ * spares[] holds the number of overflow pages currently allocated at or
  * before a certain splitpoint. For example, if spares[3] = 7 then there are
  * 7 ovflpages before splitpoint 3 (compare BUCKET_TO_BLKNO macro).  The
  * value in spares[ovflpoint] increases as overflow pages are added at the
@@ -130,14 +129,14 @@ typedef HashScanOpaqueData *HashScanOpaque;
  *
  * ovflpages that have been recycled for reuse can be found by looking at
  * bitmaps that are stored within ovflpages dedicated for the purpose.
- * The blknos of these bitmap pages are kept in bitmaps[]; nmaps is the
+ * The blknos of these bitmap pages are kept in mapp[]; nmaps is the
  * number of currently existing bitmaps.
  *
  * The limitation on the size of spares[] comes from the fact that there's
  * no point in having more than 2^32 buckets with only uint32 hashcodes.
  * There is no particular upper limit on the size of mapp[], other than
  * needing to fit into the metapage.  (With 8K block size, 128 bitmaps
- * limit us to 64 Gb of overflow space...)
+ * limit us to 64 GB of overflow space...)
  */
 #define HASH_MAX_SPLITPOINTS		32
 #define HASH_MAX_BITMAPS			128
@@ -239,23 +238,32 @@ typedef HashMetaPageData *HashMetaPage;
  *	Since we only have one such proc in amproc, it's number 1.
  */
 #define HASHPROC		1
+#define HASHNProcs		1
 
 
 /* public routines */
 
-extern Datum hashbuild(PG_FUNCTION_ARGS);
-extern Datum hashbuildempty(PG_FUNCTION_ARGS);
-extern Datum hashinsert(PG_FUNCTION_ARGS);
-extern Datum hashbeginscan(PG_FUNCTION_ARGS);
-extern Datum hashgettuple(PG_FUNCTION_ARGS);
-extern Datum hashgetbitmap(PG_FUNCTION_ARGS);
-extern Datum hashrescan(PG_FUNCTION_ARGS);
-extern Datum hashendscan(PG_FUNCTION_ARGS);
-extern Datum hashmarkpos(PG_FUNCTION_ARGS);
-extern Datum hashrestrpos(PG_FUNCTION_ARGS);
-extern Datum hashbulkdelete(PG_FUNCTION_ARGS);
-extern Datum hashvacuumcleanup(PG_FUNCTION_ARGS);
-extern Datum hashoptions(PG_FUNCTION_ARGS);
+extern Datum hashhandler(PG_FUNCTION_ARGS);
+extern IndexBuildResult *hashbuild(Relation heap, Relation index,
+		  struct IndexInfo *indexInfo);
+extern void hashbuildempty(Relation index);
+extern bool hashinsert(Relation rel, Datum *values, bool *isnull,
+		   ItemPointer ht_ctid, Relation heapRel,
+		   IndexUniqueCheck checkUnique);
+extern bool hashgettuple(IndexScanDesc scan, ScanDirection dir);
+extern int64 hashgetbitmap(IndexScanDesc scan, TIDBitmap *tbm);
+extern IndexScanDesc hashbeginscan(Relation rel, int nkeys, int norderbys);
+extern void hashrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
+		   ScanKey orderbys, int norderbys);
+extern void hashendscan(IndexScanDesc scan);
+extern IndexBulkDeleteResult *hashbulkdelete(IndexVacuumInfo *info,
+			   IndexBulkDeleteResult *stats,
+			   IndexBulkDeleteCallback callback,
+			   void *callback_state);
+extern IndexBulkDeleteResult *hashvacuumcleanup(IndexVacuumInfo *info,
+				  IndexBulkDeleteResult *stats);
+extern bytea *hashoptions(Datum reloptions, bool validate);
+extern bool hashvalidate(Oid opclassoid);
 
 /*
  * Datatype-specific hash functions in hashfunc.c.
@@ -275,7 +283,6 @@ extern Datum hashenum(PG_FUNCTION_ARGS);
 extern Datum hashfloat4(PG_FUNCTION_ARGS);
 extern Datum hashfloat8(PG_FUNCTION_ARGS);
 extern Datum hashoidvector(PG_FUNCTION_ARGS);
-extern Datum hashint2vector(PG_FUNCTION_ARGS);
 extern Datum hashname(PG_FUNCTION_ARGS);
 extern Datum hashtext(PG_FUNCTION_ARGS);
 extern Datum hashvarlena(PG_FUNCTION_ARGS);
@@ -350,14 +357,10 @@ extern Bucket _hash_hashkey2bucket(uint32 hashkey, uint32 maxbucket,
 extern uint32 _hash_log2(uint32 num);
 extern void _hash_checkpage(Relation rel, Buffer buf, int flags);
 extern uint32 _hash_get_indextuple_hashkey(IndexTuple itup);
-extern IndexTuple _hash_form_tuple(Relation index,
-				 Datum *values, bool *isnull);
+extern bool _hash_convert_tuple(Relation index,
+					Datum *user_values, bool *user_isnull,
+					Datum *index_values, bool *index_isnull);
 extern OffsetNumber _hash_binsearch(Page page, uint32 hash_value);
 extern OffsetNumber _hash_binsearch_last(Page page, uint32 hash_value);
-
-/* hash.c */
-extern void hash_redo(XLogReaderState *record);
-extern void hash_desc(StringInfo buf, XLogReaderState *record);
-extern const char *hash_identify(uint8 info);
 
 #endif   /* HASH_H */

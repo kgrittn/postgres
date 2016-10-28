@@ -3,7 +3,7 @@
  * sequence.h
  *	  prototypes for sequence.c.
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/commands/sequence.h
@@ -18,6 +18,7 @@
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "nodes/parsenodes.h"
+#include "parser/parse_node.h"
 #include "storage/relfilenode.h"
 
 
@@ -73,8 +74,8 @@ extern Datum lastval(PG_FUNCTION_ARGS);
 
 extern Datum pg_sequence_parameters(PG_FUNCTION_ARGS);
 
-extern ObjectAddress DefineSequence(CreateSeqStmt *stmt);
-extern ObjectAddress AlterSequence(AlterSeqStmt *stmt);
+extern ObjectAddress DefineSequence(ParseState *pstate, CreateSeqStmt *stmt);
+extern ObjectAddress AlterSequence(ParseState *pstate, AlterSeqStmt *stmt);
 extern void ResetSequence(Oid seq_relid);
 extern void ResetSequenceCaches(void);
 

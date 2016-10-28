@@ -4,7 +4,7 @@
  *	  support for foreign-data wrappers, servers and user mappings.
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  *
  * src/include/foreign/foreign.h
  *
@@ -23,7 +23,7 @@
 
 /*
  * Generic option types for validation.
- * NB! Thes are treated as flags, so use only powers of two here.
+ * NB! These are treated as flags, so use only powers of two here.
  */
 typedef enum
 {
@@ -55,6 +55,7 @@ typedef struct ForeignServer
 
 typedef struct UserMapping
 {
+	Oid			umid;			/* Oid of user mapping */
 	Oid			userid;			/* local user Oid */
 	Oid			serverid;		/* server Oid */
 	List	   *options;		/* useoptions as DefElem list */

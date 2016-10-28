@@ -3,7 +3,7 @@
  * parse_relation.c
  *	  parser support routines dealing with relations
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -26,6 +26,7 @@
 #include "nodes/nodeFuncs.h"
 #include "parser/parsetree.h"
 #include "parser/parse_relation.h"
+#include "parser/parse_tuplestore.h"
 #include "parser/parse_type.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -281,6 +282,16 @@ isFutureCTE(ParseState *pstate, const char *refname)
 }
 
 /*
+ * Search the query's tuplestore namespace for a tuplestore matching the given
+ * unqualified refname.
+ */
+bool
+scanNameSpaceForTsr(ParseState *pstate, const char *refname)
+{
+	return name_matches_visible_tuplestore(pstate, refname);
+}
+
+/*
  * searchRangeTableForRel
  *	  See if any RangeTblEntry could possibly match the RangeVar.
  *	  If so, return a pointer to the RangeTblEntry; else return NULL.
@@ -317,6 +328,7 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	 * unlocked.
 	 */
 	if (!relation->schemaname)
+	{
 		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
 
 	if (!cte)
@@ -554,7 +566,8 @@ updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 		varstr_levenshtein_less_equal(actual, strlen(actual), match, matchlen,
 									  1, 1, 1,
 									  fuzzystate->distance + 1
-									  - fuzzy_rte_penalty);
+									  - fuzzy_rte_penalty,
+									  true);
 
 	/*
 	 * If more than half the characters are different, don't treat it as a
@@ -847,10 +860,12 @@ searchRangeTableForCol(ParseState *pstate, const char *alias, char *colname,
 			 */
 			if (alias != NULL)
 				fuzzy_rte_penalty =
-					varstr_levenshtein(alias, strlen(alias),
-									   rte->eref->aliasname,
-									   strlen(rte->eref->aliasname),
-									   1, 1, 1);
+					varstr_levenshtein_less_equal(alias, strlen(alias),
+												  rte->eref->aliasname,
+												strlen(rte->eref->aliasname),
+												  1, 1, 1,
+												  MAX_FUZZY_DISTANCE + 1,
+												  true);
 
 			/*
 			 * Scan for a matching column; if we find an exact match, we're
@@ -3172,8 +3187,8 @@ errorMissingColumn(ParseState *pstate,
 				 errmsg("column %s.%s does not exist", relname, colname) :
 				 errmsg("column \"%s\" does not exist", colname),
 				 state->rfirst ? closestfirst ?
-		  errhint("Perhaps you meant to reference the column \"%s\".\"%s\".",
-				  state->rfirst->eref->aliasname, closestfirst) :
+			  errhint("Perhaps you meant to reference the column \"%s.%s\".",
+					  state->rfirst->eref->aliasname, closestfirst) :
 				 errhint("There is a column named \"%s\" in table \"%s\", but it cannot be referenced from this part of the query.",
 						 colname, state->rfirst->eref->aliasname) : 0,
 				 parser_errposition(pstate, location)));
@@ -3191,7 +3206,7 @@ errorMissingColumn(ParseState *pstate,
 				 relname ?
 				 errmsg("column %s.%s does not exist", relname, colname) :
 				 errmsg("column \"%s\" does not exist", colname),
-				 errhint("Perhaps you meant to reference the column \"%s\".\"%s\" or the column \"%s\".\"%s\".",
+				 errhint("Perhaps you meant to reference the column \"%s.%s\" or the column \"%s.%s\".",
 						 state->rfirst->eref->aliasname, closestfirst,
 						 state->rsecond->eref->aliasname, closestsecond),
 				 parser_errposition(pstate, location)));

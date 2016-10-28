@@ -4,7 +4,7 @@
  *	  prototypes for parse_relation.c.
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/parser/parse_relation.h
@@ -42,6 +42,7 @@ extern RangeTblEntry *refnameRangeTblEntry(ParseState *pstate,
 extern CommonTableExpr *scanNameSpaceForCTE(ParseState *pstate,
 					const char *refname,
 					Index *ctelevelsup);
+extern bool scanNameSpaceForTsr(ParseState *pstate, const char *refname);
 extern void checkNameSpaceConflicts(ParseState *pstate, List *namespace1,
 						List *namespace2);
 extern int RTERangeTablePosn(ParseState *pstate,

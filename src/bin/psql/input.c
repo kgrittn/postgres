@@ -1,7 +1,7 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2015, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2016, PostgreSQL Global Development Group
  *
  * src/bin/psql/input.c
  */
@@ -53,17 +53,36 @@ static void finishInput(void);
  * gets_interactive()
  *
  * Gets a line of interactive input, using readline if desired.
+ *
+ * prompt: the prompt string to be used
+ * query_buf: buffer containing lines already read in the current command
+ * (query_buf is not modified here, but may be consulted for tab completion)
+ *
  * The result is a malloc'd string.
  *
  * Caller *must* have set up sigint_interrupt_jmp before calling.
  */
 char *
-gets_interactive(const char *prompt)
+gets_interactive(const char *prompt, PQExpBuffer query_buf)
 {
 #ifdef USE_READLINE
 	if (useReadline)
 	{
 		char	   *result;
+
+		/*
+		 * Some versions of readline don't notice SIGWINCH signals that arrive
+		 * when not actively reading input.  The simplest fix is to always
+		 * re-read the terminal size.  This leaves a window for SIGWINCH to be
+		 * missed between here and where readline() enables libreadline's
+		 * signal handler, but that's probably short enough to be ignored.
+		 */
+#ifdef HAVE_RL_RESET_SCREEN_SIZE
+		rl_reset_screen_size();
+#endif
+
+		/* Make current query_buf available to tab completion callback */
+		tab_completion_query_buf = query_buf;
 
 		/* Enable SIGINT to longjmp to sigint_interrupt_jmp */
 		sigint_interrupt_enabled = true;
@@ -73,6 +92,9 @@ gets_interactive(const char *prompt)
 
 		/* Disable SIGINT again */
 		sigint_interrupt_enabled = false;
+
+		/* Pure neatnik-ism */
+		tab_completion_query_buf = NULL;
 
 		return result;
 	}
@@ -207,7 +229,7 @@ gets_fromFile(FILE *source)
 		}
 
 		/* EOL? */
-		if (buffer->data[buffer->len - 1] == '\n')
+		if (buffer->len > 0 && buffer->data[buffer->len - 1] == '\n')
 		{
 			buffer->data[buffer->len - 1] = '\0';
 			return pg_strdup(buffer->data);
@@ -330,7 +352,10 @@ initializeInput(int flags)
 		char		home[MAXPGPATH];
 
 		useReadline = true;
+
+		/* these two things must be done in this order: */
 		initialize_readline();
+		rl_initialize();
 
 		useHistory = true;
 		using_history();
@@ -386,7 +411,7 @@ saveHistory(char *fname, int max_lines)
 
 	/*
 	 * Suppressing the write attempt when HISTFILE is set to /dev/null may
-	 * look like a negligible optimization, but it's necessary on e.g. Darwin,
+	 * look like a negligible optimization, but it's necessary on e.g. macOS,
 	 * where write_history will fail because it tries to chmod the target
 	 * file.
 	 */

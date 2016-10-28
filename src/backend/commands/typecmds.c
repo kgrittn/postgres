@@ -3,7 +3,7 @@
  * typecmds.c
  *	  Routines for SQL commands that manipulate types (and domains).
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -37,9 +37,11 @@
 #include "catalog/catalog.h"
 #include "catalog/heap.h"
 #include "catalog/objectaccess.h"
+#include "catalog/pg_am.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_constraint_fn.h"
 #include "catalog/pg_depend.h"
 #include "catalog/pg_enum.h"
 #include "catalog/pg_language.h"
@@ -109,7 +111,7 @@ static char *domainAddConstraint(Oid domainOid, Oid domainNamespace,
  *		Registers a new base type.
  */
 ObjectAddress
-DefineType(List *names, List *parameters)
+DefineType(ParseState *pstate, List *names, List *parameters)
 {
 	char	   *typeName;
 	Oid			typeNamespace;
@@ -284,13 +286,15 @@ DefineType(List *names, List *parameters)
 			ereport(WARNING,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("type attribute \"%s\" not recognized",
-							defel->defname)));
+							defel->defname),
+					 parser_errposition(pstate, defel->location)));
 			continue;
 		}
 		if (*defelp != NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
-					 errmsg("conflicting or redundant options")));
+					 errmsg("conflicting or redundant options"),
+					 parser_errposition(pstate, defel->location)));
 		*defelp = defel;
 	}
 
@@ -448,8 +452,8 @@ DefineType(List *names, List *parameters)
 		{
 			/* backwards-compatibility hack */
 			ereport(WARNING,
-					(errmsg("changing return type of function %s from \"opaque\" to %s",
-							NameListToString(inputName), typeName)));
+				 (errmsg("changing return type of function %s from %s to %s",
+						 NameListToString(inputName), "opaque", typeName)));
 			SetFunctionReturnType(inputOid, typoid);
 		}
 		else
@@ -465,15 +469,15 @@ DefineType(List *names, List *parameters)
 		{
 			/* backwards-compatibility hack */
 			ereport(WARNING,
-					(errmsg("changing return type of function %s from \"opaque\" to \"cstring\"",
-							NameListToString(outputName))));
+				 (errmsg("changing return type of function %s from %s to %s",
+						 NameListToString(outputName), "opaque", "cstring")));
 			SetFunctionReturnType(outputOid, CSTRINGOID);
 		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-			   errmsg("type output function %s must return type \"cstring\"",
-					  NameListToString(outputName))));
+					 errmsg("type output function %s must return type %s",
+							NameListToString(outputName), "cstring")));
 	}
 	if (receiveOid)
 	{
@@ -490,8 +494,8 @@ DefineType(List *names, List *parameters)
 		if (resulttype != BYTEAOID)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-				   errmsg("type send function %s must return type \"bytea\"",
-						  NameListToString(sendName))));
+					 errmsg("type send function %s must return type %s",
+							NameListToString(sendName), "bytea")));
 	}
 
 	/*
@@ -1219,7 +1223,7 @@ DefineEnum(CreateEnumStmt *stmt)
  *		Adds a new label to an existing enum.
  */
 ObjectAddress
-AlterEnum(AlterEnumStmt *stmt, bool isTopLevel)
+AlterEnum(AlterEnumStmt *stmt)
 {
 	Oid			enum_type_oid;
 	TypeName   *typename;
@@ -1234,38 +1238,27 @@ AlterEnum(AlterEnumStmt *stmt, bool isTopLevel)
 	if (!HeapTupleIsValid(tup))
 		elog(ERROR, "cache lookup failed for type %u", enum_type_oid);
 
-	/*
-	 * Ordinarily we disallow adding values within transaction blocks, because
-	 * we can't cope with enum OID values getting into indexes and then having
-	 * their defining pg_enum entries go away.  However, it's okay if the enum
-	 * type was created in the current transaction, since then there can be no
-	 * such indexes that wouldn't themselves go away on rollback.  (We support
-	 * this case because pg_dump --binary-upgrade needs it.)  We test this by
-	 * seeing if the pg_type row has xmin == current XID and is not
-	 * HEAP_UPDATED.  If it is HEAP_UPDATED, we can't be sure whether the type
-	 * was created or only modified in this xact.  So we are disallowing some
-	 * cases that could theoretically be safe; but fortunately pg_dump only
-	 * needs the simplest case.
-	 */
-	if (HeapTupleHeaderGetXmin(tup->t_data) == GetCurrentTransactionId() &&
-		!(tup->t_data->t_infomask & HEAP_UPDATED))
-		 /* safe to do inside transaction block */ ;
-	else
-		PreventTransactionChain(isTopLevel, "ALTER TYPE ... ADD");
-
 	/* Check it's an enum and check user has permission to ALTER the enum */
 	checkEnumOwner(tup);
 
-	/* Add the new label */
-	AddEnumLabel(enum_type_oid, stmt->newVal,
-				 stmt->newValNeighbor, stmt->newValIsAfter,
-				 stmt->skipIfExists);
+	ReleaseSysCache(tup);
+
+	if (stmt->oldVal)
+	{
+		/* Rename an existing label */
+		RenameEnumLabel(enum_type_oid, stmt->oldVal, stmt->newVal);
+	}
+	else
+	{
+		/* Add a new label */
+		AddEnumLabel(enum_type_oid, stmt->newVal,
+					 stmt->newValNeighbor, stmt->newValIsAfter,
+					 stmt->skipIfNewValExists);
+	}
 
 	InvokeObjectPostAlterHook(TypeRelationId, enum_type_oid, 0);
 
 	ObjectAddressSet(address, TypeRelationId, enum_type_oid);
-
-	ReleaseSysCache(tup);
 
 	return address;
 }
@@ -1832,8 +1825,8 @@ findTypeTypmodinFunction(List *procname)
 	if (get_func_rettype(procOid) != INT4OID)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-				 errmsg("typmod_in function %s must return type \"integer\"",
-						NameListToString(procname))));
+				 errmsg("typmod_in function %s must return type %s",
+						NameListToString(procname), "integer")));
 
 	return procOid;
 }
@@ -1859,8 +1852,8 @@ findTypeTypmodoutFunction(List *procname)
 	if (get_func_rettype(procOid) != CSTRINGOID)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-				 errmsg("typmod_out function %s must return type \"cstring\"",
-						NameListToString(procname))));
+				 errmsg("typmod_out function %s must return type %s",
+						NameListToString(procname), "cstring")));
 
 	return procOid;
 }
@@ -1886,8 +1879,8 @@ findTypeAnalyzeFunction(List *procname, Oid typeOid)
 	if (get_func_rettype(procOid) != BOOLOID)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-			  errmsg("type analyze function %s must return type \"boolean\"",
-					 NameListToString(procname))));
+				 errmsg("type analyze function %s must return type %s",
+						NameListToString(procname), "boolean")));
 
 	return procOid;
 }
@@ -2005,8 +1998,9 @@ findRangeSubtypeDiffFunction(List *procname, Oid subtype)
 	if (get_func_rettype(procOid) != FLOAT8OID)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-				 errmsg("range subtype diff function %s must return type double precision",
-						func_signature_string(procname, 2, NIL, argList))));
+				 errmsg("range subtype diff function %s must return type %s",
+						func_signature_string(procname, 2, NIL, argList),
+						"double precision")));
 
 	if (func_volatile(procOid) != PROVOLATILE_IMMUTABLE)
 		ereport(ERROR,
@@ -3273,57 +3267,7 @@ AlterTypeOwner(List *names, Oid newOwnerId, ObjectType objecttype)
 							   get_namespace_name(typTup->typnamespace));
 		}
 
-		/*
-		 * If it's a composite type, invoke ATExecChangeOwner so that we fix
-		 * up the pg_class entry properly.  That will call back to
-		 * AlterTypeOwnerInternal to take care of the pg_type entry(s).
-		 */
-		if (typTup->typtype == TYPTYPE_COMPOSITE)
-			ATExecChangeOwner(typTup->typrelid, newOwnerId, true, AccessExclusiveLock);
-		else
-		{
-			Datum		repl_val[Natts_pg_type];
-			bool		repl_null[Natts_pg_type];
-			bool		repl_repl[Natts_pg_type];
-			Acl		   *newAcl;
-			Datum		aclDatum;
-			bool		isNull;
-
-			memset(repl_null, false, sizeof(repl_null));
-			memset(repl_repl, false, sizeof(repl_repl));
-
-			repl_repl[Anum_pg_type_typowner - 1] = true;
-			repl_val[Anum_pg_type_typowner - 1] = ObjectIdGetDatum(newOwnerId);
-
-			aclDatum = heap_getattr(tup,
-									Anum_pg_type_typacl,
-									RelationGetDescr(rel),
-									&isNull);
-			/* Null ACLs do not require changes */
-			if (!isNull)
-			{
-				newAcl = aclnewowner(DatumGetAclP(aclDatum),
-									 typTup->typowner, newOwnerId);
-				repl_repl[Anum_pg_type_typacl - 1] = true;
-				repl_val[Anum_pg_type_typacl - 1] = PointerGetDatum(newAcl);
-			}
-
-			tup = heap_modify_tuple(tup, RelationGetDescr(rel), repl_val, repl_null,
-									repl_repl);
-
-			simple_heap_update(rel, &tup->t_self, tup);
-
-			CatalogUpdateIndexes(rel, tup);
-
-			/* Update owner dependency reference */
-			changeDependencyOnOwner(TypeRelationId, typeOid, newOwnerId);
-
-			InvokeObjectPostAlterHook(TypeRelationId, typeOid, 0);
-
-			/* If it has an array type, update that too */
-			if (OidIsValid(typTup->typarray))
-				AlterTypeOwnerInternal(typTup->typarray, newOwnerId, false);
-		}
+		AlterTypeOwner_oid(typeOid, newOwnerId, true);
 	}
 
 	ObjectAddressSet(address, TypeRelationId, typeOid);
@@ -3335,21 +3279,58 @@ AlterTypeOwner(List *names, Oid newOwnerId, ObjectType objecttype)
 }
 
 /*
- * AlterTypeOwnerInternal - change type owner unconditionally
+ * AlterTypeOwner_oid - change type owner unconditionally
  *
- * This is currently only used to propagate ALTER TABLE/TYPE OWNER to a
- * table's rowtype or an array type, and to implement REASSIGN OWNED BY.
- * It assumes the caller has done all needed checks.  The function will
- * automatically recurse to an array type if the type has one.
+ * This function recurses to handle a pg_class entry, if necessary.  It
+ * invokes any necessary access object hooks.  If hasDependEntry is TRUE, this
+ * function modifies the pg_shdepend entry appropriately (this should be
+ * passed as FALSE only for table rowtypes and array types).
  *
- * hasDependEntry should be TRUE if type is expected to have a pg_shdepend
- * entry (ie, it's not a table rowtype nor an array type).
- * is_primary_ops should be TRUE if this function is invoked with user's
- * direct operation (e.g, shdepReassignOwned). Elsewhere,
+ * This is used by ALTER TABLE/TYPE OWNER commands, as well as by REASSIGN
+ * OWNED BY.  It assumes the caller has done all needed check.
  */
 void
-AlterTypeOwnerInternal(Oid typeOid, Oid newOwnerId,
-					   bool hasDependEntry)
+AlterTypeOwner_oid(Oid typeOid, Oid newOwnerId, bool hasDependEntry)
+{
+	Relation	rel;
+	HeapTuple	tup;
+	Form_pg_type typTup;
+
+	rel = heap_open(TypeRelationId, RowExclusiveLock);
+
+	tup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typeOid));
+	if (!HeapTupleIsValid(tup))
+		elog(ERROR, "cache lookup failed for type %u", typeOid);
+	typTup = (Form_pg_type) GETSTRUCT(tup);
+
+	/*
+	 * If it's a composite type, invoke ATExecChangeOwner so that we fix up
+	 * the pg_class entry properly.  That will call back to
+	 * AlterTypeOwnerInternal to take care of the pg_type entry(s).
+	 */
+	if (typTup->typtype == TYPTYPE_COMPOSITE)
+		ATExecChangeOwner(typTup->typrelid, newOwnerId, true, AccessExclusiveLock);
+	else
+		AlterTypeOwnerInternal(typeOid, newOwnerId);
+
+	/* Update owner dependency reference */
+	if (hasDependEntry)
+		changeDependencyOnOwner(TypeRelationId, typeOid, newOwnerId);
+
+	InvokeObjectPostAlterHook(TypeRelationId, typeOid, 0);
+
+	ReleaseSysCache(tup);
+	heap_close(rel, RowExclusiveLock);
+}
+
+/*
+ * AlterTypeOwnerInternal - bare-bones type owner change.
+ *
+ * This routine simply modifies the owner of a pg_type entry, and recurses
+ * to handle a possible array type.
+ */
+void
+AlterTypeOwnerInternal(Oid typeOid, Oid newOwnerId)
 {
 	Relation	rel;
 	HeapTuple	tup;
@@ -3394,15 +3375,9 @@ AlterTypeOwnerInternal(Oid typeOid, Oid newOwnerId,
 
 	CatalogUpdateIndexes(rel, tup);
 
-	/* Update owner dependency reference, if it has one */
-	if (hasDependEntry)
-		changeDependencyOnOwner(TypeRelationId, typeOid, newOwnerId);
-
 	/* If it has an array type, update that too */
 	if (OidIsValid(typTup->typarray))
-		AlterTypeOwnerInternal(typTup->typarray, newOwnerId, false);
-
-	InvokeObjectPostAlterHook(TypeRelationId, typeOid, 0);
+		AlterTypeOwnerInternal(typTup->typarray, newOwnerId);
 
 	/* Clean up */
 	heap_close(rel, RowExclusiveLock);
@@ -3520,18 +3495,22 @@ AlterTypeNamespaceInternal(Oid typeOid, Oid nspOid,
 	oldNspOid = typform->typnamespace;
 	arrayOid = typform->typarray;
 
-	/* common checks on switching namespaces */
-	CheckSetNamespace(oldNspOid, nspOid, TypeRelationId, typeOid);
+	/* If the type is already there, we scan skip these next few checks. */
+	if (oldNspOid != nspOid)
+	{
+		/* common checks on switching namespaces */
+		CheckSetNamespace(oldNspOid, nspOid);
 
-	/* check for duplicate name (more friendly than unique-index failure) */
-	if (SearchSysCacheExists2(TYPENAMENSP,
-							  CStringGetDatum(NameStr(typform->typname)),
-							  ObjectIdGetDatum(nspOid)))
-		ereport(ERROR,
-				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("type \"%s\" already exists in schema \"%s\"",
-						NameStr(typform->typname),
-						get_namespace_name(nspOid))));
+		/* check for duplicate name (more friendly than unique-index failure) */
+		if (SearchSysCacheExists2(TYPENAMENSP,
+								  NameGetDatum(&typform->typname),
+								  ObjectIdGetDatum(nspOid)))
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("type \"%s\" already exists in schema \"%s\"",
+							NameStr(typform->typname),
+							get_namespace_name(nspOid))));
+	}
 
 	/* Detect whether type is a composite type (but not a table rowtype) */
 	isCompositeType =
@@ -3547,13 +3526,16 @@ AlterTypeNamespaceInternal(Oid typeOid, Oid nspOid,
 						format_type_be(typeOid)),
 				 errhint("Use ALTER TABLE instead.")));
 
-	/* OK, modify the pg_type row */
+	if (oldNspOid != nspOid)
+	{
+		/* OK, modify the pg_type row */
 
-	/* tup is a copy, so we can scribble directly on it */
-	typform->typnamespace = nspOid;
+		/* tup is a copy, so we can scribble directly on it */
+		typform->typnamespace = nspOid;
 
-	simple_heap_update(rel, &tup->t_self, tup);
-	CatalogUpdateIndexes(rel, tup);
+		simple_heap_update(rel, &tup->t_self, tup);
+		CatalogUpdateIndexes(rel, tup);
+	}
 
 	/*
 	 * Composite types have pg_class entries.
@@ -3592,7 +3574,8 @@ AlterTypeNamespaceInternal(Oid typeOid, Oid nspOid,
 	 * Update dependency on schema, if any --- a table rowtype has not got
 	 * one, and neither does an implicit array.
 	 */
-	if ((isCompositeType || typform->typtype != TYPTYPE_COMPOSITE) &&
+	if (oldNspOid != nspOid &&
+		(isCompositeType || typform->typtype != TYPTYPE_COMPOSITE) &&
 		!isImplicitArray)
 		if (changeDependencyFor(TypeRelationId, typeOid,
 								NamespaceRelationId, oldNspOid, nspOid) != 1)

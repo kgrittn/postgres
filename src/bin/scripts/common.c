@@ -4,7 +4,7 @@
  *		Common support routines for bin/scripts/
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/bin/scripts/common.c
@@ -52,20 +52,34 @@ handle_help_version_opts(int argc, char *argv[],
 
 
 /*
- * Make a database connection with the given parameters.  An
- * interactive password prompt is automatically issued if required.
+ * Make a database connection with the given parameters.
+ *
+ * An interactive password prompt is automatically issued if needed and
+ * allowed by prompt_password.
+ *
+ * If allow_password_reuse is true, we will try to re-use any password
+ * given during previous calls to this routine.  (Callers should not pass
+ * allow_password_reuse=true unless reconnecting to the same database+user
+ * as before, else we might create password exposure hazards.)
  */
 PGconn *
 connectDatabase(const char *dbname, const char *pghost, const char *pgport,
 				const char *pguser, enum trivalue prompt_password,
-				const char *progname, bool fail_ok)
+				const char *progname, bool fail_ok, bool allow_password_reuse)
 {
 	PGconn	   *conn;
-	char	   *password = NULL;
 	bool		new_pass;
+	static bool have_password = false;
+	static char password[100];
 
-	if (prompt_password == TRI_YES)
-		password = simple_prompt("Password: ", 100, false);
+	if (!allow_password_reuse)
+		have_password = false;
+
+	if (!have_password && prompt_password == TRI_YES)
+	{
+		simple_prompt("Password: ", password, sizeof(password), false);
+		have_password = true;
+	}
 
 	/*
 	 * Start the connection.  Loop until we have a password if requested by
@@ -73,9 +87,8 @@ connectDatabase(const char *dbname, const char *pghost, const char *pgport,
 	 */
 	do
 	{
-#define PARAMS_ARRAY_SIZE	7
-		const char **keywords = pg_malloc(PARAMS_ARRAY_SIZE * sizeof(*keywords));
-		const char **values = pg_malloc(PARAMS_ARRAY_SIZE * sizeof(*values));
+		const char *keywords[7];
+		const char *values[7];
 
 		keywords[0] = "host";
 		values[0] = pghost;
@@ -84,7 +97,7 @@ connectDatabase(const char *dbname, const char *pghost, const char *pgport,
 		keywords[2] = "user";
 		values[2] = pguser;
 		keywords[3] = "password";
-		values[3] = password;
+		values[3] = have_password ? password : NULL;
 		keywords[4] = "dbname";
 		values[4] = dbname;
 		keywords[5] = "fallback_application_name";
@@ -95,29 +108,26 @@ connectDatabase(const char *dbname, const char *pghost, const char *pgport,
 		new_pass = false;
 		conn = PQconnectdbParams(keywords, values, true);
 
-		free(keywords);
-		free(values);
-
 		if (!conn)
 		{
-			fprintf(stderr, _("%s: could not connect to database %s\n"),
+			fprintf(stderr, _("%s: could not connect to database %s: out of memory\n"),
 					progname, dbname);
 			exit(1);
 		}
 
+		/*
+		 * No luck?  Trying asking (again) for a password.
+		 */
 		if (PQstatus(conn) == CONNECTION_BAD &&
 			PQconnectionNeedsPassword(conn) &&
-			password == NULL &&
 			prompt_password != TRI_NO)
 		{
 			PQfinish(conn);
-			password = simple_prompt("Password: ", 100, false);
+			simple_prompt("Password: ", password, sizeof(password), false);
+			have_password = true;
 			new_pass = true;
 		}
 	} while (new_pass);
-
-	if (password)
-		free(password);
 
 	/* check to see that the backend connection was successfully made */
 	if (PQstatus(conn) == CONNECTION_BAD)
@@ -149,14 +159,14 @@ connectMaintenanceDatabase(const char *maintenance_db, const char *pghost,
 	/* If a maintenance database name was specified, just connect to it. */
 	if (maintenance_db)
 		return connectDatabase(maintenance_db, pghost, pgport, pguser,
-							   prompt_password, progname, false);
+							   prompt_password, progname, false, false);
 
 	/* Otherwise, try postgres first and then template1. */
 	conn = connectDatabase("postgres", pghost, pgport, pguser, prompt_password,
-						   progname, true);
+						   progname, true, false);
 	if (!conn)
 		conn = connectDatabase("template1", pghost, pgport, pguser,
-							   prompt_password, progname, false);
+							   prompt_password, progname, false, false);
 
 	return conn;
 }
@@ -264,22 +274,15 @@ yesno_prompt(const char *question)
 
 	for (;;)
 	{
-		char	   *resp;
+		char		resp[10];
 
-		resp = simple_prompt(prompt, 1, true);
+		simple_prompt(prompt, resp, sizeof(resp), true);
 
 		if (strcmp(resp, _(PG_YESLETTER)) == 0)
-		{
-			free(resp);
 			return true;
-		}
-		else if (strcmp(resp, _(PG_NOLETTER)) == 0)
-		{
-			free(resp);
+		if (strcmp(resp, _(PG_NOLETTER)) == 0)
 			return false;
-		}
 
-		free(resp);
 		printf(_("Please answer \"%s\" or \"%s\".\n"),
 			   _(PG_YESLETTER), _(PG_NOLETTER));
 	}

@@ -3,7 +3,7 @@
  * dsm.h
  *	  manage dynamic shared memory segments
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/storage/dsm.h
@@ -41,6 +41,7 @@ extern void dsm_detach(dsm_segment *seg);
 extern void dsm_pin_mapping(dsm_segment *seg);
 extern void dsm_unpin_mapping(dsm_segment *seg);
 extern void dsm_pin_segment(dsm_segment *seg);
+extern void dsm_unpin_segment(dsm_handle h);
 extern dsm_segment *dsm_find_mapping(dsm_handle h);
 
 /* Informational functions. */

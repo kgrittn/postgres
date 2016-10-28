@@ -3,7 +3,7 @@
  * heap.c
  *	  code to create and destroy POSTGRES heap relations
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -44,6 +44,7 @@
 #include "catalog/pg_attrdef.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_constraint_fn.h"
 #include "catalog/pg_foreign_table.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
@@ -104,6 +105,7 @@ static void StoreConstraints(Relation rel, List *cooked_constraints,
 				 bool is_internal);
 static bool MergeWithExistingConstraint(Relation rel, char *ccname, Node *expr,
 							bool allow_merge, bool is_local,
+							bool is_initially_valid,
 							bool is_no_inherit);
 static void SetRelationNumChecks(Relation rel, int numchecks);
 static Node *cookConstraint(ParseState *pstate,
@@ -2005,9 +2007,7 @@ StoreRelCheck(Relation rel, char *ccname, Node *expr,
 	 * in check constraints; it would fail to examine the contents of
 	 * subselects.
 	 */
-	varList = pull_var_clause(expr,
-							  PVC_REJECT_AGGREGATES,
-							  PVC_REJECT_PLACEHOLDERS);
+	varList = pull_var_clause(expr, 0);
 	keycount = list_length(varList);
 
 	if (keycount > 0)
@@ -2302,6 +2302,7 @@ AddRelationNewConstraints(Relation rel,
 			 */
 			if (MergeWithExistingConstraint(rel, ccname, expr,
 											allow_merge, is_local,
+											cdef->initially_valid,
 											cdef->is_no_inherit))
 				continue;
 		}
@@ -2322,9 +2323,7 @@ AddRelationNewConstraints(Relation rel,
 			List	   *vars;
 			char	   *colname;
 
-			vars = pull_var_clause(expr,
-								   PVC_REJECT_AGGREGATES,
-								   PVC_REJECT_PLACEHOLDERS);
+			vars = pull_var_clause(expr, 0);
 
 			/* eliminate duplicates */
 			vars = list_union(NIL, vars);
@@ -2349,7 +2348,7 @@ AddRelationNewConstraints(Relation rel,
 		 * OK, store it.
 		 */
 		constrOid =
-			StoreRelCheck(rel, ccname, expr, !cdef->skip_validation, is_local,
+			StoreRelCheck(rel, ccname, expr, cdef->initially_valid, is_local,
 						  is_local ? 0 : 1, cdef->is_no_inherit, is_internal);
 
 		numchecks++;
@@ -2392,6 +2391,7 @@ AddRelationNewConstraints(Relation rel,
 static bool
 MergeWithExistingConstraint(Relation rel, char *ccname, Node *expr,
 							bool allow_merge, bool is_local,
+							bool is_initially_valid,
 							bool is_no_inherit)
 {
 	bool		found;
@@ -2439,21 +2439,57 @@ MergeWithExistingConstraint(Relation rel, char *ccname, Node *expr,
 				if (equal(expr, stringToNode(TextDatumGetCString(val))))
 					found = true;
 			}
+
+			/*
+			 * If the existing constraint is purely inherited (no local
+			 * definition) then interpret addition of a local constraint as a
+			 * legal merge.  This allows ALTER ADD CONSTRAINT on parent and
+			 * child tables to be given in either order with same end state.
+			 */
+			if (is_local && !con->conislocal)
+				allow_merge = true;
+
 			if (!found || !allow_merge)
 				ereport(ERROR,
 						(errcode(ERRCODE_DUPLICATE_OBJECT),
 				errmsg("constraint \"%s\" for relation \"%s\" already exists",
 					   ccname, RelationGetRelationName(rel))));
 
-			tup = heap_copytuple(tup);
-			con = (Form_pg_constraint) GETSTRUCT(tup);
-
-			/* If the constraint is "no inherit" then cannot merge */
+			/* If the child constraint is "no inherit" then cannot merge */
 			if (con->connoinherit)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 						 errmsg("constraint \"%s\" conflicts with non-inherited constraint on relation \"%s\"",
 								ccname, RelationGetRelationName(rel))));
+
+			/*
+			 * Must not change an existing inherited constraint to "no
+			 * inherit" status.  That's because inherited constraints should
+			 * be able to propagate to lower-level children.
+			 */
+			if (con->coninhcount > 0 && is_no_inherit)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+						 errmsg("constraint \"%s\" conflicts with inherited constraint on relation \"%s\"",
+								ccname, RelationGetRelationName(rel))));
+
+			/*
+			 * If the child constraint is "not valid" then cannot merge with a
+			 * valid parent constraint
+			 */
+			if (is_initially_valid && !con->convalidated)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+						 errmsg("constraint \"%s\" conflicts with NOT VALID constraint on relation \"%s\"",
+								ccname, RelationGetRelationName(rel))));
+
+			/* OK to update the tuple */
+			ereport(NOTICE,
+			   (errmsg("merging constraint \"%s\" with inherited definition",
+					   ccname)));
+
+			tup = heap_copytuple(tup);
+			con = (Form_pg_constraint) GETSTRUCT(tup);
 
 			if (is_local)
 				con->conislocal = true;
@@ -2464,10 +2500,6 @@ MergeWithExistingConstraint(Relation rel, char *ccname, Node *expr,
 				Assert(is_local);
 				con->connoinherit = true;
 			}
-			/* OK to update the tuple */
-			ereport(NOTICE,
-			   (errmsg("merging constraint \"%s\" with inherited definition",
-					   ccname)));
 			simple_heap_update(conDesc, &tup->t_self, tup);
 			CatalogUpdateIndexes(conDesc, tup);
 			break;
@@ -2563,14 +2595,9 @@ cookDefault(ParseState *pstate,
 
 	/*
 	 * transformExpr() should have already rejected subqueries, aggregates,
-	 * and window functions, based on the EXPR_KIND_ for a default expression.
-	 *
-	 * It can't return a set either.
+	 * window functions, and SRFs, based on the EXPR_KIND_ for a default
+	 * expression.
 	 */
-	if (expression_returns_set(expr))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg("default expression must not return a set")));
 
 	/*
 	 * Coerce the expression to the correct type and typmod, if given. This

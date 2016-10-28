@@ -3,7 +3,7 @@
  * collationcmds.c
  *	  collation-related commands support code
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -14,7 +14,6 @@
  */
 #include "postgres.h"
 
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
 #include "catalog/dependency.h"
@@ -38,7 +37,7 @@
  * CREATE COLLATION
  */
 ObjectAddress
-DefineCollation(List *names, List *parameters)
+DefineCollation(ParseState *pstate, List *names, List *parameters)
 {
 	char	   *collName;
 	Oid			collNamespace;
@@ -78,7 +77,8 @@ DefineCollation(List *names, List *parameters)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("collation attribute \"%s\" not recognized",
-							defel->defname)));
+							defel->defname),
+					 parser_errposition(pstate, defel->location)));
 			break;
 		}
 

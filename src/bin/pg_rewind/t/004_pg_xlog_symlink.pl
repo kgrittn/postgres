@@ -1,5 +1,5 @@
 #
-# Test pg_rewind when the target's pg_xlog directory is a symlink.
+# Test pg_rewind when the target's pg_wal directory is a symlink.
 #
 use strict;
 use warnings;
@@ -23,15 +23,17 @@ sub run_test
 {
 	my $test_mode = shift;
 
-	my $master_xlogdir = "$tmp_check/xlog_master";
+	my $master_xlogdir = "${TestLib::tmp_check}/xlog_master";
 
 	rmtree($master_xlogdir);
 	RewindTest::setup_cluster();
 
-	# turn pg_xlog into a symlink
-	print("moving $test_master_datadir/pg_xlog to $master_xlogdir\n");
-	move("$test_master_datadir/pg_xlog", $master_xlogdir) or die;
-	symlink($master_xlogdir, "$test_master_datadir/pg_xlog") or die;
+	my $test_master_datadir = $node_master->data_dir;
+
+	# turn pg_wal into a symlink
+	print("moving $test_master_datadir/pg_wal to $master_xlogdir\n");
+	move("$test_master_datadir/pg_wal", $master_xlogdir) or die;
+	symlink($master_xlogdir, "$test_master_datadir/pg_wal") or die;
 
 	RewindTest::start_master();
 

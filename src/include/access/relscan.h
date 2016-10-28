@@ -4,7 +4,7 @@
  *	  POSTGRES relation scan descriptor definitions.
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/relscan.h
@@ -19,6 +19,7 @@
 #include "access/htup_details.h"
 #include "access/itup.h"
 #include "access/tupdesc.h"
+#include "storage/spin.h"
 
 /*
  * Shared state for parallel heap scan.

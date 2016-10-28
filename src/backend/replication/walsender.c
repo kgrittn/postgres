@@ -31,7 +31,7 @@
  * and then exit.
  *
  *
- * Portions Copyright (c) 2010-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2016, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/walsender.c
@@ -55,6 +55,7 @@
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "nodes/replnodes.h"
+#include "pgstat.h"
 #include "replication/basebackup.h"
 #include "replication/decode.h"
 #include "replication/logical.h"
@@ -252,6 +253,7 @@ void
 WalSndErrorCleanup(void)
 {
 	LWLockReleaseAll();
+	pgstat_report_wait_end();
 
 	if (sendFile >= 0)
 	{
@@ -462,7 +464,7 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 	pq_beginmessage(&buf, 'D');
 	pq_sendint(&buf, 2, 2);		/* # of columns */
 	len = strlen(histfname);
-	pq_sendint(&buf, len, 4);		/* col1 len */
+	pq_sendint(&buf, len, 4);	/* col1 len */
 	pq_sendbytes(&buf, histfname, len);
 
 	fd = OpenTransientFile(path, O_RDONLY | PG_BINARY, 0666);
@@ -584,7 +586,7 @@ StartReplication(StartReplicationCmd *cmd)
 			 * segment that contains switchpoint, but on the new timeline, so
 			 * that it doesn't end up with a partial segment. If you ask for a
 			 * too old starting point, you'll get an error later when we fail
-			 * to find the requested WAL segment in pg_xlog.
+			 * to find the requested WAL segment in pg_wal.
 			 *
 			 * XXX: we could be more strict here and only allow a startpoint
 			 * that's older than the switchpoint, if it's still in the same
@@ -655,7 +657,7 @@ StartReplication(StartReplicationCmd *cmd)
 
 		/* Initialize shared memory status, too */
 		{
-			WalSnd *walsnd = MyWalSnd;
+			WalSnd	   *walsnd = MyWalSnd;
 
 			SpinLockAcquire(&walsnd->mutex);
 			walsnd->sentPtr = sentPtr;
@@ -726,7 +728,7 @@ StartReplication(StartReplicationCmd *cmd)
 		pq_sendint(&buf, 2, 2); /* number of columns */
 
 		len = strlen(tli_str);
-		pq_sendint(&buf, len, 4);	/* length */
+		pq_sendint(&buf, len, 4);		/* length */
 		pq_sendbytes(&buf, tli_str, len);
 
 		len = strlen(startpos_str);
@@ -745,7 +747,7 @@ StartReplication(StartReplicationCmd *cmd)
  *
  * Inside the walsender we can do better than logical_read_local_xlog_page,
  * which has to do a plain sleep/busy loop, because the walsender's latch gets
- * set everytime WAL is flushed.
+ * set every time WAL is flushed.
  */
 static int
 logical_read_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr, int reqLen,
@@ -899,7 +901,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 
 	/* slot_name */
 	len = strlen(NameStr(MyReplicationSlot->data.name));
-	pq_sendint(&buf, len, 4);		/* col1 len */
+	pq_sendint(&buf, len, 4);	/* col1 len */
 	pq_sendbytes(&buf, NameStr(MyReplicationSlot->data.name), len);
 
 	/* consistent wal location */
@@ -1006,7 +1008,7 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 
 	/* Also update the sent position status in shared memory */
 	{
-		WalSnd *walsnd = MyWalSnd;
+		WalSnd	   *walsnd = MyWalSnd;
 
 		SpinLockAcquire(&walsnd->mutex);
 		walsnd->sentPtr = MyReplicationSlot->data.restart_lsn;
@@ -1144,7 +1146,8 @@ WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
 
 		/* Sleep until something happens or we time out */
 		WaitLatchOrSocket(MyLatch, wakeEvents,
-						  MyProcPort->sock, sleeptime);
+						  MyProcPort->sock, sleeptime,
+						  WAIT_EVENT_WAL_SENDER_WRITE_DATA);
 	}
 
 	/* reactivate latch so WalSndLoop knows to continue */
@@ -1270,7 +1273,8 @@ WalSndWaitForWal(XLogRecPtr loc)
 
 		/* Sleep until something happens or we time out */
 		WaitLatchOrSocket(MyLatch, wakeEvents,
-						  MyProcPort->sock, sleeptime);
+						  MyProcPort->sock, sleeptime,
+						  WAIT_EVENT_WAL_SENDER_WAIT_WAL);
 	}
 
 	/* reactivate latch so WalSndLoop knows to continue */
@@ -1307,9 +1311,7 @@ exec_replication_command(const char *cmd_string)
 
 	cmd_context = AllocSetContextCreate(CurrentMemoryContext,
 										"Replication command context",
-										ALLOCSET_DEFAULT_MINSIZE,
-										ALLOCSET_DEFAULT_INITSIZE,
-										ALLOCSET_DEFAULT_MAXSIZE);
+										ALLOCSET_DEFAULT_SIZES);
 	old_context = MemoryContextSwitchTo(cmd_context);
 
 	replication_scanner_init(cmd_string);
@@ -1567,7 +1569,7 @@ ProcessStandbyReplyMessage(void)
 	 * standby.
 	 */
 	{
-		WalSnd *walsnd = MyWalSnd;
+		WalSnd	   *walsnd = MyWalSnd;
 
 		SpinLockAcquire(&walsnd->mutex);
 		walsnd->write = writePtr;
@@ -1806,6 +1808,9 @@ WalSndLoop(WalSndSendDataCallback send_data)
 	last_reply_timestamp = GetCurrentTimestamp();
 	waiting_for_ping_response = false;
 
+	/* Report to pgstat that this process is a WAL sender */
+	pgstat_report_activity(STATE_RUNNING, "walsender");
+
 	/*
 	 * Loop until we reach the end of this timeline or the client requests to
 	 * stop streaming.
@@ -1921,7 +1926,8 @@ WalSndLoop(WalSndSendDataCallback send_data)
 
 			/* Sleep until something happens or we time out */
 			WaitLatchOrSocket(MyLatch, wakeEvents,
-							  MyProcPort->sock, sleeptime);
+							  MyProcPort->sock, sleeptime,
+							  WAIT_EVENT_WAL_SENDER_MAIN);
 		}
 	}
 	return;
@@ -1946,7 +1952,7 @@ InitWalSenderSlot(void)
 	 */
 	for (i = 0; i < max_wal_senders; i++)
 	{
-		WalSnd *walsnd = &WalSndCtl->walsnds[i];
+		WalSnd	   *walsnd = &WalSndCtl->walsnds[i];
 
 		SpinLockAcquire(&walsnd->mutex);
 
@@ -1962,6 +1968,9 @@ InitWalSenderSlot(void)
 			 */
 			walsnd->pid = MyProcPid;
 			walsnd->sentPtr = InvalidXLogRecPtr;
+			walsnd->write = InvalidXLogRecPtr;
+			walsnd->flush = InvalidXLogRecPtr;
+			walsnd->apply = InvalidXLogRecPtr;
 			walsnd->state = WALSNDSTATE_STARTUP;
 			walsnd->latch = &MyProc->procLatch;
 			SpinLockRelease(&walsnd->mutex);
@@ -2049,7 +2058,7 @@ retry:
 			 *
 			 * For example, imagine that this server is currently on timeline
 			 * 5, and we're streaming timeline 4. The switch from timeline 4
-			 * to 5 happened at 0/13002088. In pg_xlog, we have these files:
+			 * to 5 happened at 0/13002088. In pg_wal, we have these files:
 			 *
 			 * ...
 			 * 000000040000000000000012
@@ -2156,7 +2165,7 @@ retry:
 	 */
 	if (am_cascading_walsender)
 	{
-		WalSnd *walsnd = MyWalSnd;
+		WalSnd	   *walsnd = MyWalSnd;
 		bool		reload;
 
 		SpinLockAcquire(&walsnd->mutex);
@@ -2394,7 +2403,7 @@ XLogSendPhysical(void)
 
 	/* Update shared memory status */
 	{
-		WalSnd *walsnd = MyWalSnd;
+		WalSnd	   *walsnd = MyWalSnd;
 
 		SpinLockAcquire(&walsnd->mutex);
 		walsnd->sentPtr = sentPtr;
@@ -2456,7 +2465,7 @@ XLogSendLogical(void)
 
 	/* Update shared memory status */
 	{
-		WalSnd *walsnd = MyWalSnd;
+		WalSnd	   *walsnd = MyWalSnd;
 
 		SpinLockAcquire(&walsnd->mutex);
 		walsnd->sentPtr = sentPtr;
@@ -2482,13 +2491,14 @@ WalSndDone(WalSndSendDataCallback send_data)
 	send_data();
 
 	/*
-	 * Check a write location to see whether all the WAL have successfully
-	 * been replicated if this walsender is connecting to a standby such as
-	 * pg_receivexlog which always returns an invalid flush location.
-	 * Otherwise, check a flush location.
+	 * To figure out whether all WAL has successfully been replicated, check
+	 * flush location if valid, write otherwise. Tools like pg_receivexlog
+	 * will usually (unless in synchronous mode) return an invalid flush
+	 * location.
 	 */
 	replicatedPtr = XLogRecPtrIsInvalid(MyWalSnd->flush) ?
 		MyWalSnd->write : MyWalSnd->flush;
+
 	if (WalSndCaughtUp && sentPtr == replicatedPtr &&
 		!pq_is_send_pending())
 	{
@@ -2499,7 +2509,10 @@ WalSndDone(WalSndSendDataCallback send_data)
 		proc_exit(0);
 	}
 	if (!waiting_for_ping_response)
+	{
 		WalSndKeepalive(true);
+		waiting_for_ping_response = true;
+	}
 }
 
 /*
@@ -2547,7 +2560,7 @@ WalSndRqstFileReload(void)
 
 	for (i = 0; i < max_wal_senders; i++)
 	{
-		WalSnd *walsnd = &WalSndCtl->walsnds[i];
+		WalSnd	   *walsnd = &WalSndCtl->walsnds[i];
 
 		if (walsnd->pid == 0)
 			continue;
@@ -2699,7 +2712,7 @@ WalSndWakeup(void)
 void
 WalSndSetState(WalSndState state)
 {
-	WalSnd *walsnd = MyWalSnd;
+	WalSnd	   *walsnd = MyWalSnd;
 
 	Assert(am_walsender);
 
@@ -2746,7 +2759,7 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 	Tuplestorestate *tupstore;
 	MemoryContext per_query_ctx;
 	MemoryContext oldcontext;
-	WalSnd	   *sync_standby;
+	List	   *sync_standbys;
 	int			i;
 
 	/* check to see if caller supports us returning a tuplestore */
@@ -2775,15 +2788,15 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 	MemoryContextSwitchTo(oldcontext);
 
 	/*
-	 * Get the currently active synchronous standby.
+	 * Get the currently active synchronous standbys.
 	 */
 	LWLockAcquire(SyncRepLock, LW_SHARED);
-	sync_standby = SyncRepGetSynchronousStandby();
+	sync_standbys = SyncRepGetSyncStandbys(NULL);
 	LWLockRelease(SyncRepLock);
 
 	for (i = 0; i < max_wal_senders; i++)
 	{
-		WalSnd *walsnd = &WalSndCtl->walsnds[i];
+		WalSnd	   *walsnd = &WalSndCtl->walsnds[i];
 		XLogRecPtr	sentPtr;
 		XLogRecPtr	write;
 		XLogRecPtr	flush;
@@ -2819,17 +2832,20 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 		else
 		{
 			values[1] = CStringGetTextDatum(WalSndGetStateString(state));
+
+			if (XLogRecPtrIsInvalid(sentPtr))
+				nulls[2] = true;
 			values[2] = LSNGetDatum(sentPtr);
 
-			if (write == 0)
+			if (XLogRecPtrIsInvalid(write))
 				nulls[3] = true;
 			values[3] = LSNGetDatum(write);
 
-			if (flush == 0)
+			if (XLogRecPtrIsInvalid(flush))
 				nulls[4] = true;
 			values[4] = LSNGetDatum(flush);
 
-			if (apply == 0)
+			if (XLogRecPtrIsInvalid(apply))
 				nulls[5] = true;
 			values[5] = LSNGetDatum(apply);
 
@@ -2848,7 +2864,7 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 			 */
 			if (priority == 0)
 				values[7] = CStringGetTextDatum("async");
-			else if (walsnd == sync_standby)
+			else if (list_member_int(sync_standbys, i))
 				values[7] = CStringGetTextDatum("sync");
 			else
 				values[7] = CStringGetTextDatum("potential");
@@ -2919,44 +2935,3 @@ WalSndKeepaliveIfNecessary(TimestampTz now)
 			WalSndShutdown();
 	}
 }
-
-/*
- * This isn't currently used for anything. Monitoring tools might be
- * interested in the future, and we'll need something like this in the
- * future for synchronous replication.
- */
-#ifdef NOT_USED
-/*
- * Returns the oldest Send position among walsenders. Or InvalidXLogRecPtr
- * if none.
- */
-XLogRecPtr
-GetOldestWALSendPointer(void)
-{
-	XLogRecPtr	oldest = {0, 0};
-	int			i;
-	bool		found = false;
-
-	for (i = 0; i < max_wal_senders; i++)
-	{
-		WalSnd *walsnd = &WalSndCtl->walsnds[i];
-		XLogRecPtr	recptr;
-
-		if (walsnd->pid == 0)
-			continue;
-
-		SpinLockAcquire(&walsnd->mutex);
-		recptr = walsnd->sentPtr;
-		SpinLockRelease(&walsnd->mutex);
-
-		if (recptr.xlogid == 0 && recptr.xrecoff == 0)
-			continue;
-
-		if (!found || recptr < oldest)
-			oldest = recptr;
-		found = true;
-	}
-	return oldest;
-}
-
-#endif

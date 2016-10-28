@@ -10,7 +10,7 @@
  * the location.
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/nodes/parsenodes.h
@@ -116,12 +116,13 @@ typedef struct Query
 
 	bool		hasAggs;		/* has aggregates in tlist or havingQual */
 	bool		hasWindowFuncs; /* has window functions in tlist */
+	bool		hasTargetSRFs;	/* has set-returning functions in tlist */
 	bool		hasSubLinks;	/* has subquery SubLink */
 	bool		hasDistinctOn;	/* distinctClause is from DISTINCT ON */
 	bool		hasRecursive;	/* WITH RECURSIVE was specified */
 	bool		hasModifyingCTE;	/* has INSERT/UPDATE/DELETE in WITH */
 	bool		hasForUpdate;	/* FOR [KEY] UPDATE/SHARE was specified */
-	bool		hasRowSecurity; /* row security applied? */
+	bool		hasRowSecurity; /* rewriter has applied some RLS policy */
 
 	List	   *cteList;		/* WITH list (of CommonTableExpr's) */
 
@@ -157,9 +158,10 @@ typedef struct Query
 	List	   *constraintDeps; /* a list of pg_constraint OIDs that the query
 								 * depends on to be semantically valid */
 
-	List	   *withCheckOptions;	/* a list of WithCheckOption's, which are
-									 * only added during rewrite and therefore
-									 * are not written out as part of Query. */
+	List	   *withCheckOptions;		/* a list of WithCheckOption's, which
+										 * are only added during rewrite and
+										 * therefore are not written out as
+										 * part of Query. */
 } Query;
 
 
@@ -236,6 +238,7 @@ typedef enum A_Expr_Kind
 	AEXPR_OP_ANY,				/* scalar op ANY (array) */
 	AEXPR_OP_ALL,				/* scalar op ALL (array) */
 	AEXPR_DISTINCT,				/* IS DISTINCT FROM - name must be "=" */
+	AEXPR_NOT_DISTINCT,			/* IS NOT DISTINCT FROM - name must be "=" */
 	AEXPR_NULLIF,				/* NULLIF - name must be "=" */
 	AEXPR_OF,					/* IS [NOT] OF - name must be "=" or "<>" */
 	AEXPR_IN,					/* [NOT] IN - name must be "=" or "<>" */
@@ -351,13 +354,17 @@ typedef struct A_Star
 } A_Star;
 
 /*
- * A_Indices - array subscript or slice bounds ([lidx:uidx] or [uidx])
+ * A_Indices - array subscript or slice bounds ([idx] or [lidx:uidx])
+ *
+ * In slice case, either or both of lidx and uidx can be NULL (omitted).
+ * In non-slice case, uidx holds the single subscript and lidx is always NULL.
  */
 typedef struct A_Indices
 {
 	NodeTag		type;
-	Node	   *lidx;			/* NULL if it's a single subscript */
-	Node	   *uidx;
+	bool		is_slice;		/* true if slice (i.e., colon present) */
+	Node	   *lidx;			/* slice lower bound, if any */
+	Node	   *uidx;			/* subscript, or slice upper bound if any */
 } A_Indices;
 
 /*
@@ -660,6 +667,7 @@ typedef struct DefElem
 	char	   *defname;
 	Node	   *arg;			/* a (Value *) or a (TypeName *) */
 	DefElemAction defaction;	/* unspecified action, or SET/ADD/DROP */
+	int			location;		/* token location, or -1 if unknown */
 } DefElem;
 
 /*
@@ -1399,6 +1407,7 @@ typedef struct SetOperationStmt
 
 typedef enum ObjectType
 {
+	OBJECT_ACCESS_METHOD,
 	OBJECT_AGGREGATE,
 	OBJECT_AMOP,
 	OBJECT_AMPROC,
@@ -1705,7 +1714,8 @@ typedef struct CopyStmt
 {
 	NodeTag		type;
 	RangeVar   *relation;		/* the relation to copy */
-	Node	   *query;			/* the SELECT query to copy */
+	Node	   *query;			/* the query (SELECT or DML statement with
+								 * RETURNING) to copy */
 	List	   *attlist;		/* List of column names (as Strings), or NIL
 								 * for all columns */
 	bool		is_from;		/* TO or FROM */
@@ -2088,6 +2098,18 @@ typedef struct AlterPolicyStmt
 	Node	   *qual;			/* the policy's condition */
 	Node	   *with_check;		/* the policy's WITH CHECK condition. */
 } AlterPolicyStmt;
+
+/*----------------------
+ *		Create ACCESS METHOD Statement
+ *----------------------
+ */
+typedef struct CreateAmStmt
+{
+	NodeTag		type;
+	char	   *amname;			/* access method name */
+	List	   *handler_name;	/* handler function name */
+	char		amtype;			/* type of access method */
+} CreateAmStmt;
 
 /* ----------------------
  *		Create TRIGGER Statement
@@ -2544,6 +2566,20 @@ typedef struct RenameStmt
 } RenameStmt;
 
 /* ----------------------
+ * ALTER object DEPENDS ON EXTENSION extname
+ * ----------------------
+ */
+typedef struct AlterObjectDependsStmt
+{
+	NodeTag		type;
+	ObjectType	objectType;		/* OBJECT_FUNCTION, OBJECT_TRIGGER, etc */
+	RangeVar   *relation;		/* in case a table is involved */
+	List	   *objname;		/* name of the object */
+	List	   *objargs;		/* argument types, if applicable */
+	Value	   *extname;		/* extension name */
+} AlterObjectDependsStmt;
+
+/* ----------------------
  *		ALTER object SET SCHEMA Statement
  * ----------------------
  */
@@ -2700,10 +2736,11 @@ typedef struct AlterEnumStmt
 {
 	NodeTag		type;
 	List	   *typeName;		/* qualified name (list of Value strings) */
+	char	   *oldVal;			/* old enum value's name, if renaming */
 	char	   *newVal;			/* new enum value's name */
 	char	   *newValNeighbor; /* neighboring enum value, if specified */
 	bool		newValIsAfter;	/* place new enum value after neighbor? */
-	bool		skipIfExists;	/* no error if label already exists */
+	bool		skipIfNewValExists;		/* no error if new already exists? */
 } AlterEnumStmt;
 
 /* ----------------------
@@ -2816,7 +2853,8 @@ typedef enum VacuumOption
 	VACOPT_FREEZE = 1 << 3,		/* FREEZE option */
 	VACOPT_FULL = 1 << 4,		/* FULL (non-concurrent) vacuum */
 	VACOPT_NOWAIT = 1 << 5,		/* don't wait to get lock (autovacuum only) */
-	VACOPT_SKIPTOAST = 1 << 6	/* don't process the TOAST table, if any */
+	VACOPT_SKIPTOAST = 1 << 6,	/* don't process the TOAST table, if any */
+	VACOPT_DISABLE_PAGE_SKIPPING = 1 << 7		/* don't skip any pages */
 } VacuumOption;
 
 typedef struct VacuumStmt

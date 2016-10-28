@@ -400,8 +400,8 @@ SPI_execute("INSERT INTO foo SELECT * FROM bar RETURNING *", false, 5);
 typedef struct
 {
     MemoryContext tuptabcxt;    /* memory context of result table */
-    uint32      alloced;        /* number of alloced vals */
-    uint32      free;           /* number of free vals */
+    uint64      alloced;        /* number of alloced vals */
+    uint64      free;           /* number of free vals */
     TupleDesc   tupdesc;        /* row descriptor */
     HeapTuple  *vals;           /* rows */
 } SPITupleTable;
@@ -2741,6 +2741,285 @@ SPIPlanPtr SPI_saveplan(SPIPlanPtr <parameter>plan</parameter>)
  </refsect1>
 </refentry>
 
+<!-- *********************************************** -->
+
+<refentry id="spi-spi-register-tuplestore">
+ <indexterm><primary>SPI_register_tuplestore</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SPI_register_tuplestore</refentrytitle>
+  <manvolnum>3</manvolnum>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SPI_register_tuplestore</refname>
+  <refpurpose>make a tuplestore available by name in SPI queries</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+int SPI_register_tuplestore(Tsr <parameter>tsr</parameter>)
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <function>SPI_register_tuplestore</function> makes a tuplestore, with
+   associated information, available to queries planned and executed through
+   the current SPI connection.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Arguments</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>Tsr <parameter>tsr</parameter></literal></term>
+    <listitem>
+     <para>
+      the tuplestore registry entry
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Return Value</title>
+
+  <para>
+   If the execution of the command was successful then the following
+   (nonnegative) value will be returned:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_OK_TSR_REGISTER</symbol></term>
+     <listitem>
+      <para>
+       if the tuplestore has been successfully registered by name
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+
+  <para>
+   On error, one of the following negative values is returned:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_ERROR_ARGUMENT</symbol></term>
+     <listitem>
+      <para>
+       if <parameter>tsr</parameter> is <symbol>NULL</symbol> or its
+       <varname>name</varname> field is <symbol>NULL</symbol>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_UNCONNECTED</symbol></term>
+     <listitem>
+      <para>
+       if called from an unconnected procedure
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_TSR_DUPLICATE</symbol></term>
+     <listitem>
+      <para>
+       if the name specified in the <varname>name</varname> field of
+       <parameter>tsr</parameter> is already registered for this connection
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+ </refsect1>
+</refentry>
+
+<!-- *********************************************** -->
+
+<refentry id="spi-spi-unregister-tuplestore">
+ <indexterm><primary>SPI_unregister_tuplestore</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SPI_unregister_tuplestore</refentrytitle>
+  <manvolnum>3</manvolnum>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SPI_unregister_tuplestore</refname>
+  <refpurpose>remove a tuplestore from the registry</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+int SPI_unregister_tuplestore(const char * <parameter>name</parameter>)
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <function>SPI_unregister_tuplestore</function> removes a tuplestore from
+   the registry for the current connection.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Arguments</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>const char * <parameter>name</parameter></literal></term>
+    <listitem>
+     <para>
+      the tuplestore registry entry name
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Return Value</title>
+
+  <para>
+   If the execution of the command was successful then the following
+   (nonnegative) value will be returned:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_OK_TSR_UNREGISTER</symbol></term>
+     <listitem>
+      <para>
+       if the tuplestore has been successfully removed from the registry
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+
+  <para>
+   On error, one of the following negative values is returned:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_ERROR_ARGUMENT</symbol></term>
+     <listitem>
+      <para>
+       if <parameter>name</parameter> is <symbol>NULL</symbol>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_UNCONNECTED</symbol></term>
+     <listitem>
+      <para>
+       if called from an unconnected procedure
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_TSR_NOT_FOUND</symbol></term>
+     <listitem>
+      <para>
+       if <parameter>name</parameter> is not found in the registry for the
+       current connection
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+ </refsect1>
+</refentry>
+
+<!-- *********************************************** -->
+
+<refentry id="spi-spi-get-caller-tuplestore">
+ <indexterm><primary>SPI_get_caller_tuplestore</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SPI_get_caller_tuplestore</refentrytitle>
+  <manvolnum>3</manvolnum>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SPI_get_caller_tuplestore</refname>
+  <refpurpose>return a tuplestore from the registry</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+int SPI_get_caller_tuplestore(const char * <parameter>name</parameter>)
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <function>SPI_get_caller_tuplestore</function> returns a tuplestore from
+   the registry for the current connection.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Arguments</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>const char * <parameter>name</parameter></literal></term>
+    <listitem>
+     <para>
+      the tuplestore registry entry name
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Return Value</title>
+
+  <para>
+   Pointer to the tuplestore registry entry; or <symbol>NULL</symbol> if
+   unsuccessful.  On error, <varname>SPI_result</varname> is set thus:
+
+   <variablelist>
+    <varlistentry>
+     <term><symbol>SPI_ERROR_ARGUMENT</symbol></term>
+     <listitem>
+      <para>
+       if <parameter>name</parameter> is <symbol>NULL</symbol>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><symbol>SPI_ERROR_UNCONNECTED</symbol></term>
+     <listitem>
+      <para>
+       if called from an unconnected procedure
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+ </refsect1>
+</refentry>
+
+<!-- *********************************************** -->
+
 </sect1>
 
 <sect1 id="spi-interface-support">
@@ -4116,14 +4395,14 @@ INSERT INTO a SELECT * FROM a;
 PG_MODULE_MAGIC;
 #endif
 
-int execq(text *sql, int cnt);
+int64 execq(text *sql, int cnt);
 
-int
+int64
 execq(text *sql, int cnt)
 {
     char *command;
     int ret;
-    int proc;
+    uint64 proc;
 
     /* Convert given text object to a C string */
     command = text_to_cstring(sql);
@@ -4141,11 +4420,12 @@ execq(text *sql, int cnt)
         TupleDesc tupdesc = SPI_tuptable-&gt;tupdesc;
         SPITupleTable *tuptable = SPI_tuptable;
         char buf[8192];
-        int i, j;
+        uint64 j;
 
         for (j = 0; j &lt; proc; j++)
         {
             HeapTuple tuple = tuptable-&gt;vals[j];
+            int i;
 
             for (i = 1, buf[0] = 0; i &lt;= tupdesc-&gt;natts; i++)
                 snprintf(buf + strlen (buf), sizeof(buf) - strlen(buf), " %s%s",
@@ -4173,9 +4453,9 @@ execq(text *sql, int cnt)
    a shared library (details are in <xref linkend="dfunc">.):
 
 <programlisting>
-CREATE FUNCTION execq(text, integer) RETURNS integer
+CREATE FUNCTION execq(text, integer) RETURNS int8
     AS '<replaceable>filename</replaceable>'
-    LANGUAGE C;
+    LANGUAGE C STRICT;
 </programlisting>
   </para>
 

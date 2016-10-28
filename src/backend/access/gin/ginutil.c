@@ -1,10 +1,10 @@
 /*-------------------------------------------------------------------------
  *
  * ginutil.c
- *	  utilities routines for the postgres inverted index access method.
+ *	  Utility routines for the Postgres inverted index access method.
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -22,7 +22,55 @@
 #include "miscadmin.h"
 #include "storage/indexfsm.h"
 #include "storage/lmgr.h"
+#include "utils/builtins.h"
+#include "utils/index_selfuncs.h"
+#include "utils/typcache.h"
 
+
+/*
+ * GIN handler function: return IndexAmRoutine with access method parameters
+ * and callbacks.
+ */
+Datum
+ginhandler(PG_FUNCTION_ARGS)
+{
+	IndexAmRoutine *amroutine = makeNode(IndexAmRoutine);
+
+	amroutine->amstrategies = 0;
+	amroutine->amsupport = GINNProcs;
+	amroutine->amcanorder = false;
+	amroutine->amcanorderbyop = false;
+	amroutine->amcanbackward = false;
+	amroutine->amcanunique = false;
+	amroutine->amcanmulticol = true;
+	amroutine->amoptionalkey = true;
+	amroutine->amsearcharray = false;
+	amroutine->amsearchnulls = false;
+	amroutine->amstorage = true;
+	amroutine->amclusterable = false;
+	amroutine->ampredlocks = false;
+	amroutine->amkeytype = InvalidOid;
+
+	amroutine->ambuild = ginbuild;
+	amroutine->ambuildempty = ginbuildempty;
+	amroutine->aminsert = gininsert;
+	amroutine->ambulkdelete = ginbulkdelete;
+	amroutine->amvacuumcleanup = ginvacuumcleanup;
+	amroutine->amcanreturn = NULL;
+	amroutine->amcostestimate = gincostestimate;
+	amroutine->amoptions = ginoptions;
+	amroutine->amproperty = NULL;
+	amroutine->amvalidate = ginvalidate;
+	amroutine->ambeginscan = ginbeginscan;
+	amroutine->amrescan = ginrescan;
+	amroutine->amgettuple = NULL;
+	amroutine->amgetbitmap = gingetbitmap;
+	amroutine->amendscan = ginendscan;
+	amroutine->ammarkpos = NULL;
+	amroutine->amrestrpos = NULL;
+
+	PG_RETURN_POINTER(amroutine);
+}
 
 /*
  * initGinState: fill in an empty GinState struct to describe the index
@@ -59,9 +107,33 @@ initGinState(GinState *state, Relation index)
 										origTupdesc->attrs[i]->attcollation);
 		}
 
-		fmgr_info_copy(&(state->compareFn[i]),
-					   index_getprocinfo(index, i + 1, GIN_COMPARE_PROC),
-					   CurrentMemoryContext);
+		/*
+		 * If the compare proc isn't specified in the opclass definition, look
+		 * up the index key type's default btree comparator.
+		 */
+		if (index_getprocid(index, i + 1, GIN_COMPARE_PROC) != InvalidOid)
+		{
+			fmgr_info_copy(&(state->compareFn[i]),
+						   index_getprocinfo(index, i + 1, GIN_COMPARE_PROC),
+						   CurrentMemoryContext);
+		}
+		else
+		{
+			TypeCacheEntry *typentry;
+
+			typentry = lookup_type_cache(origTupdesc->attrs[i]->atttypid,
+										 TYPECACHE_CMP_PROC_FINFO);
+			if (!OidIsValid(typentry->cmp_proc_finfo.fn_oid))
+				ereport(ERROR,
+						(errcode(ERRCODE_UNDEFINED_FUNCTION),
+				errmsg("could not identify a comparison function for type %s",
+					   format_type_be(origTupdesc->attrs[i]->atttypid))));
+			fmgr_info_copy(&(state->compareFn[i]),
+						   &(typentry->cmp_proc_finfo),
+						   CurrentMemoryContext);
+		}
+
+		/* Opclass must always provide extract procs */
 		fmgr_info_copy(&(state->extractValueFn[i]),
 					   index_getprocinfo(index, i + 1, GIN_EXTRACTVALUE_PROC),
 					   CurrentMemoryContext);
@@ -516,11 +588,9 @@ ginExtractEntries(GinState *ginstate, OffsetNumber attnum,
 	return entries;
 }
 
-Datum
-ginoptions(PG_FUNCTION_ARGS)
+bytea *
+ginoptions(Datum reloptions, bool validate)
 {
-	Datum		reloptions = PG_GETARG_DATUM(0);
-	bool		validate = PG_GETARG_BOOL(1);
 	relopt_value *options;
 	GinOptions *rdopts;
 	int			numoptions;
@@ -535,7 +605,7 @@ ginoptions(PG_FUNCTION_ARGS)
 
 	/* if none set, we're done */
 	if (numoptions == 0)
-		PG_RETURN_NULL();
+		return NULL;
 
 	rdopts = allocateReloptStruct(sizeof(GinOptions), options, numoptions);
 
@@ -544,7 +614,7 @@ ginoptions(PG_FUNCTION_ARGS)
 
 	pfree(options);
 
-	PG_RETURN_BYTEA_P(rdopts);
+	return (bytea *) rdopts;
 }
 
 /*

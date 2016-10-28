@@ -3,7 +3,7 @@
  * parse_target.c
  *	  handle target lists
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -115,7 +115,7 @@ transformTargetEntry(ParseState *pstate,
  *
  * This code acts mostly the same for SELECT, UPDATE, or RETURNING lists;
  * the main thing is to transform the given expressions (the "val" fields).
- * The exprKind parameter distinguishes these cases when necesssary.
+ * The exprKind parameter distinguishes these cases when necessary.
  */
 List *
 transformTargetList(ParseState *pstate, List *targetlist,
@@ -651,7 +651,7 @@ transformAssignmentIndirection(ParseState *pstate,
 		if (IsA(n, A_Indices))
 		{
 			subscripts = lappend(subscripts, n);
-			if (((A_Indices *) n)->lidx != NULL)
+			if (((A_Indices *) n)->is_slice)
 				isSlice = true;
 		}
 		else if (IsA(n, A_Star))
@@ -1760,6 +1760,49 @@ FigureColnameInternal(Node *node, char **name)
 					return 2;
 				case IS_LEAST:
 					*name = "least";
+					return 2;
+			}
+			break;
+		case T_SQLValueFunction:
+			/* make these act like a function or variable */
+			switch (((SQLValueFunction *) node)->op)
+			{
+				case SVFOP_CURRENT_DATE:
+					*name = "current_date";
+					return 2;
+				case SVFOP_CURRENT_TIME:
+				case SVFOP_CURRENT_TIME_N:
+					*name = "current_time";
+					return 2;
+				case SVFOP_CURRENT_TIMESTAMP:
+				case SVFOP_CURRENT_TIMESTAMP_N:
+					*name = "current_timestamp";
+					return 2;
+				case SVFOP_LOCALTIME:
+				case SVFOP_LOCALTIME_N:
+					*name = "localtime";
+					return 2;
+				case SVFOP_LOCALTIMESTAMP:
+				case SVFOP_LOCALTIMESTAMP_N:
+					*name = "localtimestamp";
+					return 2;
+				case SVFOP_CURRENT_ROLE:
+					*name = "current_role";
+					return 2;
+				case SVFOP_CURRENT_USER:
+					*name = "current_user";
+					return 2;
+				case SVFOP_USER:
+					*name = "user";
+					return 2;
+				case SVFOP_SESSION_USER:
+					*name = "session_user";
+					return 2;
+				case SVFOP_CURRENT_CATALOG:
+					*name = "current_catalog";
+					return 2;
+				case SVFOP_CURRENT_SCHEMA:
+					*name = "current_schema";
 					return 2;
 			}
 			break;
