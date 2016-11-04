@@ -159,7 +159,7 @@ struct ParseState
 	bool		p_locked_from_parent;
 	Relation	p_target_relation;
 	RangeTblEntry *p_target_rangetblentry;
-	Tsrcache	*p_tsrcache;	/* visible named tuplestore relations */
+	Tsrcache   *p_tsrcache;	/* visible named tuplestore relations */
 
 	/*
 	 * Optional hook functions for parser callbacks.  These are null unless

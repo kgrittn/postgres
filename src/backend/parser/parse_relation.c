@@ -1155,12 +1155,17 @@ parserOpenTable(ParseState *pstate, const RangeVar *relation, int lockmode)
 		else
 		{
 			/*
+			 * An unqualified name might be a tuplestore relation name.
+			 */
+			if (get_visible_tuplestore_metadata(pstate->p_tsrcache, relation->relname))
+				rel = NULL;
+			/*
 			 * An unqualified name might have been meant as a reference to
 			 * some not-yet-in-scope CTE.  The bare "does not exist" message
 			 * has proven remarkably unhelpful for figuring out such problems,
 			 * so we take pains to offer a specific hint.
 			 */
-			if (isFutureCTE(pstate, relation->relname))
+			else if (isFutureCTE(pstate, relation->relname))
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_TABLE),
 						 errmsg("relation \"%s\" does not exist",
