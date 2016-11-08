@@ -4511,7 +4511,7 @@ set_cte_size_estimates(PlannerInfo *root, RelOptInfo *rel, double cte_rows)
 void
 set_tuplestore_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 {
-	RangeTblEntry *rte;
+	RangeTblEntry *rte PG_USED_FOR_ASSERTS_ONLY;
 
 	/* Should only be applied to base relations that are tuplestore references */
 	Assert(rel->relid > 0);
