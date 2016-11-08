@@ -311,7 +311,7 @@ UPDATE OF <replaceable>column_name1</replaceable> [, <replaceable>column_name2</
     <listitem>
      <para>
       This specifies whether the named relation contains the before or after
-      images for rows affected by the statement which fired the triggered.
+      images for rows affected by the statement which fired the trigger.
      </para>
     </listitem>
    </varlistentry>
