@@ -171,8 +171,6 @@ ProcessQuery(PlannedStmt *plan,
 {
 	QueryDesc  *queryDesc;
 
-	elog(DEBUG3, "ProcessQuery");
-
 	/*
 	 * Create the QueryDesc object
 	 */
@@ -1155,8 +1153,6 @@ PortalRunUtility(Portal portal, Node *utilityStmt,
 				 DestReceiver *dest, char *completionTag)
 {
 	Snapshot	snapshot;
-
-	elog(DEBUG3, "ProcessUtility");
 
 	/*
 	 * Set snapshot if utility stmt needs one.  Most reliable way to do this
