@@ -1363,12 +1363,6 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 			 * automatically cleaned up during subxact exit.)
 			 */
 			estate->eval_econtext = old_eval_econtext;
-
-			/*
-			 * AtEOSubXact_SPI() should not have popped any SPI context, but
-			 * just in case it did, make sure we remain connected.
-			 */
-			SPI_restore_connection();
 		}
 		PG_CATCH();
 		{
@@ -1409,13 +1403,6 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 
 			/* Revert to outer eval_econtext */
 			estate->eval_econtext = old_eval_econtext;
-
-			/*
-			 * If AtEOSubXact_SPI() popped any SPI context of the subxact, it
-			 * will have left us in a disconnected state.  We need this hack
-			 * to return to connected state.
-			 */
-			SPI_restore_connection();
 
 			/*
 			 * Must clean up the econtext too.  However, any tuple table made
@@ -5613,8 +5600,6 @@ exec_eval_simple_expr(PLpgSQL_execstate *estate,
 	 * Without this, stable functions within the expression would fail to see
 	 * updates made so far by our own function.
 	 */
-	SPI_push();
-
 	oldcontext = MemoryContextSwitchTo(get_eval_mcontext(estate));
 	if (!estate->readonly_func)
 	{
@@ -5661,8 +5646,6 @@ exec_eval_simple_expr(PLpgSQL_execstate *estate,
 		PopActiveSnapshot();
 
 	MemoryContextSwitchTo(oldcontext);
-
-	SPI_pop();
 
 	/*
 	 * Now we can release our refcount on the cached plan.
@@ -6307,8 +6290,6 @@ exec_cast_value(PLpgSQL_execstate *estate,
 			ExprContext *econtext = estate->eval_econtext;
 			MemoryContext oldcontext;
 
-			SPI_push();
-
 			oldcontext = MemoryContextSwitchTo(get_eval_mcontext(estate));
 
 			econtext->caseValue_datum = value;
@@ -6322,8 +6303,6 @@ exec_cast_value(PLpgSQL_execstate *estate,
 			cast_entry->cast_in_use = false;
 
 			MemoryContextSwitchTo(oldcontext);
-
-			SPI_pop();
 		}
 	}
 
