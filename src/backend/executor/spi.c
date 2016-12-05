@@ -2652,9 +2652,6 @@ _SPI_find_tsr_by_name(const char *name)
 {
 	/* internal static function; any error is bug in SPI itself */
 	Assert(name != NULL);
-	Assert(_SPI_curid >= 0);
-	Assert(_SPI_curid == _SPI_connected);
-	Assert(_SPI_current == &(_SPI_stack[_SPI_curid]));
 
 	/* fast exit if no tuplestores have been added */
 	if (_SPI_current->tuplestores == NULL)
@@ -2745,7 +2742,7 @@ SPI_get_caller_tuplestore(const char *name)
 		return NULL;
 	}
 
-	if (_SPI_curid < 0)
+	if (_SPI_current == NULL)
 	{
 		SPI_result = SPI_ERROR_UNCONNECTED;
 		return NULL;
