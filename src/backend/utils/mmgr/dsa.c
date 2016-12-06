@@ -98,7 +98,7 @@
 #define DSA_OFFSET_BITMASK (((dsa_pointer) 1 << DSA_OFFSET_WIDTH) - 1)
 
 /* The maximum size of a DSM segment. */
-#define DSA_MAX_SEGMENT_SIZE ((size_t) 1 << DSA_OFFSET_WIDTH)
+#define DSA_MAX_SEGMENT_SIZE ((Size) 1 << DSA_OFFSET_WIDTH)
 
 /* Number of pages (see FPM_PAGE_SIZE) per regular superblock. */
 #define DSA_PAGES_PER_SUPERBLOCK		16
@@ -1099,9 +1099,10 @@ dsa_dump(dsa_area *area)
 
 						span = dsa_get_address(area, span_pointer);
 						fprintf(stderr,
-								"        span descriptor at %016lx, "
-								"superblock at %016lx, pages = %zu, "
-								"objects free = %hu/%hu\n",
+								"        span descriptor at "
+								DSA_POINTER_FORMAT ", superblock at "
+								DSA_POINTER_FORMAT
+								", pages = %zu, objects free = %hu/%hu\n",
 								span_pointer, span->start, span->npages,
 								span->nallocatable, span->nmax);
 						span_pointer = span->nextspan;
@@ -1183,7 +1184,7 @@ create_internal(void *place, size_t size,
 	control->segment_header.freed = false;
 	control->segment_header.size = DSA_INITIAL_SEGMENT_SIZE;
 	control->handle = control_handle;
-	control->max_total_segment_size = SIZE_MAX;
+	control->max_total_segment_size = (Size) -1;
 	control->total_segment_size = size;
 	memset(&control->segment_handles[0], 0,
 		   sizeof(dsm_handle) * DSA_MAX_SEGMENTS);
@@ -1918,7 +1919,7 @@ get_best_segment(dsa_area *area, Size npages)
 		 * The minimum contiguous size that any segment in this bin should
 		 * have.  We'll re-bin if we see segments with fewer.
 		 */
-		Size		threshold = 1 << (bin - 1);
+		Size		threshold = (Size) 1 << (bin - 1);
 		dsa_segment_index segment_index;
 
 		/* Search this bin for a segment with enough contiguous space. */
