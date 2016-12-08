@@ -1329,9 +1329,9 @@ _readRangeTblEntry(void)
 		case RTE_TUPLESTORE:
 			READ_STRING_FIELD(tsrname);
 			READ_OID_FIELD(relid);
-			READ_NODE_FIELD(ctecoltypes);
-			READ_NODE_FIELD(ctecoltypmods);
-			READ_NODE_FIELD(ctecolcollations);
+			READ_NODE_FIELD(coltypes);
+			READ_NODE_FIELD(coltypmods);
+			READ_NODE_FIELD(colcollations);
 			break;
 		default:
 			elog(ERROR, "unrecognized RTE kind: %d",

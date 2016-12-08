@@ -1934,23 +1934,23 @@ addRangeTableEntryForTsr(ParseState *pstate,
 	buildRelationAliases(tupdesc, alias, rte->eref);
 	rte->tsrname = tsrmd->name;
 
-	rte->ctecoltypes = NIL;
-	rte->ctecoltypmods = NIL;
-	rte->ctecolcollations = NIL;
+	rte->coltypes = NIL;
+	rte->coltypmods = NIL;
+	rte->colcollations = NIL;
 	for (attno = 1; attno <= tupdesc->natts; ++attno)
 	{
 		if (tupdesc->attrs[attno - 1]->atttypid == InvalidOid &&
 			!(tupdesc->attrs[attno - 1]->attisdropped))
 			elog(ERROR, "atttypid was invalid for column which has not been dropped from \"%s\"",
 				 rv->relname);
-		rte->ctecoltypes =
-			lappend_oid(rte->ctecoltypes,
+		rte->coltypes =
+			lappend_oid(rte->coltypes,
 						tupdesc->attrs[attno - 1]->atttypid);
-		rte->ctecoltypmods =
-			lappend_int(rte->ctecoltypmods,
+		rte->coltypmods =
+			lappend_int(rte->coltypmods,
 						tupdesc->attrs[attno - 1]->atttypmod);
-		rte->ctecolcollations =
-			lappend_oid(rte->ctecolcollations,
+		rte->colcollations =
+			lappend_oid(rte->colcollations,
 						tupdesc->attrs[attno - 1]->attcollation);
 	}
 
@@ -2801,7 +2801,7 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 				 * safe to count on that here.
 				 */
 				result =
-					(list_nth(rte->ctecoltypes, attnum - 1) != InvalidOid);
+					(list_nth(rte->coltypes, attnum - 1) != InvalidOid);
 			}
 			break;
 		case RTE_JOIN:

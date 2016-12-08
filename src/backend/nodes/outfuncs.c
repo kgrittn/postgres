@@ -2866,9 +2866,9 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 		case RTE_TUPLESTORE:
 			WRITE_STRING_FIELD(tsrname);
 			WRITE_OID_FIELD(relid);
-			WRITE_NODE_FIELD(ctecoltypes);
-			WRITE_NODE_FIELD(ctecoltypmods);
-			WRITE_NODE_FIELD(ctecolcollations);
+			WRITE_NODE_FIELD(coltypes);
+			WRITE_NODE_FIELD(coltypmods);
+			WRITE_NODE_FIELD(colcollations);
 			break;
 		default:
 			elog(ERROR, "unrecognized RTE kind: %d", (int) node->rtekind);
