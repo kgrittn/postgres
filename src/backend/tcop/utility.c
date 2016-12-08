@@ -993,7 +993,8 @@ ProcessUtilitySlow(ParseState *pstate,
 							/* Create the table itself */
 							address = DefineRelation((CreateStmt *) stmt,
 													 RELKIND_RELATION,
-													 InvalidOid, NULL);
+													 InvalidOid, NULL,
+													 queryString);
 							EventTriggerCollectSimpleCommand(address,
 															 secondaryObject,
 															 stmt);
@@ -1026,7 +1027,8 @@ ProcessUtilitySlow(ParseState *pstate,
 							/* Create the table itself */
 							address = DefineRelation((CreateStmt *) stmt,
 													 RELKIND_FOREIGN_TABLE,
-													 InvalidOid, NULL);
+													 InvalidOid, NULL,
+													 queryString);
 							CreateForeignTable((CreateForeignTableStmt *) stmt,
 											   address.objectId);
 							EventTriggerCollectSimpleCommand(address,

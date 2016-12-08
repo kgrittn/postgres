@@ -408,6 +408,7 @@ typedef enum NodeTag
 	T_AlterPolicyStmt,
 	T_CreateTransformStmt,
 	T_CreateAmStmt,
+	T_PartitionCmd,
 
 	/*
 	 * TAGS FOR PARSE TREE NODES (parsenodes.h)
@@ -456,6 +457,10 @@ typedef enum NodeTag
 	T_CommonTableExpr,
 	T_RoleSpec,
 	T_TriggerTransition,
+	T_PartitionElem,
+	T_PartitionSpec,
+	T_PartitionBoundSpec,
+	T_PartitionRangeDatum,
 
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)

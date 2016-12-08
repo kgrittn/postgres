@@ -1661,7 +1661,9 @@ addRangeTableEntryForFunction(ParseState *pstate,
 RangeTblEntry *
 addRangeTableEntryForValues(ParseState *pstate,
 							List *exprs,
-							List *collations,
+							List *coltypes,
+							List *coltypmods,
+							List *colcollations,
 							Alias *alias,
 							bool lateral,
 							bool inFromCl)
@@ -1678,7 +1680,9 @@ addRangeTableEntryForValues(ParseState *pstate,
 	rte->relid = InvalidOid;
 	rte->subquery = NULL;
 	rte->values_lists = exprs;
-	rte->values_collations = collations;
+	rte->coltypes = coltypes;
+	rte->coltypmods = coltypmods;
+	rte->colcollations = colcollations;
 	rte->alias = alias;
 
 	eref = alias ? copyObject(alias) : makeAlias(refname, NIL);
@@ -1848,9 +1852,9 @@ addRangeTableEntryForCTE(ParseState *pstate,
 					 parser_errposition(pstate, rv->location)));
 	}
 
-	rte->ctecoltypes = cte->ctecoltypes;
-	rte->ctecoltypmods = cte->ctecoltypmods;
-	rte->ctecolcollations = cte->ctecolcollations;
+	rte->coltypes = cte->ctecoltypes;
+	rte->coltypmods = cte->ctecoltypmods;
+	rte->colcollations = cte->ctecolcollations;
 
 	rte->alias = alias;
 	if (alias)
@@ -2253,46 +2257,6 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 				}
 			}
 			break;
-		case RTE_VALUES:
-			{
-				/* Values RTE */
-				ListCell   *aliasp_item = list_head(rte->eref->colnames);
-				ListCell   *lcv;
-				ListCell   *lcc;
-
-				varattno = 0;
-				forboth(lcv, (List *) linitial(rte->values_lists),
-						lcc, rte->values_collations)
-				{
-					Node	   *col = (Node *) lfirst(lcv);
-					Oid			colcollation = lfirst_oid(lcc);
-
-					varattno++;
-					if (colnames)
-					{
-						/* Assume there is one alias per column */
-						char	   *label = strVal(lfirst(aliasp_item));
-
-						*colnames = lappend(*colnames,
-											makeString(pstrdup(label)));
-						aliasp_item = lnext(aliasp_item);
-					}
-
-					if (colvars)
-					{
-						Var		   *varnode;
-
-						varnode = makeVar(rtindex, varattno,
-										  exprType(col),
-										  exprTypmod(col),
-										  colcollation,
-										  sublevels_up);
-						varnode->location = location;
-						*colvars = lappend(*colvars, varnode);
-					}
-				}
-			}
-			break;
 		case RTE_JOIN:
 			{
 				/* Join RTE */
@@ -2362,18 +2326,20 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 				}
 			}
 			break;
+		case RTE_VALUES:
 		case RTE_CTE:
 		case RTE_TUPLESTORE:
 			{
+				/* Values or CTE RTE */
 				ListCell   *aliasp_item = list_head(rte->eref->colnames);
 				ListCell   *lct;
 				ListCell   *lcm;
 				ListCell   *lcc;
 
 				varattno = 0;
-				forthree(lct, rte->ctecoltypes,
-						 lcm, rte->ctecoltypmods,
-						 lcc, rte->ctecolcollations)
+				forthree(lct, rte->coltypes,
+						 lcm, rte->coltypmods,
+						 lcc, rte->colcollations)
 				{
 					Oid			coltype = lfirst_oid(lct);
 					int32		coltypmod = lfirst_int(lcm);
@@ -2386,7 +2352,8 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 						/* Assume there is one alias per output column */
 						char	   *label = strVal(lfirst(aliasp_item));
 
-						*colnames = lappend(*colnames, makeString(pstrdup(label)));
+						*colnames = lappend(*colnames,
+											makeString(pstrdup(label)));
 						aliasp_item = lnext(aliasp_item);
 					}
 
@@ -2397,6 +2364,8 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 						varnode = makeVar(rtindex, varattno,
 										  coltype, coltypmod, colcoll,
 										  sublevels_up);
+						varnode->location = location;
+
 						*colvars = lappend(*colvars, varnode);
 					}
 				}
@@ -2755,22 +2724,6 @@ get_rte_attribute_type(RangeTblEntry *rte, AttrNumber attnum,
 								rte->eref->aliasname)));
 			}
 			break;
-		case RTE_VALUES:
-			{
-				/* Values RTE --- get type info from first sublist */
-				/* collation is stored separately, though */
-				List	   *collist = (List *) linitial(rte->values_lists);
-				Node	   *col;
-
-				if (attnum < 1 || attnum > list_length(collist))
-					elog(ERROR, "values list %s does not have attribute %d",
-						 rte->eref->aliasname, attnum);
-				col = (Node *) list_nth(collist, attnum - 1);
-				*vartype = exprType(col);
-				*vartypmod = exprTypmod(col);
-				*varcollid = list_nth_oid(rte->values_collations, attnum - 1);
-			}
-			break;
 		case RTE_JOIN:
 			{
 				/*
@@ -2786,15 +2739,15 @@ get_rte_attribute_type(RangeTblEntry *rte, AttrNumber attnum,
 				*varcollid = exprCollation(aliasvar);
 			}
 			break;
+		case RTE_VALUES:
 		case RTE_CTE:
 		case RTE_TUPLESTORE:
 			{
-				/* CTE RTE --- get type info from lists in the RTE */
-				/* Also used by tuplestore RTE */
-				Assert(attnum > 0 && attnum <= list_length(rte->ctecoltypes));
-				*vartype = list_nth_oid(rte->ctecoltypes, attnum - 1);
-				*vartypmod = list_nth_int(rte->ctecoltypmods, attnum - 1);
-				*varcollid = list_nth_oid(rte->ctecolcollations, attnum - 1);
+				/* VALUES or CTE RTE --- get type info from lists in the RTE */
+				Assert(attnum > 0 && attnum <= list_length(rte->coltypes));
+				*vartype = list_nth_oid(rte->coltypes, attnum - 1);
+				*vartypmod = list_nth_int(rte->coltypmods, attnum - 1);
+				*varcollid = list_nth_oid(rte->colcollations, attnum - 1);
 			}
 			break;
 		default:
