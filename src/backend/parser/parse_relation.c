@@ -1160,9 +1160,9 @@ parserOpenTable(ParseState *pstate, const RangeVar *relation, int lockmode)
 		else
 		{
 			/*
-			 * An unqualified name might be a tuplestore relation name.
+			 * An unqualified name might be a named ephemeral relation.
 			 */
-			if (get_visible_tuplestore_metadata(pstate->p_tsrcache, relation->relname))
+			if (get_visible_tuplestore_metadata(pstate->p_queryEnv, relation->relname))
 				rel = NULL;
 			/*
 			 * An unqualified name might have been meant as a reference to

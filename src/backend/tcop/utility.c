@@ -65,7 +65,6 @@
 #include "utils/acl.h"
 #include "utils/guc.h"
 #include "utils/syscache.h"
-#include "utils/tsrcache.h"
 
 
 /* Hook for plugins to get control in ProcessUtility() */
@@ -77,7 +76,7 @@ static void ProcessUtilitySlow(ParseState *pstate,
 				   const char *queryString,
 				   ProcessUtilityContext context,
 				   ParamListInfo params,
-				   Tsrcache *tsrcache,
+				   QueryEnvironment *queryEnv,
 				   DestReceiver *dest,
 				   char *completionTag);
 static void ExecDropStmt(DropStmt *stmt, bool isTopLevel);
@@ -321,7 +320,7 @@ ProcessUtility(Node *parsetree,
 			   const char *queryString,
 			   ProcessUtilityContext context,
 			   ParamListInfo params,
-			   Tsrcache *tsrcache,
+			   QueryEnvironment *queryEnv,
 			   DestReceiver *dest,
 			   char *completionTag)
 {
@@ -334,11 +333,11 @@ ProcessUtility(Node *parsetree,
 	 */
 	if (ProcessUtility_hook)
 		(*ProcessUtility_hook) (parsetree, queryString,
-								context, params, tsrcache,
+								context, params, queryEnv,
 								dest, completionTag);
 	else
 		standard_ProcessUtility(parsetree, queryString,
-								context, params, tsrcache,
+								context, params, queryEnv,
 								dest, completionTag);
 }
 
@@ -358,7 +357,7 @@ standard_ProcessUtility(Node *parsetree,
 						const char *queryString,
 						ProcessUtilityContext context,
 						ParamListInfo params,
-						Tsrcache *tsrcache,
+						QueryEnvironment *queryEnv,
 						DestReceiver *dest,
 						char *completionTag)
 {
@@ -667,7 +666,7 @@ standard_ProcessUtility(Node *parsetree,
 
 		case T_ExplainStmt:
 			ExplainQuery(pstate, (ExplainStmt *) parsetree, queryString, params,
-						 tsrcache, dest);
+						 queryEnv, dest);
 			break;
 
 		case T_AlterSystemStmt:
@@ -814,7 +813,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsGrantObjectType(stmt->objtype))
 					ProcessUtilitySlow(pstate, parsetree, queryString,
-									   context, params, tsrcache,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecuteGrantStmt((GrantStmt *) parsetree);
@@ -827,7 +826,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->removeType))
 					ProcessUtilitySlow(pstate, parsetree, queryString,
-									   context, params, tsrcache,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecDropStmt(stmt, isTopLevel);
@@ -840,7 +839,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->renameType))
 					ProcessUtilitySlow(pstate, parsetree, queryString,
-									   context, params, tsrcache,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecRenameStmt(stmt);
@@ -853,7 +852,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(pstate, parsetree, queryString,
-									   context, params, tsrcache,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecAlterObjectDependsStmt(stmt, NULL);
@@ -866,7 +865,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(pstate, parsetree, queryString,
-									   context, params, tsrcache,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecAlterObjectSchemaStmt(stmt, NULL);
@@ -879,7 +878,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(pstate, parsetree, queryString,
-									   context, params, tsrcache,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecAlterOwnerStmt(stmt);
@@ -892,7 +891,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objtype))
 					ProcessUtilitySlow(pstate, parsetree, queryString,
-									   context, params, tsrcache,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					CommentObject((CommentStmt *) parsetree);
@@ -905,7 +904,7 @@ standard_ProcessUtility(Node *parsetree,
 
 				if (EventTriggerSupportsObjectType(stmt->objtype))
 					ProcessUtilitySlow(pstate, parsetree, queryString,
-									   context, params, tsrcache,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecSecLabelStmt(stmt);
@@ -915,7 +914,7 @@ standard_ProcessUtility(Node *parsetree,
 		default:
 			/* All other statement types have event trigger support */
 			ProcessUtilitySlow(pstate, parsetree, queryString,
-							   context, params, tsrcache,
+							   context, params, queryEnv,
 							   dest, completionTag);
 			break;
 	}
@@ -934,7 +933,7 @@ ProcessUtilitySlow(ParseState *pstate,
 				   const char *queryString,
 				   ProcessUtilityContext context,
 				   ParamListInfo params,
-				   Tsrcache *tsrcache,
+				   QueryEnvironment *queryEnv,
 				   DestReceiver *dest,
 				   char *completionTag)
 {
@@ -1414,7 +1413,7 @@ ProcessUtilitySlow(ParseState *pstate,
 
 			case T_CreateTableAsStmt:
 				address = ExecCreateTableAs((CreateTableAsStmt *) parsetree,
-											queryString, params, tsrcache,
+											queryString, params, queryEnv,
 											completionTag);
 				break;
 

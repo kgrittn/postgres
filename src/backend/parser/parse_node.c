@@ -62,7 +62,7 @@ make_parsestate(ParseState *parentParseState)
 		pstate->p_coerce_param_hook = parentParseState->p_coerce_param_hook;
 		pstate->p_ref_hook_state = parentParseState->p_ref_hook_state;
 		/* named tuplestores stay in context for the whole parse analysis */
-		pstate->p_tsrcache = parentParseState->p_tsrcache;
+		pstate->p_queryEnv = parentParseState->p_queryEnv;
 	}
 
 	return pstate;

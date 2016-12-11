@@ -122,7 +122,7 @@ SPI_connect(void)
 	_SPI_current->procCxt = NULL;		/* in case we fail to create 'em */
 	_SPI_current->execCxt = NULL;
 	_SPI_current->connectSubid = GetCurrentSubTransactionId();
-	_SPI_current->tuplestores = NULL;
+	_SPI_current->queryEnv = NULL;
 
 	/*
 	 * Create memory contexts for this procedure
@@ -1789,7 +1789,7 @@ _SPI_prepare_plan(const char *src, SPIPlanPtr plan)
 													  src,
 													  plan->parserSetup,
 													  plan->parserSetupArg,
-													  _SPI_current->tuplestores);
+													  _SPI_current->queryEnv);
 		}
 		else
 		{
@@ -1797,7 +1797,7 @@ _SPI_prepare_plan(const char *src, SPIPlanPtr plan)
 											   src,
 											   plan->argtypes,
 											   plan->nargs,
-											   _SPI_current->tuplestores);
+											   _SPI_current->queryEnv);
 		}
 
 		/* Finish filling in the CachedPlanSource */
@@ -1987,7 +1987,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 														  src,
 														  plan->parserSetup,
 													   plan->parserSetupArg,
-													  _SPI_current->tuplestores);
+													  _SPI_current->queryEnv);
 			}
 			else
 			{
@@ -1995,7 +1995,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 												   src,
 												   plan->argtypes,
 												   plan->nargs,
-												   _SPI_current->tuplestores);
+												   _SPI_current->queryEnv);
 			}
 
 			/* Finish filling in the CachedPlanSource */
@@ -2102,7 +2102,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 										plansource->query_string,
 										snap, crosscheck_snapshot,
 										dest,
-										paramLI, _SPI_current->tuplestores,
+										paramLI, _SPI_current->queryEnv,
 										0);
 				res = _SPI_pquery(qdesc, fire_triggers,
 								  canSetTag ? tcount : 0);
@@ -2116,7 +2116,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 							   plansource->query_string,
 							   PROCESS_UTILITY_QUERY,
 							   paramLI,
-							   _SPI_current->tuplestores,
+							   _SPI_current->queryEnv,
 							   dest,
 							   completionTag);
 
@@ -2654,10 +2654,10 @@ _SPI_find_tsr_by_name(const char *name)
 	Assert(name != NULL);
 
 	/* fast exit if no tuplestores have been added */
-	if (_SPI_current->tuplestores == NULL)
+	if (_SPI_current->queryEnv == NULL)
 		return NULL;
 
-	return get_tsr(_SPI_current->tuplestores, name);
+	return get_tsr(_SPI_current->queryEnv, name);
 }
 
 /*
@@ -2682,10 +2682,10 @@ SPI_register_tuplestore(Tsr tsr)
 		res = SPI_ERROR_TSR_DUPLICATE;
 	else
 	{
-		if (_SPI_current->tuplestores == NULL)
-			_SPI_current->tuplestores = create_tsrcache();
+		if (_SPI_current->queryEnv == NULL)
+			_SPI_current->queryEnv = create_queryEnv();
 
-		register_tsr(_SPI_current->tuplestores, tsr);
+		register_tsr(_SPI_current->queryEnv, tsr);
 		res = SPI_OK_TSR_REGISTER;
 	}
 
@@ -2714,7 +2714,7 @@ SPI_unregister_tuplestore(const char *name)
 	match = _SPI_find_tsr_by_name(name);
 	if (match)
 	{
-		unregister_tsr(_SPI_current->tuplestores, match->md.name);
+		unregister_tsr(_SPI_current->queryEnv, match->md.name);
 		res = SPI_OK_TSR_UNREGISTER;
 	}
 	else

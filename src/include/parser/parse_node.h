@@ -15,8 +15,8 @@
 #define PARSE_NODE_H
 
 #include "nodes/parsenodes.h"
+#include "utils/queryenvironment.h"
 #include "utils/relcache.h"
-#include "utils/tsrcache.h"
 
 
 /*
@@ -159,7 +159,7 @@ struct ParseState
 	bool		p_locked_from_parent;
 	Relation	p_target_relation;
 	RangeTblEntry *p_target_rangetblentry;
-	Tsrcache   *p_tsrcache;	/* visible named tuplestore relations */
+	QueryEnvironment *p_queryEnv; /* curr env, incl refs to enclosing env */
 
 	/*
 	 * Optional hook functions for parser callbacks.  These are null unless

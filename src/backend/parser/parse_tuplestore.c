@@ -23,12 +23,12 @@
 bool
 name_matches_visible_tuplestore(ParseState *pstate, const char *refname)
 {
-	return (get_visible_tuplestore_metadata(pstate->p_tsrcache,
+	return (get_visible_tuplestore_metadata(pstate->p_queryEnv,
 											refname) != NULL);
 }
 
 Tsrmd
 get_visible_tuplestore(ParseState *pstate, const char *refname)
 {
-	return get_visible_tuplestore_metadata(pstate->p_tsrcache, refname);
+	return get_visible_tuplestore_metadata(pstate->p_queryEnv, refname);
 }

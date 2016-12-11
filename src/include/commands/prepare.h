@@ -42,7 +42,7 @@ extern void ExecuteQuery(ExecuteStmt *stmt, IntoClause *intoClause,
 extern void DeallocateQuery(DeallocateStmt *stmt);
 extern void ExplainExecuteQuery(ExecuteStmt *execstmt, IntoClause *into,
 					ExplainState *es, const char *queryString,
-					ParamListInfo params, Tsrcache *tsrcache);
+					ParamListInfo params, QueryEnvironment *queryEnv);
 
 /* Low-level access to stored prepared statements */
 extern void StorePreparedStatement(const char *stmt_name,

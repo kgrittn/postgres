@@ -22,7 +22,7 @@
 #include "commands/event_trigger.h"
 #include "commands/trigger.h"
 #include "executor/spi.h"
-#include "utils/tsrcache.h"
+#include "utils/queryenvironment.h"
 
 /**********************************************************************
  * Definitions
@@ -913,8 +913,8 @@ typedef struct PLpgSQL_execstate
 	ParamListInfo paramLI;
 	bool		params_dirty;	/* T if any resettable datum has been passed */
 
-	/* the named tuplestores to use */
-	Tsrcache	*tsrcache;
+	/* custom environment for parsing/execution of query for this context */
+	QueryEnvironment *queryEnv;
 
 	/* EState to use for "simple" expression evaluation */
 	EState	   *simple_eval_estate;

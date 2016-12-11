@@ -18,7 +18,7 @@
 #include "executor/execdebug.h"
 #include "executor/nodeTuplestorescan.h"
 #include "miscadmin.h"
-#include "utils/tsrcache.h"
+#include "utils/queryenvironment.h"
 
 static TupleTableSlot *TuplestoreScanNext(TuplestoreScanState *node);
 
@@ -98,7 +98,7 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 	scanstate->ss.ps.plan = (Plan *) node;
 	scanstate->ss.ps.state = estate;
 
-	tsr = get_tsr(estate->es_tsrcache, node->tsrname);
+	tsr = get_tsr(estate->es_queryEnv, node->tsrname);
 	if (!tsr)
 		elog(ERROR, "executor could not find named tuplestore \"%s\"",
 			 node->tsrname);

@@ -191,7 +191,7 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	/*
 	 * Fill in the named tuplestores, if any, from queryDesc.
 	 */
-	estate->es_tsrcache = queryDesc->tsrcache;
+	estate->es_queryEnv = queryDesc->queryEnv;
 
 	/*
 	 * If non-read-only query, set the command ID to mark output tuples with

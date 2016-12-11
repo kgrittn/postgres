@@ -1,7 +1,9 @@
 /*-------------------------------------------------------------------------
  *
- * tsrcache.c
- *	  Tuplestore descriptor cache definitions.
+ * queryenvironment.c
+ *	  Query environment, to store context-specific values like ephemeral named
+ *	  relations.  Initial use is for named tuplestores for delta information
+ *	  from "normal" relations.
  *
  * The initial implementation uses a list because the number of such relations
  * in any one context is expected to be very small.  If that becomes a
@@ -14,41 +16,41 @@
  *
  *
  * IDENTIFICATION
- *	  src/backend/backend/utils/cache/tsrcache.c
+ *	  src/backend/backend/utils/misc/queryenvironment.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
 #include "lib/ilist.h"
-#include "utils/tsrcache.h"
+#include "utils/queryenvironment.h"
 
 /*
- * Private state of a tsr cache.
+ * Private state of a query environment.
  */
-struct Tsrcache
+struct QueryEnvironment
 {
-	List	   *tsrlist;
+	List	   *namedRelList;
 };
 
 
-Tsrcache *
-create_tsrcache()
+QueryEnvironment *
+create_queryEnv()
 {
-	return (Tsrcache *) palloc0(sizeof(Tsrcache));
+	return (QueryEnvironment *) palloc0(sizeof(QueryEnvironment));
 }
 
 Tsrmd
-get_visible_tuplestore_metadata(Tsrcache *tsrcache, const char *refname)
+get_visible_tuplestore_metadata(QueryEnvironment *queryEnv, const char *refname)
 {
-	Tsr		tsr;
+	Tsr     tsr;
 
 	Assert(refname != NULL);
 
-	if (tsrcache == NULL)
+	if (queryEnv == NULL)
 		return NULL;
 
-	tsr = get_tsr(tsrcache, refname);
+	tsr = get_tsr(queryEnv, refname);
 
 	if (tsr)
 		return &(tsr->md);
@@ -57,18 +59,18 @@ get_visible_tuplestore_metadata(Tsrcache *tsrcache, const char *refname)
 }
 
 /*
- * Register a named tuplestore in the given cache.
+ * Register a named relation for use in the given environment.
  *
  * If this is intended exclusively for planning purposes, the tstate field can
  * be left NULL;
  */
 void
-register_tsr(Tsrcache *tsrcache, Tsr tsr)
+register_tsr(QueryEnvironment *queryEnv, Tsr tsr)
 {
 	Assert(tsr != NULL);
-	Assert(get_tsr(tsrcache, tsr->md.name) == NULL);
+	Assert(get_tsr(queryEnv, tsr->md.name) == NULL);
 
-	tsrcache->tsrlist = lappend(tsrcache->tsrlist, tsr);
+	queryEnv->namedRelList = lappend(queryEnv->namedRelList, tsr);
 }
 
 /*
@@ -76,30 +78,30 @@ register_tsr(Tsrcache *tsrcache, Tsr tsr)
  * function, but seems like it should be provided "just in case".
  */
 void
-unregister_tsr(Tsrcache *tsrcache, const char *name)
+unregister_tsr(QueryEnvironment *queryEnv, const char *name)
 {
 	Tsr			match;
 
-	match = get_tsr(tsrcache, name);
+	match = get_tsr(queryEnv, name);
 	if (match)
-		tsrcache->tsrlist = list_delete(tsrcache->tsrlist, match);
+		queryEnv->namedRelList = list_delete(queryEnv->namedRelList, match);
 }
 
 /*
- * This returns a Tsr if there is a name match in the given cache.  It must
- * quietly return NULL if no match is found.
+ * This returns a Tsr if there is a name match in the given collection.  It
+ * must quietly return NULL if no match is found.
  */
 Tsr
-get_tsr(Tsrcache *tsrcache, const char *name)
+get_tsr(QueryEnvironment *queryEnv, const char *name)
 {
 	ListCell   *lc;
 
 	Assert(name != NULL);
 
-	if (tsrcache == NULL)
+	if (queryEnv == NULL)
 		return NULL;
 
-	foreach(lc, tsrcache->tsrlist)
+	foreach(lc, queryEnv->namedRelList)
 	{
 		Tsr tsr = (Tsr) lfirst(lc);
 
