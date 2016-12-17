@@ -2641,22 +2641,22 @@ SPIPlanPtr SPI_saveplan(SPIPlanPtr <parameter>plan</parameter>)
 
 <!-- *********************************************** -->
 
-<refentry id="spi-spi-register-tuplestore">
- <indexterm><primary>SPI_register_tuplestore</primary></indexterm>
+<refentry id="spi-spi-register-relation">
+ <indexterm><primary>SPI_register_relation</primary></indexterm>
 
  <refmeta>
-  <refentrytitle>SPI_register_tuplestore</refentrytitle>
+  <refentrytitle>SPI_register_relation</refentrytitle>
   <manvolnum>3</manvolnum>
  </refmeta>
 
  <refnamediv>
-  <refname>SPI_register_tuplestore</refname>
-  <refpurpose>make a tuplestore available by name in SPI queries</refpurpose>
+  <refname>SPI_register_relation</refname>
+  <refpurpose>make a ephemeral named relation available by name in SPI queries</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
 <synopsis>
-int SPI_register_tuplestore(Tsr <parameter>tsr</parameter>)
+int SPI_register_relation(Enr <parameter>enr</parameter>)
 </synopsis>
  </refsynopsisdiv>
 
@@ -2664,9 +2664,9 @@ int SPI_register_tuplestore(Tsr <parameter>tsr</parameter>)
   <title>Description</title>
 
   <para>
-   <function>SPI_register_tuplestore</function> makes a tuplestore, with
-   associated information, available to queries planned and executed through
-   the current SPI connection.
+   <function>SPI_register_relation</function> makes an ephemeral named
+   relation, with associated information, available to queries planned and
+   executed through the current SPI connection.
   </para>
  </refsect1>
 
@@ -2675,10 +2675,10 @@ int SPI_register_tuplestore(Tsr <parameter>tsr</parameter>)
 
   <variablelist>
    <varlistentry>
-    <term><literal>Tsr <parameter>tsr</parameter></literal></term>
+    <term><literal>Enr <parameter>enr</parameter></literal></term>
     <listitem>
      <para>
-      the tuplestore registry entry
+      the ephemeral named relation registry entry
      </para>
     </listitem>
    </varlistentry>
@@ -2694,10 +2694,10 @@ int SPI_register_tuplestore(Tsr <parameter>tsr</parameter>)
 
    <variablelist>
     <varlistentry>
-     <term><symbol>SPI_OK_TSR_REGISTER</symbol></term>
+     <term><symbol>SPI_OK_REL_REGISTER</symbol></term>
      <listitem>
       <para>
-       if the tuplestore has been successfully registered by name
+       if the relation has been successfully registered by name
       </para>
      </listitem>
     </varlistentry>
@@ -2712,7 +2712,7 @@ int SPI_register_tuplestore(Tsr <parameter>tsr</parameter>)
      <term><symbol>SPI_ERROR_ARGUMENT</symbol></term>
      <listitem>
       <para>
-       if <parameter>tsr</parameter> is <symbol>NULL</symbol> or its
+       if <parameter>enr</parameter> is <symbol>NULL</symbol> or its
        <varname>name</varname> field is <symbol>NULL</symbol>
       </para>
      </listitem>
@@ -2728,11 +2728,11 @@ int SPI_register_tuplestore(Tsr <parameter>tsr</parameter>)
     </varlistentry>
 
     <varlistentry>
-     <term><symbol>SPI_ERROR_TSR_DUPLICATE</symbol></term>
+     <term><symbol>SPI_ERROR_REL_DUPLICATE</symbol></term>
      <listitem>
       <para>
        if the name specified in the <varname>name</varname> field of
-       <parameter>tsr</parameter> is already registered for this connection
+       <parameter>enr</parameter> is already registered for this connection
       </para>
      </listitem>
     </varlistentry>
@@ -2743,22 +2743,22 @@ int SPI_register_tuplestore(Tsr <parameter>tsr</parameter>)
 
 <!-- *********************************************** -->
 
-<refentry id="spi-spi-unregister-tuplestore">
- <indexterm><primary>SPI_unregister_tuplestore</primary></indexterm>
+<refentry id="spi-spi-unregister-relation">
+ <indexterm><primary>SPI_unregister_relation</primary></indexterm>
 
  <refmeta>
-  <refentrytitle>SPI_unregister_tuplestore</refentrytitle>
+  <refentrytitle>SPI_unregister_relation</refentrytitle>
   <manvolnum>3</manvolnum>
  </refmeta>
 
  <refnamediv>
-  <refname>SPI_unregister_tuplestore</refname>
-  <refpurpose>remove a tuplestore from the registry</refpurpose>
+  <refname>SPI_unregister_relation</refname>
+  <refpurpose>remove an ephemeral named relation from the registry</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
 <synopsis>
-int SPI_unregister_tuplestore(const char * <parameter>name</parameter>)
+int SPI_unregister_relation(const char * <parameter>name</parameter>)
 </synopsis>
  </refsynopsisdiv>
 
@@ -2766,8 +2766,8 @@ int SPI_unregister_tuplestore(const char * <parameter>name</parameter>)
   <title>Description</title>
 
   <para>
-   <function>SPI_unregister_tuplestore</function> removes a tuplestore from
-   the registry for the current connection.
+   <function>SPI_unregister_relation</function> removes an ephemeral named
+   relation from the registry for the current connection.
   </para>
  </refsect1>
 
@@ -2779,7 +2779,7 @@ int SPI_unregister_tuplestore(const char * <parameter>name</parameter>)
     <term><literal>const char * <parameter>name</parameter></literal></term>
     <listitem>
      <para>
-      the tuplestore registry entry name
+      the relation registry entry name
      </para>
     </listitem>
    </varlistentry>
@@ -2795,7 +2795,7 @@ int SPI_unregister_tuplestore(const char * <parameter>name</parameter>)
 
    <variablelist>
     <varlistentry>
-     <term><symbol>SPI_OK_TSR_UNREGISTER</symbol></term>
+     <term><symbol>SPI_OK_REL_UNREGISTER</symbol></term>
      <listitem>
       <para>
        if the tuplestore has been successfully removed from the registry
@@ -2828,7 +2828,7 @@ int SPI_unregister_tuplestore(const char * <parameter>name</parameter>)
     </varlistentry>
 
     <varlistentry>
-     <term><symbol>SPI_ERROR_TSR_NOT_FOUND</symbol></term>
+     <term><symbol>SPI_ERROR_REL_NOT_FOUND</symbol></term>
      <listitem>
       <para>
        if <parameter>name</parameter> is not found in the registry for the
@@ -2843,22 +2843,22 @@ int SPI_unregister_tuplestore(const char * <parameter>name</parameter>)
 
 <!-- *********************************************** -->
 
-<refentry id="spi-spi-get-caller-tuplestore">
- <indexterm><primary>SPI_get_caller_tuplestore</primary></indexterm>
+<refentry id="spi-spi-get-caller-relation">
+ <indexterm><primary>SPI_get_caller_relation</primary></indexterm>
 
  <refmeta>
-  <refentrytitle>SPI_get_caller_tuplestore</refentrytitle>
+  <refentrytitle>SPI_get_caller_relation</refentrytitle>
   <manvolnum>3</manvolnum>
  </refmeta>
 
  <refnamediv>
-  <refname>SPI_get_caller_tuplestore</refname>
-  <refpurpose>return a tuplestore from the registry</refpurpose>
+  <refname>SPI_get_caller_relation</refname>
+  <refpurpose>return a relation from the registry</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
 <synopsis>
-int SPI_get_caller_tuplestore(const char * <parameter>name</parameter>)
+int SPI_get_caller_relation(const char * <parameter>name</parameter>)
 </synopsis>
  </refsynopsisdiv>
 
@@ -2866,7 +2866,7 @@ int SPI_get_caller_tuplestore(const char * <parameter>name</parameter>)
   <title>Description</title>
 
   <para>
-   <function>SPI_get_caller_tuplestore</function> returns a tuplestore from
+   <function>SPI_get_caller_relation</function> returns a relation from
    the registry for the current connection.
   </para>
  </refsect1>
@@ -2879,7 +2879,7 @@ int SPI_get_caller_tuplestore(const char * <parameter>name</parameter>)
     <term><literal>const char * <parameter>name</parameter></literal></term>
     <listitem>
      <para>
-      the tuplestore registry entry name
+      the relation registry entry name
      </para>
     </listitem>
    </varlistentry>
@@ -2890,7 +2890,7 @@ int SPI_get_caller_tuplestore(const char * <parameter>name</parameter>)
   <title>Return Value</title>
 
   <para>
-   Pointer to the tuplestore registry entry; or <symbol>NULL</symbol> if
+   Pointer to the relation registry entry; or <symbol>NULL</symbol> if
    unsuccessful.  On error, <varname>SPI_result</varname> is set thus:
 
    <variablelist>
