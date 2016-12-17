@@ -5667,8 +5667,8 @@ CONTEXT:  PL/pgSQL function inline_code_block line 4 at assignment
 --
 -- test usage of transition tables in AFTER triggers
 --
-CREATE TABLE v (id int PRIMARY KEY, val text);
-CREATE OR REPLACE FUNCTION v_ins_func()
+CREATE TABLE tran_base (id int PRIMARY KEY, val text);
+CREATE OR REPLACE FUNCTION tran_base_ins_func()
   RETURNS trigger
   LANGUAGE plpgsql
 AS $$
@@ -5689,26 +5689,26 @@ BEGIN
   RETURN new;
 END;
 $$;
-CREATE TRIGGER v_ins_trig
-  AFTER INSERT ON v
+CREATE TRIGGER tran_base_ins_trig
+  AFTER INSERT ON tran_base
   REFERENCING OLD TABLE AS oldtable NEW TABLE AS newtable
   FOR EACH STATEMENT
-  EXECUTE PROCEDURE v_ins_func();
+  EXECUTE PROCEDURE tran_base_ins_func();
 ERROR:  OLD TABLE can only be specified for a DELETE or UPDATE trigger
-CREATE TRIGGER v_ins_trig
-  AFTER INSERT ON v
+CREATE TRIGGER tran_base_ins_trig
+  AFTER INSERT ON tran_base
   REFERENCING NEW TABLE AS newtable
   FOR EACH STATEMENT
-  EXECUTE PROCEDURE v_ins_func();
-INSERT INTO v VALUES (1, 'One'), (2, 'Two');
+  EXECUTE PROCEDURE tran_base_ins_func();
+INSERT INTO tran_base VALUES (1, 'One'), (2, 'Two');
 INFO:  Named Tuplestore Scan
   Output: id, val
 
-INSERT INTO v VALUES (3, 'Three'), (4, 'Four');
+INSERT INTO tran_base VALUES (3, 'Three'), (4, 'Four');
 INFO:  Named Tuplestore Scan
   Output: id, val
 
-CREATE OR REPLACE FUNCTION v_upd_func()
+CREATE OR REPLACE FUNCTION tran_base_upd_func()
   RETURNS trigger
   LANGUAGE plpgsql
 AS $$
@@ -5729,12 +5729,12 @@ BEGIN
   RETURN new;
 END;
 $$;
-CREATE TRIGGER v_upd_trig
-  AFTER UPDATE ON v
+CREATE TRIGGER tran_base_upd_trig
+  AFTER UPDATE ON tran_base
   REFERENCING OLD TABLE AS oldtable NEW TABLE AS newtable
   FOR EACH STATEMENT
-  EXECUTE PROCEDURE v_upd_func();
-UPDATE v SET val = '*' || val || '*' WHERE id BETWEEN 2 AND 3;
+  EXECUTE PROCEDURE tran_base_upd_func();
+UPDATE tran_base SET val = '*' || val || '*' WHERE id BETWEEN 2 AND 3;
 INFO:  Merge Full Join
   Output: COALESCE(ot.id, nt.id), ot.val, nt.val
   Merge Cond: (ot.id = nt.id)
@@ -5748,4 +5748,105 @@ INFO:  Merge Full Join
         Sort Key: nt.id
         ->  Named Tuplestore Scan
               Output: nt.id, nt.val
+
+CREATE TABLE level1_table
+(
+      level1_no serial NOT NULL ,
+      level1_node_name varchar(255),
+       PRIMARY KEY (level1_no)
+) WITHOUT OIDS;
+CREATE TABLE level2_table
+(
+      level2_no serial NOT NULL ,
+      parent_no int NOT NULL,
+      level1_node_name varchar(255),
+       PRIMARY KEY (level2_no)
+) WITHOUT OIDS;
+CREATE TABLE all_level_status
+(
+      level int NOT NULL,
+      node_no int NOT NULL,
+      status int,
+       PRIMARY KEY (level, node_no)
+) WITHOUT OIDS;
+CREATE FUNCTION level1_table_ri_parent_del_func()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+AS $$
+  DECLARE n bigint;
+  BEGIN
+    PERFORM FROM p JOIN level2_table c ON c.parent_no = p.level1_no;
+    IF FOUND THEN
+      RAISE EXCEPTION 'RI error';
+    END IF;
+    RETURN NULL;
+  END;
+$$;
+CREATE TRIGGER level1_table_ri_parent_del_trigger
+  AFTER DELETE ON level1_table
+  REFERENCING OLD TABLE AS p
+  FOR EACH STATEMENT EXECUTE PROCEDURE level1_table_ri_parent_del_func();
+CREATE FUNCTION level1_table_ri_parent_upd_func()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+AS $$
+  DECLARE
+    x int;
+  BEGIN
+    WITH p AS (SELECT level1_no, sum(delta) cnt
+                 FROM (SELECT level1_no, 1 AS delta FROM i
+                       UNION ALL
+                       SELECT level1_no, -1 AS delta FROM d) w
+                 GROUP BY level1_no
+                 HAVING sum(delta) < 0)
+    SELECT level1_no FROM p JOIN level2_table c ON c.parent_no = p.level1_no
+      INTO x;
+    IF FOUND THEN
+      RAISE EXCEPTION 'RI error';
+    END IF;
+    RETURN NULL;
+  END;
+$$;
+CREATE TRIGGER level1_table_ri_parent_upd_trigger
+  AFTER UPDATE ON level1_table
+  REFERENCING OLD TABLE AS d NEW TABLE AS i
+  FOR EACH STATEMENT EXECUTE PROCEDURE level1_table_ri_parent_upd_func();
+CREATE FUNCTION level2_table_ri_child_insupd_func()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+AS $$
+  BEGIN
+    PERFORM FROM c
+      LEFT JOIN level1_table p
+        ON p.level1_no IS NOT NULL AND p.level1_no = c.parent_no
+      WHERE p.level1_no IS NULL;
+    IF FOUND THEN
+      RAISE EXCEPTION 'RI error';
+    END IF;
+    RETURN NULL;
+  END;
+$$;
+CREATE TRIGGER level2_table_ri_child_insupd_trigger
+  AFTER INSERT OR UPDATE ON level2_table
+  REFERENCING NEW TABLE AS c
+  FOR EACH STATEMENT EXECUTE PROCEDURE level2_table_ri_child_insupd_func();
+--create test data
+INSERT INTO level1_table(level1_no)
+  SELECT generate_series(1,200);
+INSERT INTO level2_table(level2_no, parent_no)
+  SELECT level2_no, level2_no / 50 + 1 AS parent_no
+    FROM generate_series(1,9999) level2_no;
+INSERT INTO all_level_status(level, node_no, status)
+  SELECT 1, level1_no, 0 FROM level1_table;
+INSERT INTO all_level_status(level, node_no, status)
+  SELECT 2, level2_no, 0 FROM level2_table;
+INSERT INTO level1_table(level1_no)
+  SELECT generate_series(201,1000);
+DELETE FROM level1_table WHERE level1_no BETWEEN 201 AND 1000;
+DELETE FROM level1_table WHERE level1_no BETWEEN 100000000 AND 100000010;
+SELECT count(*) FROM level1_table;
+ count 
+-------
+   200
+(1 row)
 
