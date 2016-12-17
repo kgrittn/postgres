@@ -1814,7 +1814,7 @@ create_tuplestorescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_o
 {
 	Path	   *pathnode = makeNode(Path);
 
-	pathnode->pathtype = T_TuplestoreScan;
+	pathnode->pathtype = T_NamedTuplestoreScan;
 	pathnode->parent = rel;
 	pathnode->pathtarget = rel->reltarget;
 	pathnode->param_info = get_baserel_parampathinfo(root, rel,

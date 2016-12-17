@@ -5699,11 +5699,11 @@ CREATE TRIGGER v_ins_trig
   FOR EACH STATEMENT
   EXECUTE PROCEDURE v_ins_func();
 INSERT INTO v VALUES (1, 'One'), (2, 'Two');
-INFO:  Tuplestore Scan
+INFO:  Named Tuplestore Scan
   Output: id, val
 
 INSERT INTO v VALUES (3, 'Three'), (4, 'Four');
-INFO:  Tuplestore Scan
+INFO:  Named Tuplestore Scan
   Output: id, val
 
 CREATE OR REPLACE FUNCTION v_upd_func()
@@ -5739,11 +5739,11 @@ INFO:  Merge Full Join
   ->  Sort
         Output: ot.id, ot.val
         Sort Key: ot.id
-        ->  Tuplestore Scan
+        ->  Named Tuplestore Scan
               Output: ot.id, ot.val
   ->  Sort
         Output: nt.id, nt.val
         Sort Key: nt.id
-        ->  Tuplestore Scan
+        ->  Named Tuplestore Scan
               Output: nt.id, nt.val
 

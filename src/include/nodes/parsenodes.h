@@ -865,7 +865,7 @@ typedef enum RTEKind
 	RTE_FUNCTION,				/* function in FROM */
 	RTE_VALUES,					/* VALUES (<exprlist>), (<exprlist>), ... */
 	RTE_CTE,					/* common table expr (WITH list element) */
-	RTE_TUPLESTORE				/* tuplestore, e.g. for AFTER triggers */
+	RTE_NAMEDTUPLESTORE			/* tuplestore, e.g. for AFTER triggers */
 } RTEKind;
 
 typedef struct RangeTblEntry
@@ -947,13 +947,7 @@ typedef struct RangeTblEntry
 	List	   *coltypmods;		/* integer list of column typmods */
 	List	   *colcollations;	/* OID list of column collation OIDs */
 
-	/*
-	 * Needed for tuplestore RTE...
-	 *
-	 * ... include the cte* List fields from CTE and relid.  We could
-	 * duplicate them here with slightly different names, but why?
-	 */
-	char	   *tsrname;		/* name of tuplestore in registry */
+	char	   *enrname;		/* name of ephemeral named relation */
 
 	/*
 	 * Fields valid in all RTEs:

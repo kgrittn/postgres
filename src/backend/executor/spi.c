@@ -1533,10 +1533,10 @@ SPI_result_code_string(int code)
 			return "SPI_ERROR_NOOUTFUNC";
 		case SPI_ERROR_TYPUNKNOWN:
 			return "SPI_ERROR_TYPUNKNOWN";
-		case SPI_ERROR_TSR_DUPLICATE:
-			return "SPI_ERROR_TSR_DUPLICATE";
-		case SPI_ERROR_TSR_NOT_FOUND:
-			return "SPI_ERROR_TSR_NOT_FOUND";
+		case SPI_ERROR_REL_DUPLICATE:
+			return "SPI_ERROR_REL_DUPLICATE";
+		case SPI_ERROR_REL_NOT_FOUND:
+			return "SPI_ERROR_REL_NOT_FOUND";
 		case SPI_OK_CONNECT:
 			return "SPI_OK_CONNECT";
 		case SPI_OK_FINISH:
@@ -1565,10 +1565,10 @@ SPI_result_code_string(int code)
 			return "SPI_OK_UPDATE_RETURNING";
 		case SPI_OK_REWRITTEN:
 			return "SPI_OK_REWRITTEN";
-		case SPI_OK_TSR_REGISTER:
-			return "SPI_OK_TSR_REGISTER";
-		case SPI_OK_TSR_UNREGISTER:
-			return "SPI_OK_TSR_UNREGISTER";
+		case SPI_OK_REL_REGISTER:
+			return "SPI_OK_REL_REGISTER";
+		case SPI_OK_REL_UNREGISTER:
+			return "SPI_OK_REL_UNREGISTER";
 	}
 	/* Unrecognized code ... return something useful ... */
 	sprintf(buf, "Unrecognized SPI code %d", code);
@@ -2645,10 +2645,10 @@ _SPI_save_plan(SPIPlanPtr plan)
 }
 
 /*
- * Internal lookup of Tsr by name.
+ * Internal lookup of Enr by name.
  */
-static Tsr
-_SPI_find_tsr_by_name(const char *name)
+static Enr
+_SPI_find_enr_by_name(const char *name)
 {
 	/* internal static function; any error is bug in SPI itself */
 	Assert(name != NULL);
@@ -2657,36 +2657,36 @@ _SPI_find_tsr_by_name(const char *name)
 	if (_SPI_current->queryEnv == NULL)
 		return NULL;
 
-	return get_tsr(_SPI_current->queryEnv, name);
+	return get_enr(_SPI_current->queryEnv, name);
 }
 
 /*
- * Register a named tuplestore for use by the planner and executor on
+ * Register an ephemeral named relation for use by the planner and executor on
  * subsequent calls using this SPI connection.
  */
 int
-SPI_register_tuplestore(Tsr tsr)
+SPI_register_relation(Enr enr)
 {
-	Tsr			match;
+	Enr			match;
 	int			res;
 
-	if (tsr == NULL || tsr->md.name == NULL)
+	if (enr == NULL || enr->md.name == NULL)
 		return SPI_ERROR_ARGUMENT;
 
 	res = _SPI_begin_call(false);	/* keep current memory context */
 	if (res < 0)
 		return res;
 
-	match = _SPI_find_tsr_by_name(tsr->md.name);
+	match = _SPI_find_enr_by_name(enr->md.name);
 	if (match)
-		res = SPI_ERROR_TSR_DUPLICATE;
+		res = SPI_ERROR_REL_DUPLICATE;
 	else
 	{
 		if (_SPI_current->queryEnv == NULL)
 			_SPI_current->queryEnv = create_queryEnv();
 
-		register_tsr(_SPI_current->queryEnv, tsr);
-		res = SPI_OK_TSR_REGISTER;
+		register_enr(_SPI_current->queryEnv, enr);
+		res = SPI_OK_REL_REGISTER;
 	}
 
 	_SPI_end_call(false);
@@ -2695,13 +2695,13 @@ SPI_register_tuplestore(Tsr tsr)
 }
 
 /*
- * Unregister a named tuplestore by name.  This will probably be a rarely used
- * function, since SPI_finish will clear it automatically.
+ * Unregister an ephemeral named relation by name.  This will probably be a
+ * rarely used function, since SPI_finish will clear it automatically.
  */
 int
-SPI_unregister_tuplestore(const char *name)
+SPI_unregister_relation(const char *name)
 {
-	Tsr			match;
+	Enr			match;
 	int			res;
 
 	if (name == NULL)
@@ -2711,14 +2711,14 @@ SPI_unregister_tuplestore(const char *name)
 	if (res < 0)
 		return res;
 
-	match = _SPI_find_tsr_by_name(name);
+	match = _SPI_find_enr_by_name(name);
 	if (match)
 	{
-		unregister_tsr(_SPI_current->queryEnv, match->md.name);
-		res = SPI_OK_TSR_UNREGISTER;
+		unregister_enr(_SPI_current->queryEnv, match->md.name);
+		res = SPI_OK_REL_UNREGISTER;
 	}
 	else
-		res = SPI_ERROR_TSR_NOT_FOUND;
+		res = SPI_ERROR_REL_NOT_FOUND;
 
 	_SPI_end_call(false);
 
@@ -2726,15 +2726,15 @@ SPI_unregister_tuplestore(const char *name)
 }
 
 /*
- * This returns a Tsr if there is a name match at the caller level.  It must
+ * This returns an Enr if there is a name match at the caller level.  It must
  * quietly return NULL if there is no SPI caller or if no match is found.
  *
- * Normally a tuplestore is expected to be used on a specific depth of SPI
- * connection, but we tolerate a call if the next level has been opened in
- * case someone wants to pass through the Tsr.
+ * Normally an ephemeral named relation is expected to be used on a specific
+ * depth of SPI connection, but we tolerate a call if the next level has been
+ * opened, in case someone wants to pass an Enr through to the next level.
  */
-Tsr
-SPI_get_caller_tuplestore(const char *name)
+Enr
+SPI_get_caller_relation(const char *name)
 {
 	if (name == NULL)
 	{
@@ -2748,5 +2748,5 @@ SPI_get_caller_tuplestore(const char *name)
 		return NULL;
 	}
 
-	return _SPI_find_tsr_by_name(name);
+	return _SPI_find_enr_by_name(name);
 }

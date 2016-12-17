@@ -579,9 +579,9 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
 			}
 			break;
-		case T_TuplestoreScan:
+		case T_NamedTuplestoreScan:
 			{
-				TuplestoreScan *splan = (TuplestoreScan *) plan;
+				NamedTuplestoreScan *splan = (NamedTuplestoreScan *) plan;
 
 				splan->scan.scanrelid += rtoffset;
 				splan->scan.plan.targetlist =

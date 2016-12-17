@@ -287,7 +287,7 @@ print_rt(const List *rtable)
 				printf("%d\t%s\t[cte]",
 					   i, rte->eref->aliasname);
 				break;
-			case RTE_TUPLESTORE:
+			case RTE_NAMEDTUPLESTORE:
 				printf("%d\t%s\t[tuplestore]",
 					   i, rte->eref->aliasname);
 				break;

@@ -61,6 +61,7 @@ static Node *transformJoinOnClause(ParseState *pstate, JoinExpr *j,
 static RangeTblEntry *transformTableEntry(ParseState *pstate, RangeVar *r);
 static RangeTblEntry *transformCTEReference(ParseState *pstate, RangeVar *r,
 					  CommonTableExpr *cte, Index levelsup);
+static RangeTblEntry *transformEnrReference(ParseState *pstate, RangeVar *r);
 static RangeTblEntry *transformRangeSubselect(ParseState *pstate,
 						RangeSubselect *r);
 static RangeTblEntry *transformRangeFunction(ParseState *pstate,
@@ -458,15 +459,15 @@ transformCTEReference(ParseState *pstate, RangeVar *r,
 }
 
 /*
- * transformTsrReference --- transform a RangeVar that references a tuplestore
- * relation
+ * transformEnrReference --- transform a RangeVar that references an ephemeral
+ * named relation
  */
 static RangeTblEntry *
-transformTsrReference(ParseState *pstate, RangeVar *r)
+transformEnrReference(ParseState *pstate, RangeVar *r)
 {
 	RangeTblEntry *rte;
 
-	rte = addRangeTableEntryForTsr(pstate, r, true);
+	rte = addRangeTableEntryForEnr(pstate, r, true);
 
 	return rte;
 }
@@ -882,8 +883,8 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 			cte = scanNameSpaceForCTE(pstate, rv->relname, &levelsup);
 			if (cte)
 				rte = transformCTEReference(pstate, rv, cte, levelsup);
-			else if (scanNameSpaceForTsr(pstate, rv->relname))
-				rte = transformTsrReference(pstate, rv);
+			else if (scanNameSpaceForEnr(pstate, rv->relname))
+				rte = transformEnrReference(pstate, rv);
 		}
 
 		/* if not found above, must be a table reference */

@@ -1397,7 +1397,7 @@ cost_tuplestorescan(Path *path, PlannerInfo *root,
 
 	/* Should only be applied to base relations that are Tuplestores */
 	Assert(baserel->relid > 0);
-	Assert(baserel->rtekind == RTE_TUPLESTORE);
+	Assert(baserel->rtekind == RTE_NAMEDTUPLESTORE);
 
 	/* Mark the path with the correct row estimate */
 	if (param_info)
@@ -4516,7 +4516,7 @@ set_tuplestore_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 	/* Should only be applied to base relations that are tuplestore references */
 	Assert(rel->relid > 0);
 	rte = planner_rt_fetch(rel->relid, root);
-	Assert(rte->rtekind == RTE_TUPLESTORE);
+	Assert(rte->rtekind == RTE_NAMEDTUPLESTORE);
 
 	/*
 	 * bogus default estimate for now; maybe we can arrange to get better from

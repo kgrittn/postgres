@@ -1,14 +1,14 @@
 /*-------------------------------------------------------------------------
  *
- * nodeTuplestorescan.c
- *	  routines to handle TuplestoreScan nodes.
+ * nodeNamedtuplestorescan.c
+ *	  routines to handle NamedTuplestoreScan nodes.
  *
  * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  src/backend/executor/nodeTuplestorescan.c
+ *	  src/backend/executor/nodeNamedtuplestorescan.c
  *
  *-------------------------------------------------------------------------
  */
@@ -16,20 +16,20 @@
 #include "postgres.h"
 
 #include "executor/execdebug.h"
-#include "executor/nodeTuplestorescan.h"
+#include "executor/nodeNamedtuplestorescan.h"
 #include "miscadmin.h"
 #include "utils/queryenvironment.h"
 
-static TupleTableSlot *TuplestoreScanNext(TuplestoreScanState *node);
+static TupleTableSlot *NamedTuplestoreScanNext(NamedTuplestoreScanState *node);
 
 /* ----------------------------------------------------------------
- *		TuplestoreScanNext
+ *		NamedTuplestoreScanNext
  *
- *		This is a workhorse for ExecTuplestoreScan
+ *		This is a workhorse for ExecNamedTuplestoreScan
  * ----------------------------------------------------------------
  */
 static TupleTableSlot *
-TuplestoreScanNext(TuplestoreScanState *node)
+NamedTuplestoreScanNext(NamedTuplestoreScanState *node)
 {
 	TupleTableSlot *slot;
 
@@ -40,23 +40,23 @@ TuplestoreScanNext(TuplestoreScanState *node)
 	 * Get the next tuple from tuplestore. Return NULL if no more tuples.
 	 */
 	slot = node->ss.ss_ScanTupleSlot;
-	(void) tuplestore_gettupleslot(node->table, true, false, slot);
+	(void) tuplestore_gettupleslot(node->relation, true, false, slot);
 	return slot;
 }
 
 /*
- * TuplestoreScanRecheck -- access method routine to recheck a tuple in
+ * NamedTuplestoreScanRecheck -- access method routine to recheck a tuple in
  * EvalPlanQual
  */
 static bool
-TuplestoreScanRecheck(TuplestoreScanState *node, TupleTableSlot *slot)
+NamedTuplestoreScanRecheck(NamedTuplestoreScanState *node, TupleTableSlot *slot)
 {
 	/* nothing to check */
 	return true;
 }
 
 /* ----------------------------------------------------------------
- *		ExecTuplestoreScan(node)
+ *		ExecNamedTuplestoreScan(node)
  *
  *		Scans the CTE sequentially and returns the next qualifying tuple.
  *		We call the ExecScan() routine and pass it the appropriate
@@ -64,54 +64,56 @@ TuplestoreScanRecheck(TuplestoreScanState *node, TupleTableSlot *slot)
  * ----------------------------------------------------------------
  */
 TupleTableSlot *
-ExecTuplestoreScan(TuplestoreScanState *node)
+ExecNamedTuplestoreScan(NamedTuplestoreScanState *node)
 {
 	return ExecScan(&node->ss,
-					(ExecScanAccessMtd) TuplestoreScanNext,
-					(ExecScanRecheckMtd) TuplestoreScanRecheck);
+					(ExecScanAccessMtd) NamedTuplestoreScanNext,
+					(ExecScanRecheckMtd) NamedTuplestoreScanRecheck);
 }
 
 
 /* ----------------------------------------------------------------
- *		ExecInitTuplestoreScan
+ *		ExecInitNamedTuplestoreScan
  * ----------------------------------------------------------------
  */
-TuplestoreScanState *
-ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
+NamedTuplestoreScanState *
+ExecInitNamedTuplestoreScan(NamedTuplestoreScan *node, EState *estate, int eflags)
 {
-	TuplestoreScanState *scanstate;
-	Tsr		tsr;
+	NamedTuplestoreScanState *scanstate;
+	Enr		enr;
 
 	/* check for unsupported flags */
 	Assert(!(eflags & (EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK)));
 
 	/*
-	 * TuplestoreScan should not have any children.
+	 * NamedTuplestoreScan should not have any children.
 	 */
 	Assert(outerPlan(node) == NULL);
 	Assert(innerPlan(node) == NULL);
 
 	/*
-	 * create new TuplestoreScanState for node
+	 * create new NamedTuplestoreScanState for node
 	 */
-	scanstate = makeNode(TuplestoreScanState);
+	scanstate = makeNode(NamedTuplestoreScanState);
 	scanstate->ss.ps.plan = (Plan *) node;
 	scanstate->ss.ps.state = estate;
 
-	tsr = get_tsr(estate->es_queryEnv, node->tsrname);
-	if (!tsr)
+	enr = get_enr(estate->es_queryEnv, node->enrname);
+	if (!enr)
 		elog(ERROR, "executor could not find named tuplestore \"%s\"",
-			 node->tsrname);
-	scanstate->table = tsr->tstate;
-	scanstate->tupdesc = tsr->md.tupdesc;
+			 node->enrname);
+
+	Assert(enr->reldata);
+	scanstate->relation = (Tuplestorestate *) enr->reldata;
+	scanstate->tupdesc = enr->md.tupdesc;
 	scanstate->readptr =
-		tuplestore_alloc_read_pointer(scanstate->table, 0);
+		tuplestore_alloc_read_pointer(scanstate->relation, 0);
 
 	/*
 	 * The new read pointer copies its position from read pointer 0, which
 	 * could be anywhere, so explicitly rewind it.
 	 */
-	tuplestore_rescan(scanstate->table);
+	tuplestore_rescan(scanstate->relation);
 
 	/* TODO: Add a function to free that read pointer when done. */
 
@@ -155,13 +157,13 @@ ExecInitTuplestoreScan(TuplestoreScan *node, EState *estate, int eflags)
 }
 
 /* ----------------------------------------------------------------
- *		ExecEndTuplestoreScan
+ *		ExecEndNamedTuplestoreScan
  *
  *		frees any storage allocated through C routines.
  * ----------------------------------------------------------------
  */
 void
-ExecEndTuplestoreScan(TuplestoreScanState *node)
+ExecEndNamedTuplestoreScan(NamedTuplestoreScanState *node)
 {
 	/*
 	 * Free exprcontext
@@ -176,15 +178,15 @@ ExecEndTuplestoreScan(TuplestoreScanState *node)
 }
 
 /* ----------------------------------------------------------------
- *		ExecReScanTuplestoreScan
+ *		ExecReScanNamedTuplestoreScan
  *
  *		Rescans the relation.
  * ----------------------------------------------------------------
  */
 void
-ExecReScanTuplestoreScan(TuplestoreScanState *node)
+ExecReScanNamedTuplestoreScan(NamedTuplestoreScanState *node)
 {
-	Tuplestorestate *tuplestorestate = node->table;
+	Tuplestorestate *tuplestorestate = node->relation;
 
 	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
 

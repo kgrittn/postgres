@@ -15,37 +15,47 @@
 #define QUERYENVIRONMENT_H
 
 #include "access/tupdesc.h"
-#include "utils/tuplestore.h"
 
 
-typedef struct TsrmdData
+typedef enum EnrType
 {
-	char			   *name;		/* name used to identify the tuplestore */
-	TupleDesc			tupdesc;	/* description of result rows */
-} TsrmdData;
+	ENR_NAMED_TUPLESTORE		/* named tuplestore relation; e.g., deltas */
+} EnrType;
 
-typedef TsrmdData *Tsrmd;
+typedef struct EnrmdData
+{
+	char			   *name;		/* name used to identify the relation */
+	TupleDesc			tupdesc;	/* description of result rows */
+	EnrType				enrtype;	/* to identify type of relation */
+} EnrmdData;
+
+typedef EnrmdData *Enrmd;
 
 /*
- * Tuplestore Relation data; used for parsing named tuplestores, like
- * transition tables in AFTER triggers.
+ * Ephemeral Named Relation data; used for parsing named relations not in the
+ * catalog, like transition tables in AFTER triggers.
  */
-typedef struct TsrData
+typedef struct EnrData
 {
-	TsrmdData	md;
-	Tuplestorestate	   *tstate;		/* data (or tids) */
-} TsrData;
+	EnrmdData	md;
+	void	   *reldata;		/* structure for execution-time access to data */
+} EnrData;
 
-typedef TsrData *Tsr;
+typedef EnrData *Enr;
 
-/* This is an opaque structure outside of queryenvironment.c itself. */
+/*
+ * This is an opaque structure outside of queryenvironment.c itself.  The
+ * intention is to be able to change the implementation or add new context
+ * features without needing to change existing code for use of existing
+ * features.
+ */
 typedef struct QueryEnvironment QueryEnvironment;
 
 
 extern QueryEnvironment *create_queryEnv(void);
-extern Tsrmd get_visible_tuplestore_metadata(QueryEnvironment *queryEnv, const char *refname);
-extern void register_tsr(QueryEnvironment *queryEnv, Tsr tsr);
-extern void unregister_tsr(QueryEnvironment *queryEnv, const char *name);
-extern Tsr get_tsr(QueryEnvironment *queryEnv, const char *name);
+extern Enrmd get_visible_enr_metadata(QueryEnvironment *queryEnv, const char *refname);
+extern void register_enr(QueryEnvironment *queryEnv, Enr enr);
+extern void unregister_enr(QueryEnvironment *queryEnv, const char *name);
+extern Enr get_enr(QueryEnvironment *queryEnv, const char *name);
 
 #endif   /* QUERYENVIRONMENT_H */

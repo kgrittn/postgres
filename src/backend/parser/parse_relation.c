@@ -25,8 +25,8 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/parsetree.h"
+#include "parser/parse_enr.h"
 #include "parser/parse_relation.h"
-#include "parser/parse_tuplestore.h"
 #include "parser/parse_type.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -282,13 +282,13 @@ isFutureCTE(ParseState *pstate, const char *refname)
 }
 
 /*
- * Search the query's tuplestore namespace for a tuplestore matching the given
- * unqualified refname.
+ * Search the query's ephemeral named relation namespace for a relation
+ * matching the given unqualified refname.
  */
 bool
-scanNameSpaceForTsr(ParseState *pstate, const char *refname)
+scanNameSpaceForEnr(ParseState *pstate, const char *refname)
 {
-	return name_matches_visible_tuplestore(pstate, refname);
+	return name_matches_visible_enr(pstate, refname);
 }
 
 /*
@@ -312,7 +312,7 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	const char *refname = relation->relname;
 	Oid			relId = InvalidOid;
 	CommonTableExpr *cte = NULL;
-	bool		istsr = false;
+	bool		isenr = false;
 	Index		ctelevelsup = 0;
 	Index		levelsup;
 
@@ -332,13 +332,13 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	{
 		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
 		if (!cte)
-			istsr = scanNameSpaceForTsr(pstate, refname);
+			isenr = scanNameSpaceForEnr(pstate, refname);
 	}
 
-	if (!cte && !istsr)
+	if (!cte && !isenr)
 		relId = RangeVarGetRelid(relation, NoLock, true);
 
-	/* Now look for RTEs matching either the relation/CTE/Tsr or the alias */
+	/* Now look for RTEs matching either the relation/CTE/Enr or the alias */
 	for (levelsup = 0;
 		 pstate != NULL;
 		 pstate = pstate->parentParseState, levelsup++)
@@ -358,9 +358,9 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 				rte->ctelevelsup + levelsup == ctelevelsup &&
 				strcmp(rte->ctename, refname) == 0)
 				return rte;
-			if (rte->rtekind == RTE_TUPLESTORE &&
-				istsr &&
-				strcmp(rte->tsrname, refname) == 0)
+			if (rte->rtekind == RTE_NAMEDTUPLESTORE &&
+				isenr &&
+				strcmp(rte->enrname, refname) == 0)
 				return rte;
 			if (strcmp(rte->eref->aliasname, refname) == 0)
 				return rte;
@@ -1162,7 +1162,7 @@ parserOpenTable(ParseState *pstate, const RangeVar *relation, int lockmode)
 			/*
 			 * An unqualified name might be a named ephemeral relation.
 			 */
-			if (get_visible_tuplestore_metadata(pstate->p_queryEnv, relation->relname))
+			if (get_visible_enr_metadata(pstate->p_queryEnv, relation->relname))
 				rel = NULL;
 			/*
 			 * An unqualified name might have been meant as a reference to
@@ -1209,7 +1209,8 @@ addRangeTableEntry(ParseState *pstate,
 
 	Assert(pstate != NULL);
 
-	rte->rtekind = RTE_RELATION;
+	Assert(rte->rtekind == RTE_RELATION
+		   || rte->rtekind == RTE_NAMEDTUPLESTORE);
 	rte->alias = alias;
 
 	/*
@@ -1904,35 +1905,42 @@ addRangeTableEntryForCTE(ParseState *pstate,
 }
 
 /*
- * Add an entry for a Tuplestore relation reference to the pstate's range
- * table (p_rtable).
+ * Add an entry for an ephemeral named relation reference to the pstate's
+ * range table (p_rtable).
  *
- * This is much like addRangeTableEntry() except that it makes a Tsr RTE.
+ * This is much like addRangeTableEntry() except that it makes an RTE for an
+ * ephemeral named relation.  The rtekind will be for a specific type of
+ * relation, with its own execution node type, based on enrtype.
  */
 RangeTblEntry *
-addRangeTableEntryForTsr(ParseState *pstate,
+addRangeTableEntryForEnr(ParseState *pstate,
 						 RangeVar *rv,
 						 bool inFromCl)
 {
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
 	Alias	   *alias = rv->alias;
 	char	   *refname = alias ? alias->aliasname : rv->relname;
-	Tsrmd		tsrmd = get_visible_tuplestore(pstate, rv->relname);
+	Enrmd		enrmd = get_visible_enr(pstate, rv->relname);
 	TupleDesc	tupdesc;
 	int			attno;
 
-	Assert(tsrmd != NULL);
+	Assert(enrmd != NULL);
 
-	rte->rtekind = RTE_TUPLESTORE;
+//	switch (enrmd->enrtype)
+//	{
+//		case ENR_NAMED_TUPLESTORE:
+			rte->rtekind = RTE_NAMEDTUPLESTORE;
+//			break;
+//	}
 
 	/*
 	 * Build the list of effective column names using user-supplied aliases
 	 * and/or actual column names.  Also build the cannibalized fields.
 	 */
-	tupdesc = tsrmd->tupdesc;
+	tupdesc = enrmd->tupdesc;
 	rte->eref = makeAlias(refname, NIL);
 	buildRelationAliases(tupdesc, alias, rte->eref);
-	rte->tsrname = tsrmd->name;
+	rte->enrname = enrmd->name;
 
 	rte->coltypes = NIL;
 	rte->coltypmods = NIL;
@@ -1957,10 +1965,10 @@ addRangeTableEntryForTsr(ParseState *pstate,
 	/*
 	 * Set flags and access permissions.
 	 *
-	 * Tuplestores are never checked for access rights.
+	 * ENRs are never checked for access rights.
 	 */
 	rte->lateral = false;
-	rte->inh = false;			/* never true for tuplestores */
+	rte->inh = false;			/* never true for ENRs */
 	rte->inFromCl = inFromCl;
 
 	rte->requiredPerms = 0;
@@ -2328,7 +2336,7 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 			break;
 		case RTE_VALUES:
 		case RTE_CTE:
-		case RTE_TUPLESTORE:
+		case RTE_NAMEDTUPLESTORE:
 			{
 				/* Values or CTE RTE */
 				ListCell   *aliasp_item = list_head(rte->eref->colnames);
@@ -2741,7 +2749,7 @@ get_rte_attribute_type(RangeTblEntry *rte, AttrNumber attnum,
 			break;
 		case RTE_VALUES:
 		case RTE_CTE:
-		case RTE_TUPLESTORE:
+		case RTE_NAMEDTUPLESTORE:
 			{
 				/* VALUES or CTE RTE --- get type info from lists in the RTE */
 				Assert(attnum > 0 && attnum <= list_length(rte->coltypes));
@@ -2791,9 +2799,9 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 			/* Subselect, Values, CTE RTEs never have dropped columns */
 			result = false;
 			break;
-		case RTE_TUPLESTORE:
+		case RTE_NAMEDTUPLESTORE:
 			{
-				Assert(rte->tsrname);
+				Assert(rte->enrname);
 
 				/*
 				 * We checked when we loaded ctecoltypes for the tuplestore

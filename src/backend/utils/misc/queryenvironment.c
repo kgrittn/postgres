@@ -40,20 +40,20 @@ create_queryEnv()
 	return (QueryEnvironment *) palloc0(sizeof(QueryEnvironment));
 }
 
-Tsrmd
-get_visible_tuplestore_metadata(QueryEnvironment *queryEnv, const char *refname)
+Enrmd
+get_visible_enr_metadata(QueryEnvironment *queryEnv, const char *refname)
 {
-	Tsr     tsr;
+	Enr     enr;
 
 	Assert(refname != NULL);
 
 	if (queryEnv == NULL)
 		return NULL;
 
-	tsr = get_tsr(queryEnv, refname);
+	enr = get_enr(queryEnv, refname);
 
-	if (tsr)
-		return &(tsr->md);
+	if (enr)
+		return &(enr->md);
 
 	return NULL;
 }
@@ -65,34 +65,34 @@ get_visible_tuplestore_metadata(QueryEnvironment *queryEnv, const char *refname)
  * be left NULL;
  */
 void
-register_tsr(QueryEnvironment *queryEnv, Tsr tsr)
+register_enr(QueryEnvironment *queryEnv, Enr enr)
 {
-	Assert(tsr != NULL);
-	Assert(get_tsr(queryEnv, tsr->md.name) == NULL);
+	Assert(enr != NULL);
+	Assert(get_enr(queryEnv, enr->md.name) == NULL);
 
-	queryEnv->namedRelList = lappend(queryEnv->namedRelList, tsr);
+	queryEnv->namedRelList = lappend(queryEnv->namedRelList, enr);
 }
 
 /*
- * Unregister a named tuplestore by name.  This will probably be a rarely used
- * function, but seems like it should be provided "just in case".
+ * Unregister an ephemeral relation by name.  This will probably be a rarely
+ * used function, but seems like it should be provided "just in case".
  */
 void
-unregister_tsr(QueryEnvironment *queryEnv, const char *name)
+unregister_enr(QueryEnvironment *queryEnv, const char *name)
 {
-	Tsr			match;
+	Enr			match;
 
-	match = get_tsr(queryEnv, name);
+	match = get_enr(queryEnv, name);
 	if (match)
 		queryEnv->namedRelList = list_delete(queryEnv->namedRelList, match);
 }
 
 /*
- * This returns a Tsr if there is a name match in the given collection.  It
+ * This returns a Enr if there is a name match in the given collection.  It
  * must quietly return NULL if no match is found.
  */
-Tsr
-get_tsr(QueryEnvironment *queryEnv, const char *name)
+Enr
+get_enr(QueryEnvironment *queryEnv, const char *name)
 {
 	ListCell   *lc;
 
@@ -103,10 +103,10 @@ get_tsr(QueryEnvironment *queryEnv, const char *name)
 
 	foreach(lc, queryEnv->namedRelList)
 	{
-		Tsr tsr = (Tsr) lfirst(lc);
+		Enr enr = (Enr) lfirst(lc);
 
-		if (strcmp(tsr->md.name, name) == 0)
-			return tsr;
+		if (strcmp(enr->md.name, name) == 0)
+			return enr;
 	}
 
 	return NULL;

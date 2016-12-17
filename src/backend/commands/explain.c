@@ -768,7 +768,7 @@ ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 		case T_FunctionScan:
 		case T_ValuesScan:
 		case T_CteScan:
-		case T_TuplestoreScan:
+		case T_NamedTuplestoreScan:
 		case T_WorkTableScan:
 			*rels_used = bms_add_member(*rels_used,
 										((Scan *) plan)->scanrelid);
@@ -915,8 +915,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_CteScan:
 			pname = sname = "CTE Scan";
 			break;
-		case T_TuplestoreScan:
-			pname = sname = "Tuplestore Scan";
+		case T_NamedTuplestoreScan:
+			pname = sname = "Named Tuplestore Scan";
 			break;
 		case T_WorkTableScan:
 			pname = sname = "WorkTable Scan";
@@ -1351,7 +1351,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_SeqScan:
 		case T_ValuesScan:
 		case T_CteScan:
-		case T_TuplestoreScan:
+		case T_NamedTuplestoreScan:
 		case T_WorkTableScan:
 		case T_SubqueryScan:
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
@@ -2592,9 +2592,9 @@ ExplainTargetRel(Plan *plan, Index rti, ExplainState *es)
 			objectname = rte->ctename;
 			objecttag = "CTE Name";
 			break;
-		case T_TuplestoreScan:
-			Assert(rte->rtekind == RTE_TUPLESTORE);
-			objectname = rte->tsrname;
+		case T_NamedTuplestoreScan:
+			Assert(rte->rtekind == RTE_NAMEDTUPLESTORE);
+			objectname = rte->enrname;
 			objecttag = "Tuplestore Name";
 			break;
 		case T_WorkTableScan:

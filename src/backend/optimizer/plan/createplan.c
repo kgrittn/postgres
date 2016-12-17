@@ -135,7 +135,7 @@ static ValuesScan *create_valuesscan_plan(PlannerInfo *root, Path *best_path,
 					   List *tlist, List *scan_clauses);
 static CteScan *create_ctescan_plan(PlannerInfo *root, Path *best_path,
 					List *tlist, List *scan_clauses);
-static TuplestoreScan *create_tuplestorescan_plan(PlannerInfo *root, Path *best_path,
+static NamedTuplestoreScan *create_tuplestorescan_plan(PlannerInfo *root, Path *best_path,
 					List *tlist, List *scan_clauses);
 static WorkTableScan *create_worktablescan_plan(PlannerInfo *root, Path *best_path,
 						  List *tlist, List *scan_clauses);
@@ -193,8 +193,8 @@ static ValuesScan *make_valuesscan(List *qptlist, List *qpqual,
 				Index scanrelid, List *values_lists);
 static CteScan *make_ctescan(List *qptlist, List *qpqual,
 			 Index scanrelid, int ctePlanId, int cteParam);
-static TuplestoreScan *make_tuplestorescan(List *qptlist, List *qpqual,
-			 Index scanrelid, char *tsrname);
+static NamedTuplestoreScan *make_tuplestorescan(List *qptlist, List *qpqual,
+			 Index scanrelid, char *enrname);
 static WorkTableScan *make_worktablescan(List *qptlist, List *qpqual,
 				   Index scanrelid, int wtParam);
 static Append *make_append(List *appendplans, List *tlist);
@@ -360,7 +360,7 @@ create_plan_recurse(PlannerInfo *root, Path *best_path, int flags)
 		case T_ValuesScan:
 		case T_CteScan:
 		case T_WorkTableScan:
-		case T_TuplestoreScan:
+		case T_NamedTuplestoreScan:
 		case T_ForeignScan:
 		case T_CustomScan:
 			plan = create_scan_plan(root, best_path, flags);
@@ -649,7 +649,7 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
 												scan_clauses);
 			break;
 
-		case T_TuplestoreScan:
+		case T_NamedTuplestoreScan:
 			plan = (Plan *) create_tuplestorescan_plan(root,
 													   best_path,
 													   tlist,
@@ -3141,17 +3141,17 @@ create_ctescan_plan(PlannerInfo *root, Path *best_path,
  *	'best_path' with restriction clauses 'scan_clauses' and targetlist
  *	'tlist'.
  */
-static TuplestoreScan *
+static NamedTuplestoreScan *
 create_tuplestorescan_plan(PlannerInfo *root, Path *best_path,
 						   List *tlist, List *scan_clauses)
 {
-	TuplestoreScan *scan_plan;
+	NamedTuplestoreScan *scan_plan;
 	Index		scan_relid = best_path->parent->relid;
 	RangeTblEntry *rte;
 
 	Assert(scan_relid > 0);
 	rte = planner_rt_fetch(scan_relid, root);
-	Assert(rte->rtekind == RTE_TUPLESTORE);
+	Assert(rte->rtekind == RTE_NAMEDTUPLESTORE);
 
 	/* Sort clauses into best execution order */
 	scan_clauses = order_qual_clauses(root, scan_clauses);
@@ -3167,7 +3167,7 @@ create_tuplestorescan_plan(PlannerInfo *root, Path *best_path,
 	}
 
 	scan_plan = make_tuplestorescan(tlist, scan_clauses, scan_relid,
-									rte->tsrname);
+									rte->enrname);
 
 	copy_generic_path_info(&scan_plan->scan.plan, best_path);
 
@@ -4938,13 +4938,13 @@ make_ctescan(List *qptlist,
 	return node;
 }
 
-static TuplestoreScan *
+static NamedTuplestoreScan *
 make_tuplestorescan(List *qptlist,
 					List *qpqual,
 					Index scanrelid,
-					char *tsrname)
+					char *enrname)
 {
-	TuplestoreScan *node = makeNode(TuplestoreScan);
+	NamedTuplestoreScan *node = makeNode(NamedTuplestoreScan);
 	Plan	   *plan = &node->scan.plan;
 
 	/* cost should be inserted by caller */
@@ -4953,7 +4953,7 @@ make_tuplestorescan(List *qptlist,
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
-	node->tsrname = tsrname;
+	node->enrname = enrname;
 
 	return node;
 }

@@ -99,6 +99,7 @@
 #include "executor/nodeMergeAppend.h"
 #include "executor/nodeMergejoin.h"
 #include "executor/nodeModifyTable.h"
+#include "executor/nodeNamedtuplestorescan.h"
 #include "executor/nodeNestloop.h"
 #include "executor/nodeGather.h"
 #include "executor/nodeRecursiveunion.h"
@@ -110,7 +111,6 @@
 #include "executor/nodeSubplan.h"
 #include "executor/nodeSubqueryscan.h"
 #include "executor/nodeTidscan.h"
-#include "executor/nodeTuplestorescan.h"
 #include "executor/nodeUnique.h"
 #include "executor/nodeValuesscan.h"
 #include "executor/nodeWindowAgg.h"
@@ -244,8 +244,8 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 												   estate, eflags);
 			break;
 
-		case T_TuplestoreScan:
-			result = (PlanState *) ExecInitTuplestoreScan((TuplestoreScan *) node,
+		case T_NamedTuplestoreScan:
+			result = (PlanState *) ExecInitNamedTuplestoreScan((NamedTuplestoreScan *) node,
 												   estate, eflags);
 			break;
 
@@ -463,8 +463,8 @@ ExecProcNode(PlanState *node)
 			result = ExecCteScan((CteScanState *) node);
 			break;
 
-		case T_TuplestoreScanState:
-			result = ExecTuplestoreScan((TuplestoreScanState *) node);
+		case T_NamedTuplestoreScanState:
+			result = ExecNamedTuplestoreScan((NamedTuplestoreScanState *) node);
 			break;
 
 		case T_WorkTableScanState:
@@ -719,8 +719,8 @@ ExecEndNode(PlanState *node)
 			ExecEndCteScan((CteScanState *) node);
 			break;
 
-		case T_TuplestoreScanState:
-			ExecEndTuplestoreScan((TuplestoreScanState *) node);
+		case T_NamedTuplestoreScanState:
+			ExecEndNamedTuplestoreScan((NamedTuplestoreScanState *) node);
 			break;
 
 		case T_WorkTableScanState:

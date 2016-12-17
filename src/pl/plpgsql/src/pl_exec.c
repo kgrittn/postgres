@@ -697,23 +697,23 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		estate.queryEnv = create_queryEnv();
 		if (trigdata->tg_newtable)
 		{
-			Tsr tsr = palloc(sizeof(TsrData));
+			Enr enr = palloc(sizeof(EnrData));
 
-			tsr->md.name = trigdata->tg_trigger->tgnewtable;
-			tsr->md.tupdesc = trigdata->tg_relation->rd_att;
-			tsr->tstate = trigdata->tg_newtable;
-			register_tsr(estate.queryEnv, tsr);
-			SPI_register_tuplestore(tsr);
+			enr->md.name = trigdata->tg_trigger->tgnewtable;
+			enr->md.tupdesc = trigdata->tg_relation->rd_att;
+			enr->reldata = trigdata->tg_newtable;
+			register_enr(estate.queryEnv, enr);
+			SPI_register_relation(enr);
 		}
 		if (trigdata->tg_oldtable)
 		{
-			Tsr tsr = palloc(sizeof(TsrData));
+			Enr enr = palloc(sizeof(EnrData));
 
-			tsr->md.name = trigdata->tg_trigger->tgoldtable;
-			tsr->md.tupdesc = trigdata->tg_relation->rd_att;
-			tsr->tstate = trigdata->tg_oldtable;
-			register_tsr(estate.queryEnv, tsr);
-			SPI_register_tuplestore(tsr);
+			enr->md.name = trigdata->tg_trigger->tgoldtable;
+			enr->md.tupdesc = trigdata->tg_relation->rd_att;
+			enr->reldata = trigdata->tg_oldtable;
+			register_enr(estate.queryEnv, enr);
+			SPI_register_relation(enr);
 		}
 	}
 

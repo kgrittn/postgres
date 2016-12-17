@@ -613,12 +613,12 @@ _copyCteScan(const CteScan *from)
 }
 
 /*
- * _copyTuplestoreScan
+ * _copyNamedTuplestoreScan
  */
-static TuplestoreScan *
-_copyTuplestoreScan(const TuplestoreScan *from)
+static NamedTuplestoreScan *
+_copyNamedTuplestoreScan(const NamedTuplestoreScan *from)
 {
-	TuplestoreScan    *newnode = makeNode(TuplestoreScan);
+	NamedTuplestoreScan    *newnode = makeNode(NamedTuplestoreScan);
 
 	/*
 	 * copy node superclass fields
@@ -628,7 +628,7 @@ _copyTuplestoreScan(const TuplestoreScan *from)
 	/*
 	 * copy remainder of node
 	 */
-	COPY_STRING_FIELD(tsrname);
+	COPY_STRING_FIELD(enrname);
 
 	return newnode;
 }
@@ -2173,7 +2173,7 @@ _copyRangeTblEntry(const RangeTblEntry *from)
 	COPY_STRING_FIELD(ctename);
 	COPY_SCALAR_FIELD(ctelevelsup);
 	COPY_SCALAR_FIELD(self_reference);
-	COPY_STRING_FIELD(tsrname);
+	COPY_STRING_FIELD(enrname);
 	COPY_NODE_FIELD(coltypes);
 	COPY_NODE_FIELD(coltypmods);
 	COPY_NODE_FIELD(colcollations);
@@ -4477,8 +4477,8 @@ copyObject(const void *from)
 		case T_CteScan:
 			retval = _copyCteScan(from);
 			break;
-		case T_TuplestoreScan:
-			retval = _copyTuplestoreScan(from);
+		case T_NamedTuplestoreScan:
+			retval = _copyNamedTuplestoreScan(from);
 			break;
 		case T_WorkTableScan:
 			retval = _copyWorkTableScan(from);

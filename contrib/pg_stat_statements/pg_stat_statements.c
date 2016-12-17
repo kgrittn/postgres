@@ -2369,8 +2369,8 @@ JumbleRangeTable(pgssJumbleState *jstate, List *rtable)
 				APP_JUMB_STRING(rte->ctename);
 				APP_JUMB(rte->ctelevelsup);
 				break;
-			case RTE_TUPLESTORE:
-				APP_JUMB_STRING(rte->tsrname);
+			case RTE_NAMEDTUPLESTORE:
+				APP_JUMB_STRING(rte->enrname);
 				break;
 			default:
 				elog(ERROR, "unrecognized RTE kind: %d", (int) rte->rtekind);

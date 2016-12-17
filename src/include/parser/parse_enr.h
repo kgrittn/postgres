@@ -1,24 +1,22 @@
 /*-------------------------------------------------------------------------
  *
- * parse_tuplestore.h
+ * parse_enr.h
  *		Internal definitions for parser
  *
  *
  * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * src/include/parser/parse_tuplestore.h
+ * src/include/parser/parse_enr.h
  *
  *-------------------------------------------------------------------------
  */
-#ifndef PARSE_TUPLESTORE_H
-#define PARSE_TUPLESTORE_H
+#ifndef PARSE_ENR_H
+#define PARSE_ENR_H
 
 #include "parser/parse_node.h"
 
-extern bool name_matches_visible_tuplestore(ParseState *pstate,
-											const char *refname);
-extern Tsrmd get_visible_tuplestore(ParseState *pstate,
-									const char *refname);
+extern bool name_matches_visible_enr(ParseState *pstate, const char *refname);
+extern Enrmd get_visible_enr(ParseState *pstate, const char *refname);
 
-#endif   /* PARSE_TUPLESTORE_H */
+#endif   /* PARSE_ENR_H */

@@ -2757,12 +2757,12 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc,
 									  LCS_asString(lc->strength)),
 							 parser_errposition(pstate, thisrel->location)));
 							break;
-						case RTE_TUPLESTORE:
+						case RTE_NAMEDTUPLESTORE:
 							ereport(ERROR,
 									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 							/*------
 							  translator: %s is a SQL row locking clause such as FOR UPDATE */
-							   errmsg("%s cannot be applied to a tuplestore",
+							   errmsg("%s cannot be applied to a named tuplestore",
 									  LCS_asString(lc->strength)),
 							 parser_errposition(pstate, thisrel->location)));
 							break;

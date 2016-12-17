@@ -381,7 +381,7 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 				else
 					set_cte_pathlist(root, rel, rte);
 				break;
-			case RTE_TUPLESTORE:
+			case RTE_NAMEDTUPLESTORE:
 				set_tuplestore_pathlist(root, rel, rte);
 				break;
 			default:
@@ -448,7 +448,7 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			case RTE_CTE:
 				/* CTE reference --- fully handled during set_rel_size */
 				break;
-			case RTE_TUPLESTORE:
+			case RTE_NAMEDTUPLESTORE:
 				/* tuplestore reference --- fully handled during set_rel_size */
 				break;
 			default:
@@ -623,7 +623,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 			 */
 			return;
 
-		case RTE_TUPLESTORE:
+		case RTE_NAMEDTUPLESTORE:
 			/*
 			 * tubplestore cannot be shared, at least without more
 			 * infrastructure to support that.

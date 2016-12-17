@@ -487,14 +487,14 @@ typedef struct CteScan
 } CteScan;
 
 /* ----------------
- *		TuplestoreScan node
+ *		NamedTuplestoreScan node
  * ----------------
  */
-typedef struct TuplestoreScan
+typedef struct NamedTuplestoreScan
 {
 	Scan		scan;
-	char	   *tsrname;
-} TuplestoreScan;
+	char	   *enrname;
+} NamedTuplestoreScan;
 
 /* ----------------
  *		WorkTableScan node

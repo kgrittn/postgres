@@ -577,13 +577,13 @@ _outCteScan(StringInfo str, const CteScan *node)
 }
 
 static void
-_outTuplestoreScan(StringInfo str, const TuplestoreScan *node)
+_outNamedTuplestoreScan(StringInfo str, const NamedTuplestoreScan *node)
 {
-	WRITE_NODE_TYPE("TUPLESTORESCAN");
+	WRITE_NODE_TYPE("NAMEDTUPLESTORESCAN");
 
 	_outScanInfo(str, (const Scan *) node);
 
-	WRITE_STRING_FIELD(tsrname);
+	WRITE_STRING_FIELD(enrname);
 }
 
 static void
@@ -2863,8 +2863,8 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 			WRITE_NODE_FIELD(coltypmods);
 			WRITE_NODE_FIELD(colcollations);
 			break;
-		case RTE_TUPLESTORE:
-			WRITE_STRING_FIELD(tsrname);
+		case RTE_NAMEDTUPLESTORE:
+			WRITE_STRING_FIELD(enrname);
 			WRITE_OID_FIELD(relid);
 			WRITE_NODE_FIELD(coltypes);
 			WRITE_NODE_FIELD(coltypmods);
@@ -3430,8 +3430,8 @@ outNode(StringInfo str, const void *obj)
 			case T_CteScan:
 				_outCteScan(str, obj);
 				break;
-			case T_TuplestoreScan:
-				_outTuplestoreScan(str, obj);
+			case T_NamedTuplestoreScan:
+				_outNamedTuplestoreScan(str, obj);
 				break;
 			case T_WorkTableScan:
 				_outWorkTableScan(str, obj);
