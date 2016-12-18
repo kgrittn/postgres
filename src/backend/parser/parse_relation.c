@@ -1209,8 +1209,7 @@ addRangeTableEntry(ParseState *pstate,
 
 	Assert(pstate != NULL);
 
-	Assert(rte->rtekind == RTE_RELATION
-		   || rte->rtekind == RTE_NAMEDTUPLESTORE);
+	rte->rtekind = RTE_RELATION;
 	rte->alias = alias;
 
 	/*
@@ -1926,12 +1925,7 @@ addRangeTableEntryForEnr(ParseState *pstate,
 
 	Assert(enrmd != NULL);
 
-//	switch (enrmd->enrtype)
-//	{
-//		case ENR_NAMED_TUPLESTORE:
-			rte->rtekind = RTE_NAMEDTUPLESTORE;
-//			break;
-//	}
+	rte->rtekind = RTE_NAMEDTUPLESTORE;
 
 	/*
 	 * Build the list of effective column names using user-supplied aliases
@@ -1941,7 +1935,7 @@ addRangeTableEntryForEnr(ParseState *pstate,
 	rte->eref = makeAlias(refname, NIL);
 	buildRelationAliases(tupdesc, alias, rte->eref);
 	rte->enrname = enrmd->name;
-
+	rte->enrtuples = enrmd->enrtuples;
 	rte->coltypes = NIL;
 	rte->coltypmods = NIL;
 	rte->colcollations = NIL;

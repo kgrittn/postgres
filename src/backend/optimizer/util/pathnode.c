@@ -1805,12 +1805,13 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 }
 
 /*
- * create_tuplestorescan_path
- *	  Creates a path corresponding to a scan of a tuplestore, returning the
- *	  pathnode.
+ * create_namedtuplestorescan_path
+ *	  Creates a path corresponding to a scan of a named tuplestore, returning
+ *	  the pathnode.
  */
 Path *
-create_tuplestorescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
+create_namedtuplestorescan_path(PlannerInfo *root, RelOptInfo *rel,
+								Relids required_outer)
 {
 	Path	   *pathnode = makeNode(Path);
 
@@ -1824,7 +1825,7 @@ create_tuplestorescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_o
 	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* result is always unordered */
 
-	cost_tuplestorescan(pathnode, root, rel, pathnode->param_info);
+	cost_namedtuplestorescan(pathnode, root, rel, pathnode->param_info);
 
 	return pathnode;
 }

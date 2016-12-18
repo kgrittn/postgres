@@ -883,8 +883,9 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 			cte = scanNameSpaceForCTE(pstate, rv->relname, &levelsup);
 			if (cte)
 				rte = transformCTEReference(pstate, rv, cte, levelsup);
-			else if (scanNameSpaceForEnr(pstate, rv->relname))
-				rte = transformEnrReference(pstate, rv);
+			if (!rte)
+				if (scanNameSpaceForEnr(pstate, rv->relname))
+					rte = transformEnrReference(pstate, rv);
 		}
 
 		/* if not found above, must be a table reference */

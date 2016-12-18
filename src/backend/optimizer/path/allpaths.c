@@ -107,7 +107,7 @@ static void set_values_pathlist(PlannerInfo *root, RelOptInfo *rel,
 					RangeTblEntry *rte);
 static void set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel,
 				 RangeTblEntry *rte);
-static void set_tuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel,
+static void set_namedtuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel,
 				 RangeTblEntry *rte);
 static void set_worktable_pathlist(PlannerInfo *root, RelOptInfo *rel,
 					   RangeTblEntry *rte);
@@ -382,7 +382,7 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 					set_cte_pathlist(root, rel, rte);
 				break;
 			case RTE_NAMEDTUPLESTORE:
-				set_tuplestore_pathlist(root, rel, rte);
+				set_namedtuplestore_pathlist(root, rel, rte);
 				break;
 			default:
 				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
@@ -1963,19 +1963,20 @@ set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 }
 
 /*
- * set_tuplestore_pathlist
+ * set_namedtuplestore_pathlist
  *		Build the (single) access path for a tuplestore RTE
  *
  * There's no need for a separate set_tuplestore_size phase, since we don't
  * support join-qual-parameterized paths for tuplestores.
  */
 static void
-set_tuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
+set_namedtuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel,
+							 RangeTblEntry *rte)
 {
 	Relids		required_outer;
 
 	/* Mark rel with estimated output rows, width, etc */
-	set_tuplestore_size_estimates(root, rel);
+	set_namedtuplestore_size_estimates(root, rel);
 
 	/*
 	 * We don't support pushing join clauses into the quals of a tuplestore
@@ -1985,7 +1986,7 @@ set_tuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	required_outer = rel->lateral_relids;
 
 	/* Generate appropriate path */
-	add_path(rel, create_tuplestorescan_path(root, rel, required_outer));
+	add_path(rel, create_namedtuplestorescan_path(root, rel, required_outer));
 
 	/* Select cheapest path (pretty easy in this case...) */
 	set_cheapest(rel);

@@ -27,6 +27,7 @@ typedef struct EnrmdData
 	char			   *name;		/* name used to identify the relation */
 	TupleDesc			tupdesc;	/* description of result rows */
 	EnrType				enrtype;	/* to identify type of relation */
+	double				enrtuples;	/* estimated number of tuples */
 } EnrmdData;
 
 typedef EnrmdData *Enrmd;

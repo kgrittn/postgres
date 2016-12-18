@@ -1383,12 +1383,12 @@ cost_ctescan(Path *path, PlannerInfo *root,
 }
 
 /*
- * cost_tuplestorescan
- *	  Determines and returns the cost of scanning a tuplestore.
+ * cost_namedtuplestorescan
+ *	  Determines and returns the cost of scanning a named tuplestore.
  */
 void
-cost_tuplestorescan(Path *path, PlannerInfo *root,
-					RelOptInfo *baserel, ParamPathInfo *param_info)
+cost_namedtuplestorescan(Path *path, PlannerInfo *root,
+						 RelOptInfo *baserel, ParamPathInfo *param_info)
 {
 	Cost		startup_cost = 0;
 	Cost		run_cost = 0;
@@ -4500,7 +4500,7 @@ set_cte_size_estimates(PlannerInfo *root, RelOptInfo *rel, double cte_rows)
 }
 
 /*
- * set_tuplestore_size_estimates
+ * set_namedtuplestore_size_estimates
  *		Set the size estimates for a base relation that is a tuplestore reference.
  *
  * The rel's targetlist and restrictinfo list must have been constructed
@@ -4509,9 +4509,9 @@ set_cte_size_estimates(PlannerInfo *root, RelOptInfo *rel, double cte_rows)
  * We set the same fields as set_baserel_size_estimates.
  */
 void
-set_tuplestore_size_estimates(PlannerInfo *root, RelOptInfo *rel)
+set_namedtuplestore_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 {
-	RangeTblEntry *rte PG_USED_FOR_ASSERTS_ONLY;
+	RangeTblEntry *rte;
 
 	/* Should only be applied to base relations that are tuplestore references */
 	Assert(rel->relid > 0);
@@ -4519,10 +4519,14 @@ set_tuplestore_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 	Assert(rte->rtekind == RTE_NAMEDTUPLESTORE);
 
 	/*
-	 * bogus default estimate for now; maybe we can arrange to get better from
-	 * the tuplestore some day
+	 * Use the estimate provided by the code which is generating the named
+	 * tuplestore.  In some cases, the actual number might be available; in
+	 * others the same plan will be re-used, so a "typical" value might be
+	 * estimated and used.
 	 */
-	rel->tuples = 1000;
+	rel->tuples = rte->enrtuples;
+	if (rel->tuples < 0)
+		rel->tuples = 1000;
 
 	/* Now estimate number of output rows, etc */
 	set_baserel_size_estimates(root, rel);

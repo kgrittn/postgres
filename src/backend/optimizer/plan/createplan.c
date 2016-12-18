@@ -135,8 +135,8 @@ static ValuesScan *create_valuesscan_plan(PlannerInfo *root, Path *best_path,
 					   List *tlist, List *scan_clauses);
 static CteScan *create_ctescan_plan(PlannerInfo *root, Path *best_path,
 					List *tlist, List *scan_clauses);
-static NamedTuplestoreScan *create_tuplestorescan_plan(PlannerInfo *root, Path *best_path,
-					List *tlist, List *scan_clauses);
+static NamedTuplestoreScan *create_namedtuplestorescan_plan(PlannerInfo *root,
+					Path *best_path, List *tlist, List *scan_clauses);
 static WorkTableScan *create_worktablescan_plan(PlannerInfo *root, Path *best_path,
 						  List *tlist, List *scan_clauses);
 static ForeignScan *create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
@@ -193,7 +193,7 @@ static ValuesScan *make_valuesscan(List *qptlist, List *qpqual,
 				Index scanrelid, List *values_lists);
 static CteScan *make_ctescan(List *qptlist, List *qpqual,
 			 Index scanrelid, int ctePlanId, int cteParam);
-static NamedTuplestoreScan *make_tuplestorescan(List *qptlist, List *qpqual,
+static NamedTuplestoreScan *make_namedtuplestorescan(List *qptlist, List *qpqual,
 			 Index scanrelid, char *enrname);
 static WorkTableScan *make_worktablescan(List *qptlist, List *qpqual,
 				   Index scanrelid, int wtParam);
@@ -650,10 +650,10 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
 			break;
 
 		case T_NamedTuplestoreScan:
-			plan = (Plan *) create_tuplestorescan_plan(root,
-													   best_path,
-													   tlist,
-													   scan_clauses);
+			plan = (Plan *) create_namedtuplestorescan_plan(root,
+															best_path,
+															tlist,
+															scan_clauses);
 			break;
 
 		case T_WorkTableScan:
@@ -3136,14 +3136,14 @@ create_ctescan_plan(PlannerInfo *root, Path *best_path,
 }
 
 /*
- * create_tuplestorescan_plan
+ * create_namedtuplestorescan_plan
  *	 Returns a tuplestorescan plan for the base relation scanned by
  *	'best_path' with restriction clauses 'scan_clauses' and targetlist
  *	'tlist'.
  */
 static NamedTuplestoreScan *
-create_tuplestorescan_plan(PlannerInfo *root, Path *best_path,
-						   List *tlist, List *scan_clauses)
+create_namedtuplestorescan_plan(PlannerInfo *root, Path *best_path,
+								List *tlist, List *scan_clauses)
 {
 	NamedTuplestoreScan *scan_plan;
 	Index		scan_relid = best_path->parent->relid;
@@ -3166,8 +3166,8 @@ create_tuplestorescan_plan(PlannerInfo *root, Path *best_path,
 			replace_nestloop_params(root, (Node *) scan_clauses);
 	}
 
-	scan_plan = make_tuplestorescan(tlist, scan_clauses, scan_relid,
-									rte->enrname);
+	scan_plan = make_namedtuplestorescan(tlist, scan_clauses, scan_relid,
+										 rte->enrname);
 
 	copy_generic_path_info(&scan_plan->scan.plan, best_path);
 
@@ -4939,10 +4939,10 @@ make_ctescan(List *qptlist,
 }
 
 static NamedTuplestoreScan *
-make_tuplestorescan(List *qptlist,
-					List *qpqual,
-					Index scanrelid,
-					char *enrname)
+make_namedtuplestorescan(List *qptlist,
+						 List *qpqual,
+						 Index scanrelid,
+						 char *enrname)
 {
 	NamedTuplestoreScan *node = makeNode(NamedTuplestoreScan);
 	Plan	   *plan = &node->scan.plan;
