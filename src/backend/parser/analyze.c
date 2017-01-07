@@ -14,7 +14,7 @@
  * contain optimizable statements, which we should transform.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *	src/backend/parser/analyze.c
@@ -383,7 +383,7 @@ transformDeleteStmt(ParseState *pstate, DeleteStmt *stmt)
 
 	/* set up range table with just the result rel */
 	qry->resultRelation = setTargetTable(pstate, stmt->relation,
-								  interpretInhOption(stmt->relation->inhOpt),
+										 stmt->relation->inh,
 										 true,
 										 ACL_DELETE);
 
@@ -2180,7 +2180,7 @@ transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 	}
 
 	qry->resultRelation = setTargetTable(pstate, stmt->relation,
-								  interpretInhOption(stmt->relation->inhOpt),
+										 stmt->relation->inh,
 										 true,
 										 ACL_UPDATE);
 

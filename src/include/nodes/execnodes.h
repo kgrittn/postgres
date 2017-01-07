@@ -4,7 +4,7 @@
  *	  definitions for executor state nodes
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/nodes/execnodes.h
@@ -350,6 +350,7 @@ typedef struct ResultRelInfo
 	List	   *ri_onConflictSetWhere;
 	List	   *ri_PartitionCheck;
 	List	   *ri_PartitionCheckExpr;
+	Relation	ri_PartitionRoot;
 } ResultRelInfo;
 
 /* ----------------
@@ -430,6 +431,9 @@ typedef struct EState
 	HeapTuple  *es_epqTuple;	/* array of EPQ substitute tuples */
 	bool	   *es_epqTupleSet; /* true if EPQ tuple is provided */
 	bool	   *es_epqScanDone; /* true if EPQ tuple has been fetched */
+
+	/* The per-query shared memory area to use for parallel execution. */
+	struct dsa_area   *es_query_dsa;
 } EState;
 
 
@@ -889,6 +893,7 @@ typedef struct CaseExprState
 	ExprState  *arg;			/* implicit equality comparison argument */
 	List	   *args;			/* the arguments (list of WHEN clauses) */
 	ExprState  *defresult;		/* the default result (ELSE clause) */
+	int16		argtyplen;		/* if arg is provided, its typlen */
 } CaseExprState;
 
 /* ----------------
@@ -1161,6 +1166,7 @@ typedef struct ModifyTableState
 	ResultRelInfo  *mt_partitions;	/* Per partition result relation */
 	TupleConversionMap **mt_partition_tupconv_maps;
 									/* Per partition tuple conversion map */
+	TupleTableSlot *mt_partition_tuple_slot;
 } ModifyTableState;
 
 /* ----------------

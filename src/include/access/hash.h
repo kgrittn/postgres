@@ -4,7 +4,7 @@
  *	  header file for postgres hash access method implementation
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/hash.h
@@ -314,7 +314,7 @@ extern OffsetNumber _hash_pgaddtup(Relation rel, Buffer buf,
 /* hashovfl.c */
 extern Buffer _hash_addovflpage(Relation rel, Buffer metabuf, Buffer buf, bool retain_pin);
 extern BlockNumber _hash_freeovflpage(Relation rel, Buffer ovflbuf, Buffer wbuf,
-				   bool wbuf_dirty, BufferAccessStrategy bstrategy);
+				   BufferAccessStrategy bstrategy);
 extern void _hash_initbitmap(Relation rel, HashMetaPage metap,
 				 BlockNumber blkno, ForkNumber forkNum);
 extern void _hash_squeezebucket(Relation rel,
@@ -336,8 +336,6 @@ extern Buffer _hash_getbuf_with_strategy(Relation rel, BlockNumber blkno,
 extern void _hash_relbuf(Relation rel, Buffer buf);
 extern void _hash_dropbuf(Relation rel, Buffer buf);
 extern void _hash_dropscanbuf(Relation rel, HashScanOpaque so);
-extern void _hash_chgbufaccess(Relation rel, Buffer buf, int from_access,
-				   int to_access);
 extern uint32 _hash_metapinit(Relation rel, double num_tuples,
 				ForkNumber forkNum);
 extern void _hash_pageinit(Page page, Size size);

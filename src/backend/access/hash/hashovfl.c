@@ -3,7 +3,7 @@
  * hashovfl.c
  *	  Overflow page management code for the Postgres hash access method
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -110,7 +110,7 @@ _hash_addovflpage(Relation rel, Buffer metabuf, Buffer buf, bool retain_pin)
 	 * Write-lock the tail page.  It is okay to hold two buffer locks here
 	 * since there cannot be anyone else contending for access to ovflbuf.
 	 */
-	_hash_chgbufaccess(rel, buf, HASH_NOLOCK, HASH_WRITE);
+	LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
 
 	/* probably redundant... */
 	_hash_checkpage(rel, buf, LH_BUCKET_PAGE | LH_OVERFLOW_PAGE);
@@ -129,7 +129,7 @@ _hash_addovflpage(Relation rel, Buffer metabuf, Buffer buf, bool retain_pin)
 
 		/* we assume we do not need to write the unmodified page */
 		if ((pageopaque->hasho_flag & LH_BUCKET_PAGE) && retain_pin)
-			_hash_chgbufaccess(rel, buf, HASH_READ, HASH_NOLOCK);
+			LockBuffer(buf, BUFFER_LOCK_UNLOCK);
 		else
 			_hash_relbuf(rel, buf);
 
@@ -151,7 +151,7 @@ _hash_addovflpage(Relation rel, Buffer metabuf, Buffer buf, bool retain_pin)
 	pageopaque->hasho_nextblkno = BufferGetBlockNumber(ovflbuf);
 	MarkBufferDirty(buf);
 	if ((pageopaque->hasho_flag & LH_BUCKET_PAGE) && retain_pin)
-		_hash_chgbufaccess(rel, buf, HASH_READ, HASH_NOLOCK);
+		LockBuffer(buf, BUFFER_LOCK_UNLOCK);
 	else
 		_hash_relbuf(rel, buf);
 
@@ -187,7 +187,7 @@ _hash_getovflpage(Relation rel, Buffer metabuf)
 				j;
 
 	/* Get exclusive lock on the meta page */
-	_hash_chgbufaccess(rel, metabuf, HASH_NOLOCK, HASH_WRITE);
+	LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 
 	_hash_checkpage(rel, metabuf, LH_META_PAGE);
 	metap = HashPageGetMeta(BufferGetPage(metabuf));
@@ -225,7 +225,7 @@ _hash_getovflpage(Relation rel, Buffer metabuf)
 			last_inpage = BMPGSZ_BIT(metap) - 1;
 
 		/* Release exclusive lock on metapage while reading bitmap page */
-		_hash_chgbufaccess(rel, metabuf, HASH_READ, HASH_NOLOCK);
+		LockBuffer(metabuf, BUFFER_LOCK_UNLOCK);
 
 		mapbuf = _hash_getbuf(rel, mapblkno, HASH_WRITE, LH_BITMAP_PAGE);
 		mappage = BufferGetPage(mapbuf);
@@ -244,7 +244,7 @@ _hash_getovflpage(Relation rel, Buffer metabuf)
 		bit = 0;
 
 		/* Reacquire exclusive lock on the meta page */
-		_hash_chgbufaccess(rel, metabuf, HASH_NOLOCK, HASH_WRITE);
+		LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 	}
 
 	/*
@@ -295,7 +295,8 @@ _hash_getovflpage(Relation rel, Buffer metabuf)
 		metap->hashm_firstfree = bit + 1;
 
 	/* Write updated metapage and release lock, but not pin */
-	_hash_chgbufaccess(rel, metabuf, HASH_WRITE, HASH_NOLOCK);
+	MarkBufferDirty(metabuf);
+	LockBuffer(metabuf, BUFFER_LOCK_UNLOCK);
 
 	return newbuf;
 
@@ -309,7 +310,7 @@ found:
 	_hash_relbuf(rel, mapbuf);
 
 	/* Reacquire exclusive lock on the meta page */
-	_hash_chgbufaccess(rel, metabuf, HASH_NOLOCK, HASH_WRITE);
+	LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 
 	/* convert bit to absolute bit number */
 	bit += (i << BMPG_SHIFT(metap));
@@ -326,12 +327,13 @@ found:
 		metap->hashm_firstfree = bit + 1;
 
 		/* Write updated metapage and release lock, but not pin */
-		_hash_chgbufaccess(rel, metabuf, HASH_WRITE, HASH_NOLOCK);
+		MarkBufferDirty(metabuf);
+		LockBuffer(metabuf, BUFFER_LOCK_UNLOCK);
 	}
 	else
 	{
 		/* We didn't change the metapage, so no need to write */
-		_hash_chgbufaccess(rel, metabuf, HASH_READ, HASH_NOLOCK);
+		LockBuffer(metabuf, BUFFER_LOCK_UNLOCK);
 	}
 
 	/* Fetch, init, and return the recycled page */
@@ -377,12 +379,11 @@ _hash_firstfreebit(uint32 map)
  *	NB: caller must not hold lock on metapage, nor on page, that's next to
  *	ovflbuf in the bucket chain.  We don't acquire the lock on page that's
  *	prior to ovflbuf in chain if it is same as wbuf because the caller already
- *	has a lock on same.  This function releases the lock on wbuf and caller
- *	is responsible for releasing the pin on same.
+ *	has a lock on same.
  */
 BlockNumber
 _hash_freeovflpage(Relation rel, Buffer ovflbuf, Buffer wbuf,
-				   bool wbuf_dirty, BufferAccessStrategy bstrategy)
+				   BufferAccessStrategy bstrategy)
 {
 	HashMetaPage metap;
 	Buffer		metabuf;
@@ -447,24 +448,10 @@ _hash_freeovflpage(Relation rel, Buffer ovflbuf, Buffer wbuf,
 		Assert(prevopaque->hasho_bucket == bucket);
 		prevopaque->hasho_nextblkno = nextblkno;
 
+		MarkBufferDirty(prevbuf);
 		if (prevblkno != writeblkno)
-		{
-			MarkBufferDirty(prevbuf);
 			_hash_relbuf(rel, prevbuf);
-		}
-		else
-		{
-			/* ensure to mark prevbuf as dirty */
-			wbuf_dirty = true;
-		}
 	}
-
-	/* write and unlock the write buffer */
-	if (wbuf_dirty)
-		_hash_chgbufaccess(rel, wbuf, HASH_WRITE, HASH_NOLOCK);
-	else
-		_hash_chgbufaccess(rel, wbuf, HASH_READ, HASH_NOLOCK);
-
 	if (BlockNumberIsValid(nextblkno))
 	{
 		Buffer		nextbuf = _hash_getbuf_with_strategy(rel,
@@ -498,7 +485,7 @@ _hash_freeovflpage(Relation rel, Buffer ovflbuf, Buffer wbuf,
 	blkno = metap->hashm_mapp[bitmappage];
 
 	/* Release metapage lock while we access the bitmap page */
-	_hash_chgbufaccess(rel, metabuf, HASH_READ, HASH_NOLOCK);
+	LockBuffer(metabuf, BUFFER_LOCK_UNLOCK);
 
 	/* Clear the bitmap bit to indicate that this overflow page is free */
 	mapbuf = _hash_getbuf(rel, blkno, HASH_WRITE, LH_BITMAP_PAGE);
@@ -510,7 +497,7 @@ _hash_freeovflpage(Relation rel, Buffer ovflbuf, Buffer wbuf,
 	_hash_relbuf(rel, mapbuf);
 
 	/* Get write-lock on metapage to update firstfree */
-	_hash_chgbufaccess(rel, metabuf, HASH_NOLOCK, HASH_WRITE);
+	LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 
 	/* if this is now the first free page, update hashm_firstfree */
 	if (ovflbitno < metap->hashm_firstfree)
@@ -648,7 +635,7 @@ _hash_squeezebucket(Relation rel,
 	 */
 	if (!BlockNumberIsValid(wopaque->hasho_nextblkno))
 	{
-		_hash_chgbufaccess(rel, wbuf, HASH_READ, HASH_NOLOCK);
+		LockBuffer(wbuf, BUFFER_LOCK_UNLOCK);
 		return;
 	}
 
@@ -736,7 +723,7 @@ _hash_squeezebucket(Relation rel,
 				if (wbuf_dirty)
 					MarkBufferDirty(wbuf);
 				if (retain_pin)
-					_hash_chgbufaccess(rel, wbuf, HASH_READ, HASH_NOLOCK);
+					LockBuffer(wbuf, BUFFER_LOCK_UNLOCK);
 				else
 					_hash_relbuf(rel, wbuf);
 
@@ -783,29 +770,27 @@ _hash_squeezebucket(Relation rel,
 		 * Tricky point here: if our read and write pages are adjacent in the
 		 * bucket chain, our write lock on wbuf will conflict with
 		 * _hash_freeovflpage's attempt to update the sibling links of the
-		 * removed page.  In that case, we don't need to lock it again and we
-		 * always release the lock on wbuf in _hash_freeovflpage and then
-		 * retake it again here.  This will not only simplify the code, but is
-		 * required to atomically log the changes which will be helpful when
-		 * we write WAL for hash indexes.
+		 * removed page.  In that case, we don't need to lock it again.
 		 */
 		rblkno = ropaque->hasho_prevblkno;
 		Assert(BlockNumberIsValid(rblkno));
 
 		/* free this overflow page (releases rbuf) */
-		_hash_freeovflpage(rel, rbuf, wbuf, wbuf_dirty, bstrategy);
+		_hash_freeovflpage(rel, rbuf, wbuf, bstrategy);
+
+		if (wbuf_dirty)
+			MarkBufferDirty(wbuf);
 
 		/* are we freeing the page adjacent to wbuf? */
 		if (rblkno == wblkno)
 		{
 			/* retain the pin on primary bucket page till end of bucket scan */
-			if (wblkno != bucket_blkno)
-				_hash_dropbuf(rel, wbuf);
+			if (wblkno == bucket_blkno)
+				LockBuffer(wbuf, BUFFER_LOCK_UNLOCK);
+			else
+				_hash_relbuf(rel, wbuf);
 			return;
 		}
-
-		/* lock the overflow page being written, then get the previous one */
-		_hash_chgbufaccess(rel, wbuf, HASH_NOLOCK, HASH_WRITE);
 
 		rbuf = _hash_getbuf_with_strategy(rel,
 										  rblkno,

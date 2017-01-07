@@ -3,7 +3,7 @@
  * heap.c
  *	  code to create and destroy POSTGRES heap relations
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -3230,9 +3230,12 @@ RemovePartitionKeyByRelId(Oid relid)
  * StorePartitionBound
  *		Update pg_class tuple of rel to store the partition bound and set
  *		relispartition to true
+ *
+ * Also, invalidate the parent's relcache, so that the next rebuild will load
+ * the new partition's info into its partition descriptor.
  */
 void
-StorePartitionBound(Relation rel, Node *bound)
+StorePartitionBound(Relation rel, Relation parent, Node *bound)
 {
 	Relation	classRel;
 	HeapTuple	tuple,
@@ -3245,6 +3248,10 @@ StorePartitionBound(Relation rel, Node *bound)
 	classRel = heap_open(RelationRelationId, RowExclusiveLock);
 	tuple = SearchSysCacheCopy1(RELOID,
 								ObjectIdGetDatum(RelationGetRelid(rel)));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u",
+			 RelationGetRelid(rel));
+
 #ifdef USE_ASSERT_CHECKING
 	{
 		Form_pg_class	classForm;
@@ -3273,4 +3280,6 @@ StorePartitionBound(Relation rel, Node *bound)
 	CatalogUpdateIndexes(classRel, newtuple);
 	heap_freetuple(newtuple);
 	heap_close(classRel, RowExclusiveLock);
+
+	CacheInvalidateRelcache(parent);
 }

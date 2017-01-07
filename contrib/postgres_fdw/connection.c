@@ -3,7 +3,7 @@
  * connection.c
  *		  Connection management functions for postgres_fdw
  *
- * Portions Copyright (c) 2012-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  contrib/postgres_fdw/connection.c
@@ -568,7 +568,7 @@ pgfdw_report_error(int elevel, PGresult *res, PGconn *conn,
 		ereport(elevel,
 				(errcode(sqlstate),
 				 message_primary ? errmsg_internal("%s", message_primary) :
-				 errmsg("unknown error"),
+				 errmsg("could not obtain message string for remote error"),
 			   message_detail ? errdetail_internal("%s", message_detail) : 0,
 				 message_hint ? errhint("%s", message_hint) : 0,
 				 message_context ? errcontext("%s", message_context) : 0,

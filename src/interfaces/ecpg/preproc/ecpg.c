@@ -1,7 +1,7 @@
 /* src/interfaces/ecpg/preproc/ecpg.c */
 
 /* Main for ecpg, the PostgreSQL embedded SQL precompiler. */
-/* Copyright (c) 1996-2016, PostgreSQL Global Development Group */
+/* Copyright (c) 1996-2017, PostgreSQL Global Development Group */
 
 #include "postgres_fe.h"
 
@@ -313,7 +313,8 @@ main(int argc, char *const argv[])
 					base_yyout = stdout;
 				else
 				{
-					output_filename = mm_strdup(input_filename);
+					output_filename = mm_alloc(strlen(input_filename) + 3);
+					strcpy(output_filename, input_filename);
 
 					ptr2ext = strrchr(output_filename, '.');
 					/* make extension = .c resp. .h */
