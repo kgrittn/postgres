@@ -426,7 +426,7 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
 		Assert(list_length(rewritten) == 1);
 		ExplainOneQuery((Query *) linitial(rewritten),
 						dcs->options, NULL, es,
-						queryString, params);
+						queryString, params, queryEnv);
 	}
 	else if (IsA(utilityStmt, ExecuteStmt))
 		ExplainExecuteQuery((ExecuteStmt *) utilityStmt, into, es,
