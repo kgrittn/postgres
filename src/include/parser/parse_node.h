@@ -183,17 +183,14 @@ struct ParseState
 	bool		p_locked_from_parent;	/* parent has marked this subquery
 										 * with FOR UPDATE/FOR SHARE */
 
+	QueryEnvironment *p_queryEnv; /* curr env, incl refs to enclosing env */
+
 	/* Flags telling about things found in the query: */
 	bool		p_hasAggs;
 	bool		p_hasWindowFuncs;
 	bool		p_hasTargetSRFs;
 	bool		p_hasSubLinks;
 	bool		p_hasModifyingCTE;
-	bool		p_is_insert;
-	bool		p_locked_from_parent;
-	Relation	p_target_relation;
-	RangeTblEntry *p_target_rangetblentry;
-	QueryEnvironment *p_queryEnv; /* curr env, incl refs to enclosing env */
 
 	/*
 	 * Optional hook functions for parser callbacks.  These are null unless
