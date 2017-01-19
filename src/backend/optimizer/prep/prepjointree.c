@@ -913,6 +913,7 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 	subroot->processed_tlist = NIL;
 	subroot->grouping_map = NULL;
 	subroot->minmax_aggs = NIL;
+	subroot->qual_security_level = 0;
 	subroot->hasInheritedTarget = false;
 	subroot->hasRecursion = false;
 	subroot->wt_param_id = -1;
@@ -1410,8 +1411,7 @@ is_simple_subquery(Query *subquery, RangeTblEntry *rte,
 	 * Let's just make sure it's a valid subselect ...
 	 */
 	if (!IsA(subquery, Query) ||
-		subquery->commandType != CMD_SELECT ||
-		subquery->utilityStmt != NULL)
+		subquery->commandType != CMD_SELECT)
 		elog(ERROR, "subquery is bogus");
 
 	/*
@@ -1745,8 +1745,7 @@ is_simple_union_all(Query *subquery)
 
 	/* Let's just make sure it's a valid subselect ... */
 	if (!IsA(subquery, Query) ||
-		subquery->commandType != CMD_SELECT ||
-		subquery->utilityStmt != NULL)
+		subquery->commandType != CMD_SELECT)
 		elog(ERROR, "subquery is bogus");
 
 	/* Is it a set-operation query at all? */

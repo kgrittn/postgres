@@ -48,10 +48,11 @@ typedef enum
 extern int	log_statement;
 
 extern List *pg_parse_query(const char *query_string);
-extern List *pg_analyze_and_rewrite(Node *parsetree, const char *query_string,
+extern List *pg_analyze_and_rewrite(RawStmt *parsetree,
+					   const char *query_string,
 					   Oid *paramTypes, int numParams,
 					   QueryEnvironment *queryEnv);
-extern List *pg_analyze_and_rewrite_params(Node *parsetree,
+extern List *pg_analyze_and_rewrite_params(RawStmt *parsetree,
 							  const char *query_string,
 							  ParserSetupHook parserSetup,
 							  void *parserSetupArg,

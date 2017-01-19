@@ -90,13 +90,15 @@ _copyPlannedStmt(const PlannedStmt *from)
 	COPY_NODE_FIELD(planTree);
 	COPY_NODE_FIELD(rtable);
 	COPY_NODE_FIELD(resultRelations);
-	COPY_NODE_FIELD(utilityStmt);
 	COPY_NODE_FIELD(subplans);
 	COPY_BITMAPSET_FIELD(rewindPlanIDs);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(relationOids);
 	COPY_NODE_FIELD(invalItems);
 	COPY_SCALAR_FIELD(nParamExec);
+	COPY_NODE_FIELD(utilityStmt);
+	COPY_LOCATION_FIELD(stmt_location);
+	COPY_LOCATION_FIELD(stmt_len);
 
 	return newnode;
 }
@@ -159,6 +161,22 @@ _copyResult(const Result *from)
 	 * copy remainder of node
 	 */
 	COPY_NODE_FIELD(resconstantqual);
+
+	return newnode;
+}
+
+/*
+ * _copyProjectSet
+ */
+static ProjectSet *
+_copyProjectSet(const ProjectSet *from)
+{
+	ProjectSet *newnode = makeNode(ProjectSet);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyPlanFields((const Plan *) from, (Plan *) newnode);
 
 	return newnode;
 }
@@ -2046,6 +2064,8 @@ _copyRestrictInfo(const RestrictInfo *from)
 	COPY_SCALAR_FIELD(outerjoin_delayed);
 	COPY_SCALAR_FIELD(can_join);
 	COPY_SCALAR_FIELD(pseudoconstant);
+	COPY_SCALAR_FIELD(leakproof);
+	COPY_SCALAR_FIELD(security_level);
 	COPY_BITMAPSET_FIELD(clause_relids);
 	COPY_BITMAPSET_FIELD(required_relids);
 	COPY_BITMAPSET_FIELD(outer_relids);
@@ -2789,6 +2809,20 @@ _copyQuery(const Query *from)
 	COPY_NODE_FIELD(setOperations);
 	COPY_NODE_FIELD(constraintDeps);
 	COPY_NODE_FIELD(withCheckOptions);
+	COPY_LOCATION_FIELD(stmt_location);
+	COPY_LOCATION_FIELD(stmt_len);
+
+	return newnode;
+}
+
+static RawStmt *
+_copyRawStmt(const RawStmt *from)
+{
+	RawStmt    *newnode = makeNode(RawStmt);
+
+	COPY_NODE_FIELD(stmt);
+	COPY_LOCATION_FIELD(stmt_location);
+	COPY_LOCATION_FIELD(stmt_len);
 
 	return newnode;
 }
@@ -4419,6 +4453,9 @@ copyObject(const void *from)
 		case T_Result:
 			retval = _copyResult(from);
 			break;
+		case T_ProjectSet:
+			retval = _copyProjectSet(from);
+			break;
 		case T_ModifyTable:
 			retval = _copyModifyTable(from);
 			break;
@@ -4752,6 +4789,9 @@ copyObject(const void *from)
 			 */
 		case T_Query:
 			retval = _copyQuery(from);
+			break;
+		case T_RawStmt:
+			retval = _copyRawStmt(from);
 			break;
 		case T_InsertStmt:
 			retval = _copyInsertStmt(from);

@@ -189,7 +189,6 @@ extern void CheckValidResultRel(Relation resultRel, CmdType operation);
 extern void InitResultRelInfo(ResultRelInfo *resultRelInfo,
 				  Relation resultRelationDesc,
 				  Index resultRelationIndex,
-				  bool load_partition_check,
 				  Relation partition_root,
 				  int instrument_options);
 extern ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid);
@@ -253,6 +252,10 @@ extern Tuplestorestate *ExecMakeTableFunctionResult(ExprState *funcexpr,
 							MemoryContext argContext,
 							TupleDesc expectedDesc,
 							bool randomAccess);
+extern Datum ExecMakeFunctionResultSet(FuncExprState *fcache,
+						  ExprContext *econtext,
+						  bool *isNull,
+						  ExprDoneCond *isDone);
 extern Datum ExecEvalExprSwitchContext(ExprState *expression, ExprContext *econtext,
 						  bool *isNull, ExprDoneCond *isDone);
 extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
