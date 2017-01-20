@@ -151,8 +151,6 @@ ExecInitNamedTuplestoreScan(NamedTuplestoreScan *node, EState *estate, int eflag
 	ExecAssignResultTypeFromTL(&scanstate->ss.ps);
 	ExecAssignScanProjectionInfo(&scanstate->ss);
 
-	scanstate->ss.ps.ps_TupFromTlist = false;
-
 	return scanstate;
 }
 
