@@ -1463,7 +1463,8 @@ BeginCopy(ParseState *pstate,
 		 * DECLARE CURSOR and PREPARE.)  XXX FIXME someday.
 		 */
 		rewritten = pg_analyze_and_rewrite((RawStmt *) copyObject(raw_query),
-										   pstate->p_sourcetext, NULL, 0);
+										   pstate->p_sourcetext, NULL, 0,
+										   NULL);
 
 		/* check that we got back something we can work with */
 		if (rewritten == NIL)
@@ -1566,7 +1567,7 @@ BeginCopy(ParseState *pstate,
 		cstate->queryDesc = CreateQueryDesc(plan, pstate->p_sourcetext,
 											GetActiveSnapshot(),
 											InvalidSnapshot,
-											dest, NULL, 0);
+											dest, NULL, NULL, 0);
 
 		/*
 		 * Call ExecutorStart to prepare the plan for execution.

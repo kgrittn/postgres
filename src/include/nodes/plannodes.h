@@ -507,6 +507,16 @@ typedef struct CteScan
 } CteScan;
 
 /* ----------------
+ *		NamedTuplestoreScan node
+ * ----------------
+ */
+typedef struct NamedTuplestoreScan
+{
+	Scan		scan;
+	char	   *enrname;
+} NamedTuplestoreScan;
+
+/* ----------------
  *		WorkTableScan node
  * ----------------
  */

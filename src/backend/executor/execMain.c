@@ -193,6 +193,11 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	estate->es_sourceText = queryDesc->sourceText;
 
 	/*
+	 * Fill in the named tuplestores, if any, from queryDesc.
+	 */
+	estate->es_queryEnv = queryDesc->queryEnv;
+
+	/*
 	 * If non-read-only query, set the command ID to mark output tuples with
 	 */
 	switch (queryDesc->operation)
