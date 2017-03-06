@@ -698,24 +698,28 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		if (trigdata->tg_newtable)
 		{
 			Enr enr = palloc(sizeof(EnrData));
+			int rc PG_USED_FOR_ASSERTS_ONLY;
 
 			enr->md.name = trigdata->tg_trigger->tgnewtable;
 			enr->md.tupdesc = trigdata->tg_relation->rd_att;
 			enr->md.enrtuples = tuplestore_tuple_count(trigdata->tg_newtable);
 			enr->reldata = trigdata->tg_newtable;
 			register_enr(estate.queryEnv, enr);
-			SPI_register_relation(enr);
+			rc = SPI_register_relation(enr);
+			Assert(rc >= 0);
 		}
 		if (trigdata->tg_oldtable)
 		{
 			Enr enr = palloc(sizeof(EnrData));
+			int rc PG_USED_FOR_ASSERTS_ONLY;
 
 			enr->md.name = trigdata->tg_trigger->tgoldtable;
 			enr->md.tupdesc = trigdata->tg_relation->rd_att;
 			enr->md.enrtuples = tuplestore_tuple_count(trigdata->tg_oldtable);
 			enr->reldata = trigdata->tg_oldtable;
 			register_enr(estate.queryEnv, enr);
-			SPI_register_relation(enr);
+			rc = SPI_register_relation(enr);
+			Assert(rc >= 0);
 		}
 	}
 

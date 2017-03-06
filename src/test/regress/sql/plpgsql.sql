@@ -4623,9 +4623,9 @@ CREATE FUNCTION level2_table_ri_child_insupd_func()
   LANGUAGE plpgsql
 AS $$
   BEGIN
-    PERFORM FROM c
+    PERFORM FROM i
       LEFT JOIN level1_table p
-        ON p.level1_no IS NOT NULL AND p.level1_no = c.parent_no
+        ON p.level1_no IS NOT NULL AND p.level1_no = i.parent_no
       WHERE p.level1_no IS NULL;
     IF FOUND THEN
       RAISE EXCEPTION 'RI error';
@@ -4636,26 +4636,41 @@ $$;
 
 CREATE TRIGGER level2_table_ri_child_insupd_trigger
   AFTER INSERT OR UPDATE ON level2_table
-  REFERENCING NEW TABLE AS c
+  REFERENCING NEW TABLE AS i
   FOR EACH STATEMENT EXECUTE PROCEDURE level2_table_ri_child_insupd_func();
 
---create test data
-INSERT INTO level1_table(level1_no)
+-- create initial test data
+INSERT INTO level1_table (level1_no)
   SELECT generate_series(1,200);
+ANALYZE level1_table;
 
-INSERT INTO level2_table(level2_no, parent_no)
+INSERT INTO level2_table (level2_no, parent_no)
   SELECT level2_no, level2_no / 50 + 1 AS parent_no
     FROM generate_series(1,9999) level2_no;
+ANALYZE level2_table;
 
-INSERT INTO all_level_status(level, node_no, status)
+INSERT INTO all_level_status (level, node_no, status)
   SELECT 1, level1_no, 0 FROM level1_table;
 
-INSERT INTO all_level_status(level, node_no, status)
+INSERT INTO all_level_status (level, node_no, status)
   SELECT 2, level2_no, 0 FROM level2_table;
+ANALYZE all_level_status;
 
 INSERT INTO level1_table(level1_no)
   SELECT generate_series(201,1000);
+ANALYZE level1_table;
 
+-- attempt modifications which would break RI (should all fail)
+DELETE FROM level1_table WHERE level1_no = 25;
+
+UPDATE level1_table SET level1_no = -1 WHERE level1_no = 30;
+
+INSERT INTO level2_table (level2_no, parent_no) VALUES (10000, 10000);
+
+UPDATE level2_table SET parent_no = 2000 WHERE level2_no = 40;
+
+
+-- attempt modifications which would not break RI (should all succeed)
 DELETE FROM level1_table WHERE level1_no BETWEEN 201 AND 1000;
 
 DELETE FROM level1_table WHERE level1_no BETWEEN 100000000 AND 100000010;
