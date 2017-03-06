@@ -513,7 +513,7 @@ typedef struct CteScan
 typedef struct NamedTuplestoreScan
 {
 	Scan		scan;
-	char	   *enrname;
+	char	   *enrname;		/* Name given to Ephemeral Named Relation */
 } NamedTuplestoreScan;
 
 /* ----------------
