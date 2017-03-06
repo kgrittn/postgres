@@ -58,6 +58,8 @@ static Node *transformJoinUsingClause(ParseState *pstate,
 						 List *leftVars, List *rightVars);
 static Node *transformJoinOnClause(ParseState *pstate, JoinExpr *j,
 					  List *namespace);
+static RangeTblEntry *getRTEForSpecialRelationTypes(ParseState *pstate,
+						RangeVar *rv);
 static RangeTblEntry *transformTableEntry(ParseState *pstate, RangeVar *r);
 static RangeTblEntry *transformCTEReference(ParseState *pstate, RangeVar *r,
 					  CommonTableExpr *cte, Index levelsup);
@@ -178,6 +180,14 @@ setTargetTable(ParseState *pstate, RangeVar *relation,
 {
 	RangeTblEntry *rte;
 	int			rtindex;
+
+	/* So far special relations are immutable; so they cannot be targets. */
+	rte = getRTEForSpecialRelationTypes(pstate, relation);
+	if (rte != NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("relation \"%s\" cannot be the target of a modifying statement",
+						relation->relname)));
 
 	/* Close old target; this could only happen for multi-action rules */
 	if (pstate->p_target_relation != NULL)
@@ -811,6 +821,23 @@ transformRangeTableSample(ParseState *pstate, RangeTableSample *rts)
 }
 
 
+static RangeTblEntry *
+getRTEForSpecialRelationTypes(ParseState *pstate, RangeVar *rv)
+{
+
+	CommonTableExpr *cte;
+	Index		levelsup;
+	RangeTblEntry *rte = NULL;
+
+	cte = scanNameSpaceForCTE(pstate, rv->relname, &levelsup);
+	if (cte)
+		rte = transformCTEReference(pstate, rv, cte, levelsup);
+	if (!rte && scanNameSpaceForEnr(pstate, rv->relname))
+		rte = transformEnrReference(pstate, rv);
+
+	return rte;
+}
+
 /*
  * transformFromClauseItem -
  *	  Transform a FROM-clause item, adding any required entries to the
@@ -850,17 +877,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		 * reference
 		 */
 		if (!rv->schemaname)
-		{
-			CommonTableExpr *cte;
-			Index		levelsup;
-
-			cte = scanNameSpaceForCTE(pstate, rv->relname, &levelsup);
-			if (cte)
-				rte = transformCTEReference(pstate, rv, cte, levelsup);
-			if (!rte)
-				if (scanNameSpaceForEnr(pstate, rv->relname))
-					rte = transformEnrReference(pstate, rv);
-		}
+			rte = getRTEForSpecialRelationTypes(pstate, rv);
 
 		/* if not found above, must be a table reference */
 		if (!rte)
