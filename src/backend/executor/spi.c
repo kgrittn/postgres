@@ -2715,29 +2715,3 @@ SPI_unregister_relation(const char *name)
 
 	return res;
 }
-
-/*
- * This returns an Enr if there is a name match at the caller level.  It must
- * quietly return NULL if there is no SPI caller or if no match is found.
- *
- * Normally an ephemeral named relation is expected to be used on a specific
- * depth of SPI connection, but we tolerate a call if the next level has been
- * opened, in case someone wants to pass an Enr through to the next level.
- */
-Enr
-SPI_get_caller_relation(const char *name)
-{
-	if (name == NULL)
-	{
-		SPI_result = SPI_ERROR_ARGUMENT;
-		return NULL;
-	}
-
-	if (_SPI_current == NULL)
-	{
-		SPI_result = SPI_ERROR_UNCONNECTED;
-		return NULL;
-	}
-
-	return _SPI_find_enr_by_name(name);
-}
