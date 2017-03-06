@@ -1757,7 +1757,7 @@ typedef struct GrantStmt
 	bool		is_grant;		/* true = GRANT, false = REVOKE */
 	GrantTargetType targtype;	/* type of the grant target */
 	GrantObjectType objtype;	/* kind of object being operated on */
-	List	   *objects;		/* list of RangeVar nodes, FuncWithArgs nodes,
+	List	   *objects;		/* list of RangeVar nodes, ObjectWithArgs nodes,
 								 * or plain names (as Value strings) */
 	List	   *privileges;		/* list of AccessPriv nodes */
 	/* privileges == NIL denotes ALL PRIVILEGES */
@@ -1767,16 +1767,16 @@ typedef struct GrantStmt
 } GrantStmt;
 
 /*
- * Note: FuncWithArgs carries only the types of the input parameters of the
+ * Note: ObjectWithArgs carries only the types of the input parameters of the
  * function.  So it is sufficient to identify an existing function, but it
  * is not enough info to define a function nor to call it.
  */
-typedef struct FuncWithArgs
+typedef struct ObjectWithArgs
 {
 	NodeTag		type;
-	List	   *funcname;		/* qualified name of function */
-	List	   *funcargs;		/* list of Typename nodes */
-} FuncWithArgs;
+	List	   *objname;		/* qualified name of function/operator */
+	List	   *objargs;		/* list of Typename nodes */
+} ObjectWithArgs;
 
 /*
  * An access privilege, with optional list of column names
@@ -2080,8 +2080,7 @@ typedef struct AlterExtensionContentsStmt
 	char	   *extname;		/* Extension's name */
 	int			action;			/* +1 = add object, -1 = drop object */
 	ObjectType	objtype;		/* Object's type */
-	List	   *objname;		/* Qualified name of the object */
-	List	   *objargs;		/* Arguments if needed (eg, for functions) */
+	Node	   *object;			/* Qualified name of the object */
 } AlterExtensionContentsStmt;
 
 /* ----------------------
@@ -2423,12 +2422,11 @@ typedef struct CreateOpClassItem
 {
 	NodeTag		type;
 	int			itemtype;		/* see codes above */
-	/* fields used for an operator or function item: */
-	List	   *name;			/* operator or function name */
-	List	   *args;			/* argument types */
+	ObjectWithArgs *name;		/* operator or function name and args */
 	int			number;			/* strategy num or support proc num */
 	List	   *order_family;	/* only used for ordering operators */
-	List	   *class_args;		/* only used for functions */
+	List	   *class_args;		/* amproclefttype/amprocrighttype or
+								 * amoplefttype/amoprighttype */
 	/* fields used for a storagetype item: */
 	TypeName   *storedtype;		/* datatype stored in index */
 } CreateOpClassItem;
@@ -2465,8 +2463,7 @@ typedef struct AlterOpFamilyStmt
 typedef struct DropStmt
 {
 	NodeTag		type;
-	List	   *objects;		/* list of sublists of names (as Values) */
-	List	   *arguments;		/* list of sublists of arguments (as Values) */
+	List	   *objects;		/* list of names */
 	ObjectType	removeType;		/* object type */
 	DropBehavior behavior;		/* RESTRICT or CASCADE behavior */
 	bool		missing_ok;		/* skip error if object is missing? */
@@ -2493,8 +2490,7 @@ typedef struct CommentStmt
 {
 	NodeTag		type;
 	ObjectType	objtype;		/* Object's type */
-	List	   *objname;		/* Qualified name of the object */
-	List	   *objargs;		/* Arguments if needed (eg, for functions) */
+	Node	   *object;			/* Qualified name of the object */
 	char	   *comment;		/* Comment to insert, or NULL to remove */
 } CommentStmt;
 
@@ -2506,8 +2502,7 @@ typedef struct SecLabelStmt
 {
 	NodeTag		type;
 	ObjectType	objtype;		/* Object's type */
-	List	   *objname;		/* Qualified name of the object */
-	List	   *objargs;		/* Arguments if needed (eg, for functions) */
+	Node	   *object;			/* Qualified name of the object */
 	char	   *provider;		/* Label provider (or NULL) */
 	char	   *label;			/* New security label to be assigned */
 } SecLabelStmt;
@@ -2647,7 +2642,7 @@ typedef struct FunctionParameter
 typedef struct AlterFunctionStmt
 {
 	NodeTag		type;
-	FuncWithArgs *func;			/* name and args of function */
+	ObjectWithArgs *func;		/* name and args of function */
 	List	   *actions;		/* list of DefElem */
 } AlterFunctionStmt;
 
@@ -2681,8 +2676,7 @@ typedef struct RenameStmt
 	ObjectType	renameType;		/* OBJECT_TABLE, OBJECT_COLUMN, etc */
 	ObjectType	relationType;	/* if column name, associated relation type */
 	RangeVar   *relation;		/* in case it's a table */
-	List	   *object;			/* in case it's some other object */
-	List	   *objarg;			/* argument types, if applicable */
+	Node	   *object;			/* in case it's some other object */
 	char	   *subname;		/* name of contained object (column, rule,
 								 * trigger, etc) */
 	char	   *newname;		/* the new name */
@@ -2699,8 +2693,7 @@ typedef struct AlterObjectDependsStmt
 	NodeTag		type;
 	ObjectType	objectType;		/* OBJECT_FUNCTION, OBJECT_TRIGGER, etc */
 	RangeVar   *relation;		/* in case a table is involved */
-	List	   *objname;		/* name of the object */
-	List	   *objargs;		/* argument types, if applicable */
+	Node	   *object;			/* name of the object */
 	Value	   *extname;		/* extension name */
 } AlterObjectDependsStmt;
 
@@ -2713,8 +2706,7 @@ typedef struct AlterObjectSchemaStmt
 	NodeTag		type;
 	ObjectType	objectType;		/* OBJECT_TABLE, OBJECT_TYPE, etc */
 	RangeVar   *relation;		/* in case it's a table */
-	List	   *object;			/* in case it's some other object */
-	List	   *objarg;			/* argument types, if applicable */
+	Node	   *object;			/* in case it's some other object */
 	char	   *newschema;		/* the new schema */
 	bool		missing_ok;		/* skip error if missing? */
 } AlterObjectSchemaStmt;
@@ -2728,8 +2720,7 @@ typedef struct AlterOwnerStmt
 	NodeTag		type;
 	ObjectType	objectType;		/* OBJECT_TABLE, OBJECT_TYPE, etc */
 	RangeVar   *relation;		/* in case it's a table */
-	List	   *object;			/* in case it's some other object */
-	List	   *objarg;			/* argument types, if applicable */
+	Node	   *object;			/* in case it's some other object */
 	RoleSpec   *newowner;		/* the new owner */
 } AlterOwnerStmt;
 
@@ -2741,8 +2732,7 @@ typedef struct AlterOwnerStmt
 typedef struct AlterOperatorStmt
 {
 	NodeTag		type;
-	List	   *opername;		/* operator name */
-	List	   *operargs;		/* operator's argument TypeNames */
+	ObjectWithArgs *opername;	/* operator name and argument types */
 	List	   *options;		/* List of DefElem nodes */
 } AlterOperatorStmt;
 
@@ -3141,7 +3131,7 @@ typedef struct CreateCastStmt
 	NodeTag		type;
 	TypeName   *sourcetype;
 	TypeName   *targettype;
-	FuncWithArgs *func;
+	ObjectWithArgs *func;
 	CoercionContext context;
 	bool		inout;
 } CreateCastStmt;
@@ -3156,8 +3146,8 @@ typedef struct CreateTransformStmt
 	bool		replace;
 	TypeName   *type_name;
 	char	   *lang;
-	FuncWithArgs *fromsql;
-	FuncWithArgs *tosql;
+	ObjectWithArgs *fromsql;
+	ObjectWithArgs *tosql;
 } CreateTransformStmt;
 
 /* ----------------------
