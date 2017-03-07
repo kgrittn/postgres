@@ -4660,6 +4660,26 @@ INSERT INTO level1_table(level1_no)
   SELECT generate_series(201,1000);
 ANALYZE level1_table;
 
+-- behave reasonably if someone tries to modify a transition table
+CREATE FUNCTION level2_table_bad_usage_func()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+AS $$
+  BEGIN
+    INSERT INTO d VALUES (1000000, 1000000, 'x');
+    RETURN NULL;
+  END;
+$$;
+
+CREATE TRIGGER level2_table_bad_usage_trigger
+  AFTER DELETE ON level2_table
+  REFERENCING OLD TABLE AS d
+  FOR EACH STATEMENT EXECUTE PROCEDURE level2_table_bad_usage_func();
+
+DELETE FROM level1_table WHERE level1_no BETWEEN 301 AND 1000;
+
+DROP TRIGGER level2_table_bad_usage_trigger ON level2_table;
+
 -- attempt modifications which would break RI (should all fail)
 DELETE FROM level1_table WHERE level1_no = 25;
 
@@ -4676,3 +4696,7 @@ DELETE FROM level1_table WHERE level1_no BETWEEN 201 AND 1000;
 DELETE FROM level1_table WHERE level1_no BETWEEN 100000000 AND 100000010;
 
 SELECT count(*) FROM level1_table;
+
+DELETE FROM level2_table WHERE level2_no BETWEEN 211 AND 220;
+
+SELECT count(*) FROM level2_table;
