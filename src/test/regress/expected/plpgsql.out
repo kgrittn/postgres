@@ -5876,20 +5876,31 @@ CREATE TRIGGER level2_table_bad_usage_trigger
   AFTER DELETE ON level2_table
   REFERENCING OLD TABLE AS d
   FOR EACH STATEMENT EXECUTE PROCEDURE level2_table_bad_usage_func();
-DELETE FROM level1_table WHERE level1_no BETWEEN 301 AND 1000;
+DELETE FROM level2_table WHERE level2_no BETWEEN 301 AND 305;
+ERROR:  relation "d" cannot be the target of a modifying statement
+CONTEXT:  SQL statement "INSERT INTO d VALUES (1000000, 1000000, 'x')"
+PL/pgSQL function level2_table_bad_usage_func() line 3 at SQL statement
 DROP TRIGGER level2_table_bad_usage_trigger ON level2_table;
 -- attempt modifications which would break RI (should all fail)
 DELETE FROM level1_table WHERE level1_no = 25;
+ERROR:  RI error
+CONTEXT:  PL/pgSQL function level1_table_ri_parent_del_func() line 6 at RAISE
 UPDATE level1_table SET level1_no = -1 WHERE level1_no = 30;
+ERROR:  RI error
+CONTEXT:  PL/pgSQL function level1_table_ri_parent_upd_func() line 14 at RAISE
 INSERT INTO level2_table (level2_no, parent_no) VALUES (10000, 10000);
+ERROR:  RI error
+CONTEXT:  PL/pgSQL function level2_table_ri_child_insupd_func() line 8 at RAISE
 UPDATE level2_table SET parent_no = 2000 WHERE level2_no = 40;
+ERROR:  RI error
+CONTEXT:  PL/pgSQL function level2_table_ri_child_insupd_func() line 8 at RAISE
 -- attempt modifications which would not break RI (should all succeed)
 DELETE FROM level1_table WHERE level1_no BETWEEN 201 AND 1000;
 DELETE FROM level1_table WHERE level1_no BETWEEN 100000000 AND 100000010;
 SELECT count(*) FROM level1_table;
  count 
 -------
-   300
+   200
 (1 row)
 
 DELETE FROM level2_table WHERE level2_no BETWEEN 211 AND 220;

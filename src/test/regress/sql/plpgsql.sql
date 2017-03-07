@@ -4676,7 +4676,7 @@ CREATE TRIGGER level2_table_bad_usage_trigger
   REFERENCING OLD TABLE AS d
   FOR EACH STATEMENT EXECUTE PROCEDURE level2_table_bad_usage_func();
 
-DELETE FROM level1_table WHERE level1_no BETWEEN 301 AND 1000;
+DELETE FROM level2_table WHERE level2_no BETWEEN 301 AND 305;
 
 DROP TRIGGER level2_table_bad_usage_trigger ON level2_table;
 

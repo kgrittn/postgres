@@ -91,7 +91,7 @@ PrepareQuery(PrepareStmt *stmt, const char *queryString,
 	 * to see the unmodified raw parse tree.
 	 */
 	plansource = CreateCachedPlan(rawstmt, queryString,
-								  CreateCommandTag(stmt->query));
+								  CreateCommandTag(stmt->query), NULL);
 
 	/* Transform list of TypeNames to array of type OIDs */
 	nargs = list_length(stmt->argtypes);
@@ -243,7 +243,7 @@ ExecuteQuery(ExecuteStmt *stmt, IntoClause *intoClause,
 									   entry->plansource->query_string);
 
 	/* Replan if needed, and increment plan refcount for portal */
-	cplan = GetCachedPlan(entry->plansource, paramLI, false);
+	cplan = GetCachedPlan(entry->plansource, paramLI, false, NULL);
 	plan_list = cplan->stmt_list;
 
 	/*
@@ -551,7 +551,7 @@ FetchPreparedStatementTargetList(PreparedStatement *stmt)
 	List	   *tlist;
 
 	/* Get the plan's primary targetlist */
-	tlist = CachedPlanGetTargetList(stmt->plansource);
+	tlist = CachedPlanGetTargetList(stmt->plansource, NULL);
 
 	/* Copy into caller's context in case plan gets invalidated */
 	return (List *) copyObject(tlist);
@@ -665,7 +665,7 @@ ExplainExecuteQuery(ExecuteStmt *execstmt, IntoClause *into, ExplainState *es,
 	}
 
 	/* Replan if needed, and acquire a transient refcount */
-	cplan = GetCachedPlan(entry->plansource, paramLI, true);
+	cplan = GetCachedPlan(entry->plansource, paramLI, true, queryEnv);
 
 	plan_list = cplan->stmt_list;
 
