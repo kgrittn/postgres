@@ -106,6 +106,8 @@ static void set_function_pathlist(PlannerInfo *root, RelOptInfo *rel,
 					  RangeTblEntry *rte);
 static void set_values_pathlist(PlannerInfo *root, RelOptInfo *rel,
 					RangeTblEntry *rte);
+static void set_tablefunc_pathlist(PlannerInfo *root, RelOptInfo *rel,
+					   RangeTblEntry *rte);
 static void set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel,
 				 RangeTblEntry *rte);
 static void set_namedtuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel,
@@ -367,6 +369,9 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 			case RTE_FUNCTION:
 				set_function_size_estimates(root, rel);
 				break;
+			case RTE_TABLEFUNC:
+				set_tablefunc_size_estimates(root, rel);
+				break;
 			case RTE_VALUES:
 				set_values_size_estimates(root, rel);
 				break;
@@ -441,6 +446,10 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			case RTE_FUNCTION:
 				/* RangeFunction */
 				set_function_pathlist(root, rel, rte);
+				break;
+			case RTE_TABLEFUNC:
+				/* Table Function */
+				set_tablefunc_pathlist(root, rel, rte);
 				break;
 			case RTE_VALUES:
 				/* Values list */
@@ -606,6 +615,10 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 			if (!is_parallel_safe(root, (Node *) rte->functions))
 				return;
 			break;
+
+		case RTE_TABLEFUNC:
+			/* not parallel safe */
+			return;
 
 		case RTE_VALUES:
 			/* Check for parallel-restricted functions. */
@@ -1948,6 +1961,27 @@ set_values_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 }
 
 /*
+ * set_tablefunc_pathlist
+ *		Build the (single) access path for a table func RTE
+ */
+static void
+set_tablefunc_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
+{
+	Relids		required_outer;
+
+	/*
+	 * We don't support pushing join clauses into the quals of a tablefunc
+	 * scan, but it could still have required parameterization due to LATERAL
+	 * refs in the function expression.
+	 */
+	required_outer = rel->lateral_relids;
+
+	/* Generate appropriate path */
+	add_path(rel, create_tablefuncscan_path(root, rel,
+											required_outer));
+}
+
+/*
  * set_cte_pathlist
  *		Build the (single) access path for a non-self-reference CTE RTE
  *
@@ -2095,39 +2129,51 @@ set_worktable_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 
 /*
  * generate_gather_paths
- *		Generate parallel access paths for a relation by pushing a Gather on
- *		top of a partial path.
+ *		Generate parallel access paths for a relation by pushing a Gather or
+ *		Gather Merge on top of a partial path.
  *
  * This must not be called until after we're done creating all partial paths
  * for the specified relation.  (Otherwise, add_partial_path might delete a
- * path that some GatherPath has a reference to.)
+ * path that some GatherPath or GatherMergePath has a reference to.)
  */
 void
 generate_gather_paths(PlannerInfo *root, RelOptInfo *rel)
 {
 	Path	   *cheapest_partial_path;
 	Path	   *simple_gather_path;
+	ListCell   *lc;
 
 	/* If there are no partial paths, there's nothing to do here. */
 	if (rel->partial_pathlist == NIL)
 		return;
 
 	/*
-	 * The output of Gather is currently always unsorted, so there's only one
-	 * partial path of interest: the cheapest one.  That will be the one at
-	 * the front of partial_pathlist because of the way add_partial_path
-	 * works.
-	 *
-	 * Eventually, we should have a Gather Merge operation that can merge
-	 * multiple tuple streams together while preserving their ordering.  We
-	 * could usefully generate such a path from each partial path that has
-	 * non-NIL pathkeys.
+	 * The output of Gather is always unsorted, so there's only one partial
+	 * path of interest: the cheapest one.  That will be the one at the front
+	 * of partial_pathlist because of the way add_partial_path works.
 	 */
 	cheapest_partial_path = linitial(rel->partial_pathlist);
 	simple_gather_path = (Path *)
 		create_gather_path(root, rel, cheapest_partial_path, rel->reltarget,
 						   NULL, NULL);
 	add_path(rel, simple_gather_path);
+
+	/*
+	 * For each useful ordering, we can consider an order-preserving Gather
+	 * Merge.
+	 */
+	foreach (lc, rel->partial_pathlist)
+	{
+		Path   *subpath = (Path *) lfirst(lc);
+		GatherMergePath   *path;
+
+		if (subpath->pathkeys == NIL)
+			continue;
+
+		path = create_gather_merge_path(root, rel, subpath, rel->reltarget,
+										subpath->pathkeys, NULL, NULL);
+		add_path(rel, &path->path);
+	}
 }
 
 /*
@@ -2923,6 +2969,30 @@ remove_unused_subquery_outputs(Query *subquery, RelOptInfo *rel)
 }
 
 /*
+ * create_partial_bitmap_paths
+ *	  Build partial bitmap heap path for the relation
+ */
+void
+create_partial_bitmap_paths(PlannerInfo *root, RelOptInfo *rel,
+							Path *bitmapqual)
+{
+	int			parallel_workers;
+	double		pages_fetched;
+
+	/* Compute heap pages for bitmap heap scan */
+	pages_fetched = compute_bitmap_pages(root, rel, bitmapqual, 1.0,
+										 NULL, NULL);
+
+	parallel_workers = compute_parallel_worker(rel, pages_fetched, 0);
+
+	if (parallel_workers <= 0)
+		return;
+
+	add_partial_path(rel, (Path *) create_bitmap_heap_path(root, rel,
+					bitmapqual, rel->lateral_relids, 1.0, parallel_workers));
+}
+
+/*
  * Compute the number of parallel workers that should be used to scan a
  * relation.  We compute the parallel workers based on the size of the heap to
  * be scanned and the size of the index to be scanned, then choose a minimum
@@ -3076,6 +3146,9 @@ print_path(PlannerInfo *root, Path *path, int indent)
 					break;
 				case T_FunctionScan:
 					ptype = "FunctionScan";
+					break;
+				case T_TableFuncScan:
+					ptype = "TableFuncScan";
 					break;
 				case T_ValuesScan:
 					ptype = "ValuesScan";
