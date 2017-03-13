@@ -1213,15 +1213,23 @@ setup_config(void)
 
 		if (err != 0 ||
 			getaddrinfo("::1", NULL, &hints, &gai_result) != 0)
+		{
 			conflines = replace_token(conflines,
 							   "host    all             all             ::1",
 							 "#host    all             all             ::1");
+			conflines = replace_token(conflines,
+							   "host    replication     all             ::1",
+							 "#host    replication     all             ::1");
+		}
 	}
 #else							/* !HAVE_IPV6 */
 	/* If we didn't compile IPV6 support at all, always comment it out */
 	conflines = replace_token(conflines,
 							  "host    all             all             ::1",
 							  "#host    all             all             ::1");
+	conflines = replace_token(conflines,
+							  "host    replication     all             ::1",
+							  "#host    replication     all             ::1");
 #endif   /* HAVE_IPV6 */
 
 	/* Replace default authentication methods */
@@ -2323,7 +2331,7 @@ check_need_password(const char *authmethodlocal, const char *authmethodhost)
 		 strcmp(authmethodlocal, "scram") == 0) &&
 		(strcmp(authmethodhost, "md5") == 0 ||
 		 strcmp(authmethodhost, "password") == 0 ||
-		 strcmp(authmethodlocal, "scram") == 0) &&
+		 strcmp(authmethodhost, "scram") == 0) &&
 		!(pwprompt || pwfilename))
 	{
 		fprintf(stderr, _("%s: must specify a password for the superuser to enable %s authentication\n"), progname,
@@ -3227,7 +3235,8 @@ main(int argc, char *argv[])
 	appendShellString(start_db_cmd, pgdata_native);
 
 	/* add suggested -l switch and "start" command */
-	appendPQExpBufferStr(start_db_cmd, " -l logfile start");
+	/* translator: This is a placeholder in a shell command. */
+	appendPQExpBuffer(start_db_cmd, " -l %s start", _("logfile"));
 
 	printf(_("\nSuccess. You can now start the database server using:\n\n"
 			 "    %s\n\n"),
