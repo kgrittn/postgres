@@ -624,7 +624,7 @@ RevalidateCachedQuery(CachedPlanSource *plansource,
 			return NIL;
 		}
 
-		/* Ooops, the race case happened.  Release useless locks. */
+		/* Oops, the race case happened.  Release useless locks. */
 		AcquirePlannerLocks(plansource->query_list, false);
 	}
 
@@ -850,7 +850,7 @@ CheckCachedPlan(CachedPlanSource *plansource)
 			return true;
 		}
 
-		/* Ooops, the race case happened.  Release useless locks. */
+		/* Oops, the race case happened.  Release useless locks. */
 		AcquireExecutorLocks(plan->stmt_list, false);
 	}
 
