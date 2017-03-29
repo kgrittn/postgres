@@ -354,6 +354,13 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 			 * adjustments will be needed below.
 			 */
 
+			if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("\"%s\" is a partitioned table",
+								RelationGetRelationName(rel)),
+					 errdetail("Triggers on partitioned tables cannot have transition tables.")));
+
 			if (stmt->timing != TRIGGER_TYPE_AFTER)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
