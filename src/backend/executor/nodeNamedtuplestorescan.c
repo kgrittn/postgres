@@ -105,7 +105,7 @@ ExecInitNamedTuplestoreScan(NamedTuplestoreScan *node, EState *estate, int eflag
 
 	Assert(enr->reldata);
 	scanstate->relation = (Tuplestorestate *) enr->reldata;
-	scanstate->tupdesc = enr->md.tupdesc;
+	scanstate->tupdesc = EnrmdGetTupDesc(&(enr->md));
 	scanstate->readptr =
 		tuplestore_alloc_read_pointer(scanstate->relation, 0);
 
@@ -115,7 +115,11 @@ ExecInitNamedTuplestoreScan(NamedTuplestoreScan *node, EState *estate, int eflag
 	 */
 	tuplestore_rescan(scanstate->relation);
 
-	/* TODO: Add a function to free that read pointer when done. */
+	/*
+	 * XXX: Should we add a function to free that read pointer when done?
+	 * This was attempted, but it did not improve performance or memory usage
+	 * in any tested cases.
+	 */
 
 	/*
 	 * Miscellaneous initialization

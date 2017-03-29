@@ -1994,7 +1994,7 @@ addRangeTableEntryForEnr(ParseState *pstate,
 	 * Build the list of effective column names using user-supplied aliases
 	 * and/or actual column names.  Also build the cannibalized fields.
 	 */
-	tupdesc = enrmd->tupdesc;
+	tupdesc = EnrmdGetTupDesc(enrmd);
 	rte->eref = makeAlias(refname, NIL);
 	buildRelationAliases(tupdesc, alias, rte->eref);
 	rte->enrname = enrmd->name;

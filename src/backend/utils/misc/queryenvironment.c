@@ -22,8 +22,11 @@
  */
 #include "postgres.h"
 
+#include "access/heapam.h"
+#include "access/tupdesc.h"
 #include "lib/ilist.h"
 #include "utils/queryenvironment.h"
+#include "utils/rel.h"
 
 /*
  * Private state of a query environment.
@@ -110,4 +113,34 @@ get_enr(QueryEnvironment *queryEnv, const char *name)
 	}
 
 	return NULL;
+}
+
+/*
+ * Gets the TupleDesc for a Ephemeral Named Relation, based on which field was
+ * filled.
+ *
+ * When the TupleDesc is based on a relation from the catalogs, we count on
+ * that relation being used at the same time, so that appropriate locks will
+ * already be held.  Locking here would be too late anyway.
+ */
+TupleDesc
+EnrmdGetTupDesc(Enrmd enrmd)
+{
+	TupleDesc	tupdesc;
+
+	/* One, and only one, of these fields must be filled. */
+	Assert((enrmd->oiddesc == InvalidOid) != (enrmd->tupdesc == NULL));
+
+	if (enrmd->tupdesc != NULL)
+		tupdesc = enrmd->tupdesc;
+	else
+	{
+		Relation	relation;
+
+		relation = heap_open(enrmd->oiddesc, NoLock);
+		tupdesc = relation->rd_att;
+		heap_close(relation, NoLock);
+	}
+
+	return tupdesc;
 }

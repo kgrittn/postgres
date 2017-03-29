@@ -702,7 +702,8 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 			int rc PG_USED_FOR_ASSERTS_ONLY;
 
 			enr->md.name = trigdata->tg_trigger->tgnewtable;
-			enr->md.tupdesc = trigdata->tg_relation->rd_att;
+			enr->md.oiddesc = RelationGetRelid(trigdata->tg_relation);
+			enr->md.tupdesc = NULL;
 			enr->md.enrtuples = tuplestore_tuple_count(trigdata->tg_newtable);
 			enr->reldata = trigdata->tg_newtable;
 			register_enr(estate.queryEnv, enr);
@@ -715,7 +716,8 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 			int rc PG_USED_FOR_ASSERTS_ONLY;
 
 			enr->md.name = trigdata->tg_trigger->tgoldtable;
-			enr->md.tupdesc = trigdata->tg_relation->rd_att;
+			enr->md.oiddesc = RelationGetRelid(trigdata->tg_relation);
+			enr->md.tupdesc = NULL;
 			enr->md.enrtuples = tuplestore_tuple_count(trigdata->tg_oldtable);
 			enr->reldata = trigdata->tg_oldtable;
 			register_enr(estate.queryEnv, enr);

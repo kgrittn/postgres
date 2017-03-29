@@ -22,10 +22,21 @@ typedef enum EnrType
 	ENR_NAMED_TUPLESTORE		/* named tuplestore relation; e.g., deltas */
 } EnrType;
 
+/*
+ * Some ephemeral named relations must match some relation (e.g., trigger
+ * transition tables), so to properly handle cached plans and DDL, we should
+ * carry the OID of that relation.  In other cases an ENR might be independent
+ * of any relation which is stored in the system catalogs, so we need to be
+ * able to directly store the TupleDesc.  We never need both.
+ */
 typedef struct EnrmdData
 {
 	char			   *name;		/* name used to identify the relation */
+
+	/* only one of the next two fields should be used */
+	Oid					oiddesc;	/* oid of relation to get tupdesc */
 	TupleDesc			tupdesc;	/* description of result rows */
+
 	EnrType				enrtype;	/* to identify type of relation */
 	double				enrtuples;	/* estimated number of tuples */
 } EnrmdData;
@@ -58,5 +69,6 @@ extern Enrmd get_visible_enr_metadata(QueryEnvironment *queryEnv, const char *re
 extern void register_enr(QueryEnvironment *queryEnv, Enr enr);
 extern void unregister_enr(QueryEnvironment *queryEnv, const char *name);
 extern Enr get_enr(QueryEnvironment *queryEnv, const char *name);
+extern TupleDesc EnrmdGetTupDesc(Enrmd enrmd);
 
 #endif   /* QUERYENVIRONMENT_H */
