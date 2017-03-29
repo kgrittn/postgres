@@ -197,6 +197,8 @@ typedef struct xl_hash_squeeze_page
  */
 typedef struct xl_hash_delete
 {
+	bool		clear_dead_marking;		/* TRUE if this operation clears
+										 * LH_PAGE_HAS_DEAD_TUPLES flag */
 	bool		is_primary_bucket_page; /* TRUE if the operation is for
 										 * primary bucket page */
 }	xl_hash_delete;
@@ -263,11 +265,13 @@ typedef struct xl_hash_init_bitmap_page
 typedef struct xl_hash_vacuum_one_page
 {
 	RelFileNode	hnode;
-	double		ntuples;
+	int		ntuples;
+
+	/* TARGET OFFSET NUMBERS FOLLOW AT THE END */
 }	xl_hash_vacuum_one_page;
 
 #define SizeOfHashVacuumOnePage	\
-	(offsetof(xl_hash_vacuum_one_page, ntuples) + sizeof(double))
+	(offsetof(xl_hash_vacuum_one_page, ntuples) + sizeof(int))
 
 extern void hash_redo(XLogReaderState *record);
 extern void hash_desc(StringInfo buf, XLogReaderState *record);

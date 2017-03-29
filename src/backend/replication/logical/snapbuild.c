@@ -115,6 +115,8 @@
 #include "access/transam.h"
 #include "access/xact.h"
 
+#include "pgstat.h"
+
 #include "replication/logical.h"
 #include "replication/reorderbuffer.h"
 #include "replication/snapbuild.h"
@@ -497,51 +499,32 @@ SnapBuildBuildSnapshot(SnapBuild *builder, TransactionId xid)
 }
 
 /*
- * Export a snapshot so it can be set in another session with SET TRANSACTION
- * SNAPSHOT.
+ * Build the initial slot snapshot and convert it to a normal snapshot that
+ * is understood by HeapTupleSatisfiesMVCC.
  *
- * For that we need to start a transaction in the current backend as the
- * importing side checks whether the source transaction is still open to make
- * sure the xmin horizon hasn't advanced since then.
- *
- * After that we convert a locally built snapshot into the normal variant
- * understood by HeapTupleSatisfiesMVCC et al.
+ * The snapshot will be usable directly in current transaction or exported
+ * for loading in different transaction.
  */
-const char *
-SnapBuildExportSnapshot(SnapBuild *builder)
+Snapshot
+SnapBuildInitialSnapshot(SnapBuild *builder)
 {
 	Snapshot	snap;
-	char	   *snapname;
 	TransactionId xid;
 	TransactionId *newxip;
 	int			newxcnt = 0;
 
+	Assert(!FirstSnapshotSet);
+	Assert(XactIsoLevel == XACT_REPEATABLE_READ);
+
 	if (builder->state != SNAPBUILD_CONSISTENT)
-		elog(ERROR, "cannot export a snapshot before reaching a consistent state");
+		elog(ERROR, "cannot build an initial slot snapshot before reaching a consistent state");
 
 	if (!builder->committed.includes_all_transactions)
-		elog(ERROR, "cannot export a snapshot, not all transactions are monitored anymore");
+		elog(ERROR, "cannot build an initial slot snapshot, not all transactions are monitored anymore");
 
 	/* so we don't overwrite the existing value */
 	if (TransactionIdIsValid(MyPgXact->xmin))
-		elog(ERROR, "cannot export a snapshot when MyPgXact->xmin already is valid");
-
-	if (IsTransactionOrTransactionBlock())
-		elog(ERROR, "cannot export a snapshot from within a transaction");
-
-	if (SavedResourceOwnerDuringExport)
-		elog(ERROR, "can only export one snapshot at a time");
-
-	SavedResourceOwnerDuringExport = CurrentResourceOwner;
-	ExportInProgress = true;
-
-	StartTransactionCommand();
-
-	Assert(!FirstSnapshotSet);
-
-	/* There doesn't seem to a nice API to set these */
-	XactIsoLevel = XACT_REPEATABLE_READ;
-	XactReadOnly = true;
+		elog(ERROR, "cannot build an initial slot snapshot when MyPgXact->xmin already is valid");
 
 	snap = SnapBuildBuildSnapshot(builder, GetTopTransactionId());
 
@@ -576,7 +559,9 @@ SnapBuildExportSnapshot(SnapBuild *builder)
 		if (test == NULL)
 		{
 			if (newxcnt >= GetMaxSnapshotXidCount())
-				elog(ERROR, "snapshot too large");
+				ereport(ERROR,
+					(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+					 errmsg("initial slot snapshot too large")));
 
 			newxip[newxcnt++] = xid;
 		}
@@ -587,9 +572,43 @@ SnapBuildExportSnapshot(SnapBuild *builder)
 	snap->xcnt = newxcnt;
 	snap->xip = newxip;
 
+	return snap;
+}
+
+/*
+ * Export a snapshot so it can be set in another session with SET TRANSACTION
+ * SNAPSHOT.
+ *
+ * For that we need to start a transaction in the current backend as the
+ * importing side checks whether the source transaction is still open to make
+ * sure the xmin horizon hasn't advanced since then.
+ */
+const char *
+SnapBuildExportSnapshot(SnapBuild *builder)
+{
+	Snapshot	snap;
+	char	   *snapname;
+
+	if (IsTransactionOrTransactionBlock())
+		elog(ERROR, "cannot export a snapshot from within a transaction");
+
+	if (SavedResourceOwnerDuringExport)
+		elog(ERROR, "can only export one snapshot at a time");
+
+	SavedResourceOwnerDuringExport = CurrentResourceOwner;
+	ExportInProgress = true;
+
+	StartTransactionCommand();
+
+	/* There doesn't seem to a nice API to set these */
+	XactIsoLevel = XACT_REPEATABLE_READ;
+	XactReadOnly = true;
+
+	snap = SnapBuildInitialSnapshot(builder);
+
 	/*
-	 * now that we've built a plain snapshot, use the normal mechanisms for
-	 * exporting it
+	 * now that we've built a plain snapshot, make it active and use the
+	 * normal mechanisms for exporting it
 	 */
 	snapname = ExportSnapshot(snap);
 
@@ -1580,6 +1599,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 		ereport(ERROR,
 				(errmsg("could not open file \"%s\": %m", path)));
 
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_WRITE);
 	if ((write(fd, ondisk, needed_length)) != needed_length)
 	{
 		CloseTransientFile(fd);
@@ -1587,6 +1607,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 				(errcode_for_file_access(),
 				 errmsg("could not write to file \"%s\": %m", tmppath)));
 	}
+	pgstat_report_wait_end();
 
 	/*
 	 * fsync the file before renaming so that even if we crash after this we
@@ -1596,6 +1617,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 	 * some noticeable overhead since it's performed synchronously during
 	 * decoding?
 	 */
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_SYNC);
 	if (pg_fsync(fd) != 0)
 	{
 		CloseTransientFile(fd);
@@ -1603,6 +1625,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", tmppath)));
 	}
+	pgstat_report_wait_end();
 	CloseTransientFile(fd);
 
 	fsync_fname("pg_logical/snapshots", true);
@@ -1677,7 +1700,9 @@ SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn)
 
 
 	/* read statically sized portion of snapshot */
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_READ);
 	readBytes = read(fd, &ondisk, SnapBuildOnDiskConstantSize);
+	pgstat_report_wait_end();
 	if (readBytes != SnapBuildOnDiskConstantSize)
 	{
 		CloseTransientFile(fd);
@@ -1703,7 +1728,9 @@ SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn)
 			SnapBuildOnDiskConstantSize - SnapBuildOnDiskNotChecksummedSize);
 
 	/* read SnapBuild */
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_READ);
 	readBytes = read(fd, &ondisk.builder, sizeof(SnapBuild));
+	pgstat_report_wait_end();
 	if (readBytes != sizeof(SnapBuild))
 	{
 		CloseTransientFile(fd);
@@ -1717,7 +1744,9 @@ SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn)
 	/* restore running xacts information */
 	sz = sizeof(TransactionId) * ondisk.builder.running.xcnt_space;
 	ondisk.builder.running.xip = MemoryContextAllocZero(builder->context, sz);
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_READ);
 	readBytes = read(fd, ondisk.builder.running.xip, sz);
+	pgstat_report_wait_end();
 	if (readBytes != sz)
 	{
 		CloseTransientFile(fd);
@@ -1731,7 +1760,9 @@ SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn)
 	/* restore committed xacts information */
 	sz = sizeof(TransactionId) * ondisk.builder.committed.xcnt;
 	ondisk.builder.committed.xip = MemoryContextAllocZero(builder->context, sz);
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_READ);
 	readBytes = read(fd, ondisk.builder.committed.xip, sz);
+	pgstat_report_wait_end();
 	if (readBytes != sz)
 	{
 		CloseTransientFile(fd);

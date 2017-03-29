@@ -498,7 +498,7 @@ dsa_get_handle(dsa_area *area)
 
 /*
  * Attach to an area given a handle generated (possibly in another process) by
- * dsa_get_area_handle.  The area must have been created with dsa_create (not
+ * dsa_get_handle.  The area must have been created with dsa_create (not
  * dsa_create_in_place).
  */
 dsa_area *
@@ -1314,6 +1314,13 @@ attach_internal(void *place, dsm_segment *segment, dsa_handle handle)
 
 	/* Bump the reference count. */
 	LWLockAcquire(DSA_AREA_LOCK(area), LW_EXCLUSIVE);
+	if (control->refcnt == 0)
+	{
+		/* We can't attach to a DSA area that has already been destroyed. */
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("could not attach to dsa_area")));
+	}
 	++control->refcnt;
 	LWLockRelease(DSA_AREA_LOCK(area));
 

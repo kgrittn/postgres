@@ -357,7 +357,7 @@ vacuum(int options, RangeVar *relation, Oid relid, VacuumParams *params,
 	if ((options & VACOPT_VACUUM) && !IsAutoVacuumWorkerProcess())
 	{
 		/*
-		 * Update pg_database.datfrozenxid, and truncate pg_clog if possible.
+		 * Update pg_database.datfrozenxid, and truncate pg_xact if possible.
 		 * (autovacuum.c does this for itself.)
 		 */
 		vac_update_datfrozenxid();
@@ -527,7 +527,7 @@ vacuum_set_xid_limits(Relation rel,
 	 * always an independent transaction.
 	 */
 	*oldestXmin =
-		TransactionIdLimitedForOldSnapshots(GetOldestXmin(rel, true), rel);
+		TransactionIdLimitedForOldSnapshots(GetOldestXmin(rel, PROCARRAY_FLAGS_VACUUM), rel);
 
 	Assert(TransactionIdIsNormal(*oldestXmin));
 
@@ -910,7 +910,7 @@ vac_update_relstats(Relation relation,
  *		pg_class.relminmxid values.
  *
  *		If we are able to advance either pg_database value, also try to
- *		truncate pg_clog and pg_multixact.
+ *		truncate pg_xact and pg_multixact.
  *
  *		We violate transaction semantics here by overwriting the database's
  *		existing pg_database tuple with the new values.  This is reasonably
@@ -939,7 +939,7 @@ vac_update_datfrozenxid(void)
 	 * committed pg_class entries for new tables; see AddNewRelationTuple().
 	 * So we cannot produce a wrong minimum by starting with this.
 	 */
-	newFrozenXid = GetOldestXmin(NULL, true);
+	newFrozenXid = GetOldestXmin(NULL, PROCARRAY_FLAGS_VACUUM);
 
 	/*
 	 * Similarly, initialize the MultiXact "min" with the value that would be
@@ -1056,7 +1056,7 @@ vac_update_datfrozenxid(void)
 
 	/*
 	 * If we were able to advance datfrozenxid or datminmxid, see if we can
-	 * truncate pg_clog and/or pg_multixact.  Also do it if the shared
+	 * truncate pg_xact and/or pg_multixact.  Also do it if the shared
 	 * XID-wrap-limit info is stale, since this action will update that too.
 	 */
 	if (dirty || ForceTransactionIdLimitUpdate())
@@ -1069,7 +1069,7 @@ vac_update_datfrozenxid(void)
  *	vac_truncate_clog() -- attempt to truncate the commit log
  *
  *		Scan pg_database to determine the system-wide oldest datfrozenxid,
- *		and use it to truncate the transaction commit log (pg_clog).
+ *		and use it to truncate the transaction commit log (pg_xact).
  *		Also update the XID wrap limit info maintained by varsup.c.
  *		Likewise for datminmxid.
  *
@@ -1116,7 +1116,7 @@ vac_truncate_clog(TransactionId frozenXID,
 	 * of the interlock against copying a DB containing an active backend.
 	 * Hence the new entry will not reduce the minimum.  Also, if two VACUUMs
 	 * concurrently modify the datfrozenxid's of different databases, the
-	 * worst possible outcome is that pg_clog is not truncated as aggressively
+	 * worst possible outcome is that pg_xact is not truncated as aggressively
 	 * as it could be.
 	 */
 	relation = heap_open(DatabaseRelationId, AccessShareLock);
@@ -1194,7 +1194,7 @@ vac_truncate_clog(TransactionId frozenXID,
 	/*
 	 * Truncate CLOG, multixact and CommitTs to the oldest computed value.
 	 */
-	TruncateCLOG(frozenXID);
+	TruncateCLOG(frozenXID, oldestxid_datoid);
 	TruncateCommitTs(frozenXID);
 	TruncateMultiXact(minMulti, minmulti_datoid);
 

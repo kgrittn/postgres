@@ -504,6 +504,12 @@ typedef enum ExclusiveBackupState
 } ExclusiveBackupState;
 
 /*
+ * Session status of running backup, used for sanity checks in SQL-callable
+ * functions to start and stop backups.
+ */
+static SessionBackupState sessionBackupState = SESSION_BACKUP_NONE;
+
+/*
  * Shared state data for WAL insertion.
  */
 typedef struct XLogCtlInsert
@@ -2456,7 +2462,9 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 			do
 			{
 				errno = 0;
+				pgstat_report_wait_start(WAIT_EVENT_WAL_WRITE);
 				written = write(openLogFile, from, nleft);
+				pgstat_report_wait_end();
 				if (written <= 0)
 				{
 					if (errno == EINTR)
@@ -3207,6 +3215,7 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 	for (nbytes = 0; nbytes < XLogSegSize; nbytes += XLOG_BLCKSZ)
 	{
 		errno = 0;
+		pgstat_report_wait_start(WAIT_EVENT_WAL_INIT_WRITE);
 		if ((int) write(fd, zbuffer, XLOG_BLCKSZ) != (int) XLOG_BLCKSZ)
 		{
 			int			save_errno = errno;
@@ -3225,8 +3234,10 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 					(errcode_for_file_access(),
 					 errmsg("could not write to file \"%s\": %m", tmppath)));
 		}
+		pgstat_report_wait_end();
 	}
 
+	pgstat_report_wait_start(WAIT_EVENT_WAL_INIT_SYNC);
 	if (pg_fsync(fd) != 0)
 	{
 		close(fd);
@@ -3234,6 +3245,7 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", tmppath)));
 	}
+	pgstat_report_wait_end();
 
 	if (close(fd))
 		ereport(ERROR,
@@ -3360,6 +3372,7 @@ XLogFileCopy(XLogSegNo destsegno, TimeLineID srcTLI, XLogSegNo srcsegno,
 			if (nread > sizeof(buffer))
 				nread = sizeof(buffer);
 			errno = 0;
+			pgstat_report_wait_start(WAIT_EVENT_WAL_COPY_READ);
 			if (read(srcfd, buffer, nread) != nread)
 			{
 				if (errno != 0)
@@ -3372,8 +3385,10 @@ XLogFileCopy(XLogSegNo destsegno, TimeLineID srcTLI, XLogSegNo srcsegno,
 							(errmsg("not enough data in file \"%s\"",
 									path)));
 			}
+			pgstat_report_wait_end();
 		}
 		errno = 0;
+		pgstat_report_wait_start(WAIT_EVENT_WAL_COPY_WRITE);
 		if ((int) write(fd, buffer, sizeof(buffer)) != (int) sizeof(buffer))
 		{
 			int			save_errno = errno;
@@ -3389,12 +3404,15 @@ XLogFileCopy(XLogSegNo destsegno, TimeLineID srcTLI, XLogSegNo srcsegno,
 					(errcode_for_file_access(),
 					 errmsg("could not write to file \"%s\": %m", tmppath)));
 		}
+		pgstat_report_wait_end();
 	}
 
+	pgstat_report_wait_start(WAIT_EVENT_WAL_COPY_SYNC);
 	if (pg_fsync(fd) != 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", tmppath)));
+	pgstat_report_wait_end();
 
 	if (CloseTransientFile(fd))
 		ereport(ERROR,
@@ -3457,7 +3475,7 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 	if (!find_free)
 	{
 		/* Force installation: get rid of any pre-existing segment file */
-		unlink(path);
+		durable_unlink(path, DEBUG1);
 	}
 	else
 	{
@@ -4008,16 +4026,13 @@ RemoveXlogFile(const char *segname, XLogRecPtr PriorRedoPtr, XLogRecPtr endptr)
 					  path)));
 			return;
 		}
-		rc = unlink(newpath);
+		rc = durable_unlink(newpath, LOG);
 #else
-		rc = unlink(path);
+		rc = durable_unlink(path, LOG);
 #endif
 		if (rc != 0)
 		{
-			ereport(LOG,
-					(errcode_for_file_access(),
-			   errmsg("could not remove old transaction log file \"%s\": %m",
-					  path)));
+			/* Message already logged by durable_unlink() */
 			return;
 		}
 		CheckpointStats.ckpt_segs_removed++;
@@ -4414,6 +4429,7 @@ WriteControlFile(void)
 						XLOG_CONTROL_FILE)));
 
 	errno = 0;
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_WRITE);
 	if (write(fd, buffer, PG_CONTROL_SIZE) != PG_CONTROL_SIZE)
 	{
 		/* if write didn't set errno, assume problem is no disk space */
@@ -4423,11 +4439,14 @@ WriteControlFile(void)
 				(errcode_for_file_access(),
 				 errmsg("could not write to control file: %m")));
 	}
+	pgstat_report_wait_end();
 
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_SYNC);
 	if (pg_fsync(fd) != 0)
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not fsync control file: %m")));
+	pgstat_report_wait_end();
 
 	if (close(fd))
 		ereport(PANIC,
@@ -4453,10 +4472,12 @@ ReadControlFile(void)
 				 errmsg("could not open control file \"%s\": %m",
 						XLOG_CONTROL_FILE)));
 
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_READ);
 	if (read(fd, ControlFile, sizeof(ControlFileData)) != sizeof(ControlFileData))
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not read from control file: %m")));
+	pgstat_report_wait_end();
 
 	close(fd);
 
@@ -4634,6 +4655,7 @@ UpdateControlFile(void)
 						XLOG_CONTROL_FILE)));
 
 	errno = 0;
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_WRITE_UPDATE);
 	if (write(fd, ControlFile, sizeof(ControlFileData)) != sizeof(ControlFileData))
 	{
 		/* if write didn't set errno, assume problem is no disk space */
@@ -4643,11 +4665,14 @@ UpdateControlFile(void)
 				(errcode_for_file_access(),
 				 errmsg("could not write to control file: %m")));
 	}
+	pgstat_report_wait_end();
 
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_SYNC_UPDATE);
 	if (pg_fsync(fd) != 0)
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not fsync control file: %m")));
+	pgstat_report_wait_end();
 
 	if (close(fd))
 		ereport(PANIC,
@@ -4955,7 +4980,7 @@ BootStrapXLOG(void)
 	if (!pg_backend_random(mock_auth_nonce, MOCK_AUTH_NONCE_LEN))
 		ereport(PANIC,
 			(errcode(ERRCODE_INTERNAL_ERROR),
-			 errmsg("could not generation secret authorization token")));
+			 errmsg("could not generate secret authorization token")));
 
 	/* First timeline ID is always 1 */
 	ThisTimeLineID = 1;
@@ -4994,6 +5019,7 @@ BootStrapXLOG(void)
 	ShmemVariableCache->nextOid = checkPoint.nextOid;
 	ShmemVariableCache->oidCount = 0;
 	MultiXactSetNextMXact(checkPoint.nextMulti, checkPoint.nextMultiOffset);
+	AdvanceOldestClogXid(checkPoint.oldestXid);
 	SetTransactionIdLimit(checkPoint.oldestXid, checkPoint.oldestXidDB);
 	SetMultiXactIdLimit(checkPoint.oldestMulti, checkPoint.oldestMultiDB, true);
 	SetCommitTsLimit(InvalidTransactionId, InvalidTransactionId);
@@ -5018,7 +5044,7 @@ BootStrapXLOG(void)
 	record->xl_rmid = RM_XLOG_ID;
 	recptr += SizeOfXLogRecord;
 	/* fill the XLogRecordDataHeaderShort struct */
-	*(recptr++) = XLR_BLOCK_ID_DATA_SHORT;
+	*(recptr++) = (char) XLR_BLOCK_ID_DATA_SHORT;
 	*(recptr++) = sizeof(checkPoint);
 	memcpy(recptr, &checkPoint, sizeof(checkPoint));
 	recptr += sizeof(checkPoint);
@@ -5036,6 +5062,7 @@ BootStrapXLOG(void)
 
 	/* Write the first page with the initial record */
 	errno = 0;
+	pgstat_report_wait_start(WAIT_EVENT_WAL_BOOTSTRAP_WRITE);
 	if (write(openLogFile, page, XLOG_BLCKSZ) != XLOG_BLCKSZ)
 	{
 		/* if write didn't set errno, assume problem is no disk space */
@@ -5045,11 +5072,14 @@ BootStrapXLOG(void)
 				(errcode_for_file_access(),
 			  errmsg("could not write bootstrap transaction log file: %m")));
 	}
+	pgstat_report_wait_end();
 
+	pgstat_report_wait_start(WAIT_EVENT_WAL_BOOTSTRAP_SYNC);
 	if (pg_fsync(openLogFile) != 0)
 		ereport(PANIC,
 				(errcode_for_file_access(),
 			  errmsg("could not fsync bootstrap transaction log file: %m")));
+	pgstat_report_wait_end();
 
 	if (close(openLogFile))
 		ereport(PANIC,
@@ -6596,6 +6626,7 @@ StartupXLOG(void)
 	ShmemVariableCache->nextOid = checkPoint.nextOid;
 	ShmemVariableCache->oidCount = 0;
 	MultiXactSetNextMXact(checkPoint.nextMulti, checkPoint.nextMultiOffset);
+	AdvanceOldestClogXid(checkPoint.oldestXid);
 	SetTransactionIdLimit(checkPoint.oldestXid, checkPoint.oldestXidDB);
 	SetMultiXactIdLimit(checkPoint.oldestMulti, checkPoint.oldestMultiDB, true);
 	SetCommitTsLimit(checkPoint.oldestCommitTsXid,
@@ -8661,6 +8692,11 @@ CreateCheckPoint(int flags)
 
 	/*
 	 * Get the other info we need for the checkpoint record.
+	 *
+	 * We don't need to save oldestClogXid in the checkpoint, it only matters
+	 * for the short period in which clog is being truncated, and if we crash
+	 * during that we'll redo the clog truncation and fix up oldestClogXid
+	 * there.
 	 */
 	LWLockAcquire(XidGenLock, LW_SHARED);
 	checkPoint.nextXid = ShmemVariableCache->nextXid;
@@ -8710,7 +8746,7 @@ CreateCheckPoint(int flags)
 	 * that are currently in commit critical sections.  If an xact inserted
 	 * its commit record into XLOG just before the REDO point, then a crash
 	 * restart from the REDO point would not replay that record, which means
-	 * that our flushing had better include the xact's update of pg_clog.  So
+	 * that our flushing had better include the xact's update of pg_xact.  So
 	 * we wait till he's out of his commit critical section before proceeding.
 	 * See notes in RecordTransactionCommit().
 	 *
@@ -8869,7 +8905,7 @@ CreateCheckPoint(int flags)
 	 * StartupSUBTRANS hasn't been called yet.
 	 */
 	if (!RecoveryInProgress())
-		TruncateSUBTRANS(GetOldestXmin(NULL, false));
+		TruncateSUBTRANS(GetOldestXmin(NULL, PROCARRAY_FLAGS_DEFAULT));
 
 	/* Real work is done, but log and update stats before releasing lock. */
 	LogCheckpointEnd(false);
@@ -9232,7 +9268,7 @@ CreateRestartPoint(int flags)
 	 * this because StartupSUBTRANS hasn't been called yet.
 	 */
 	if (EnableHotStandby)
-		TruncateSUBTRANS(GetOldestXmin(NULL, false));
+		TruncateSUBTRANS(GetOldestXmin(NULL, PROCARRAY_FLAGS_DEFAULT));
 
 	/* Real work is done, but log and update before releasing lock. */
 	LogCheckpointEnd(true);
@@ -9590,6 +9626,10 @@ xlog_redo(XLogReaderState *record)
 
 		MultiXactAdvanceOldest(checkPoint.oldestMulti,
 							   checkPoint.oldestMultiDB);
+		/*
+		 * No need to set oldestClogXid here as well; it'll be set when we
+		 * redo an xl_clog_truncate if it changed since initialization.
+		 */
 		SetTransactionIdLimit(checkPoint.oldestXid, checkPoint.oldestXidDB);
 
 		/*
@@ -9999,11 +10039,13 @@ assign_xlog_sync_method(int new_sync_method, void *extra)
 		 */
 		if (openLogFile >= 0)
 		{
+			pgstat_report_wait_start(WAIT_EVENT_WAL_SYNC_METHOD_ASSIGN);
 			if (pg_fsync(openLogFile) != 0)
 				ereport(PANIC,
 						(errcode_for_file_access(),
 						 errmsg("could not fsync log segment %s: %m",
 							  XLogFileNameP(ThisTimeLineID, openLogSegNo))));
+			pgstat_report_wait_end();
 			if (get_sync_bit(sync_method) != get_sync_bit(new_sync_method))
 				XLogFileClose();
 		}
@@ -10527,13 +10569,17 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 
 	/*
 	 * Mark that start phase has correctly finished for an exclusive backup.
+	 * Session-level locks are updated as well to reflect that state.
 	 */
 	if (exclusive)
 	{
 		WALInsertLockAcquireExclusive();
 		XLogCtl->Insert.exclusiveBackupState = EXCLUSIVE_BACKUP_IN_PROGRESS;
 		WALInsertLockRelease();
+		sessionBackupState = SESSION_BACKUP_EXCLUSIVE;
 	}
+	else
+		sessionBackupState = SESSION_BACKUP_NON_EXCLUSIVE;
 
 	/*
 	 * We're done.  As a convenience, return the starting WAL location.
@@ -10586,6 +10632,15 @@ pg_stop_backup_callback(int code, Datum arg)
 		XLogCtl->Insert.exclusiveBackupState = EXCLUSIVE_BACKUP_IN_PROGRESS;
 	}
 	WALInsertLockRelease();
+}
+
+/*
+ * Utility routine to fetch the session-level status of a backup running.
+ */
+SessionBackupState
+get_backup_status(void)
+{
+	return sessionBackupState;
 }
 
 /*
@@ -10713,17 +10768,13 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 						(errcode_for_file_access(),
 						 errmsg("could not read file \"%s\": %m",
 								BACKUP_LABEL_FILE)));
-			if (unlink(BACKUP_LABEL_FILE) != 0)
-				ereport(ERROR,
-						(errcode_for_file_access(),
-						 errmsg("could not remove file \"%s\": %m",
-								BACKUP_LABEL_FILE)));
+			durable_unlink(BACKUP_LABEL_FILE, ERROR);
 
 			/*
 			 * Remove tablespace_map file if present, it is created only if there
 			 * are tablespaces.
 			 */
-			unlink(TABLESPACE_MAP);
+			durable_unlink(TABLESPACE_MAP, DEBUG1);
 		}
 		PG_END_ENSURE_ERROR_CLEANUP(pg_stop_backup_callback, (Datum) BoolGetDatum(exclusive));
 	}
@@ -10754,6 +10805,9 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 		XLogCtl->Insert.forcePageWrites = false;
 	}
 	WALInsertLockRelease();
+
+	/* Clean up session-level lock */
+	sessionBackupState = SESSION_BACKUP_NONE;
 
 	/*
 	 * Read and parse the START WAL LOCATION line (this code is pretty crude,
@@ -10916,7 +10970,8 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 	 *
 	 * We wait forever, since archive_command is supposed to work and we
 	 * assume the admin wanted his backup to work completely. If you don't
-	 * wish to wait, you can set statement_timeout.  Also, some notices are
+	 * wish to wait, then either waitforarchive should be passed in as false,
+	 * or you can set statement_timeout.  Also, some notices are
 	 * issued to clue in anyone who might be doing this interactively.
 	 */
 	if (waitforarchive && XLogArchivingActive())
@@ -11456,10 +11511,12 @@ retry:
 		goto next_record_is_invalid;
 	}
 
+	pgstat_report_wait_start(WAIT_EVENT_WAL_READ);
 	if (read(readFile, readBuf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
 	{
 		char		fname[MAXFNAMELEN];
 
+		pgstat_report_wait_end();
 		XLogFileName(fname, curFileTLI, readSegNo);
 		ereport(emode_for_corrupt_record(emode, targetPagePtr + reqLen),
 				(errcode_for_file_access(),
@@ -11467,6 +11524,7 @@ retry:
 						fname, readOff)));
 		goto next_record_is_invalid;
 	}
+	pgstat_report_wait_end();
 
 	Assert(targetSegNo == readSegNo);
 	Assert(targetPageOff == readOff);
@@ -11523,6 +11581,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 {
 	static TimestampTz last_fail_time = 0;
 	TimestampTz now;
+	bool		streaming_reply_sent = false;
 
 	/*-------
 	 * Standby mode is implemented by a state machine:
@@ -11843,6 +11902,19 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 						 */
 						lastSourceFailed = true;
 						break;
+					}
+
+					/*
+					 * Since we have replayed everything we have received so
+					 * far and are about to start waiting for more WAL, let's
+					 * tell the upstream server our replay location now so
+					 * that pg_stat_replication doesn't show stale
+					 * information.
+					 */
+					if (!streaming_reply_sent)
+					{
+						WalRcvForceReply();
+						streaming_reply_sent = true;
 					}
 
 					/*

@@ -130,79 +130,91 @@ static char *scram_MockSalt(const char *username);
  * after the beginning of the exchange with verifier data.
  *
  * 'username' is the provided by the client.  'shadow_pass' is the role's
- * password verifier, from pg_authid.rolpassword.  If 'doomed' is true, the
- * authentication must fail, as if an incorrect password was given.
- * 'shadow_pass' may be NULL, when 'doomed' is set.
+ * password verifier, from pg_authid.rolpassword.  If 'shadow_pass' is NULL, we
+ * still perform an authentication exchange, but it will fail, as if an
+ * incorrect password was given.
  */
 void *
-pg_be_scram_init(const char *username, const char *shadow_pass, bool doomed)
+pg_be_scram_init(const char *username, const char *shadow_pass)
 {
 	scram_state *state;
-	int			password_type;
+	bool		got_verifier;
 
 	state = (scram_state *) palloc0(sizeof(scram_state));
 	state->state = SCRAM_AUTH_INIT;
 	state->username = username;
 
 	/*
-	 * Perform sanity checks on the provided password after catalog lookup.
-	 * The authentication is bound to fail if the lookup itself failed or if
-	 * the password stored is MD5-encrypted.  Authentication is possible for
-	 * users with a valid plain password though.
+	 * Parse the stored password verifier.
 	 */
-
-	if (shadow_pass == NULL || doomed)
-		password_type = -1;
-	else
-		password_type = get_password_type(shadow_pass);
-
-	if (password_type == PASSWORD_TYPE_SCRAM)
+	if (shadow_pass)
 	{
-		if (!parse_scram_verifier(shadow_pass, &state->salt, &state->iterations,
-								  state->StoredKey, state->ServerKey))
+		int			password_type = get_password_type(shadow_pass);
+
+		if (password_type == PASSWORD_TYPE_SCRAM)
+		{
+			if (parse_scram_verifier(shadow_pass, &state->salt, &state->iterations,
+									 state->StoredKey, state->ServerKey))
+				got_verifier = true;
+			else
+			{
+				/*
+				 * The password looked like a SCRAM verifier, but could not be
+				 * parsed.
+				 */
+				elog(LOG, "invalid SCRAM verifier for user \"%s\"", username);
+				got_verifier = false;
+			}
+		}
+		else if (password_type == PASSWORD_TYPE_PLAINTEXT)
 		{
 			/*
-			 * The password looked like a SCRAM verifier, but could not be
-			 * parsed.
+			 * The stored password is in plain format.  Generate a fresh SCRAM
+			 * verifier from it, and proceed with that.
 			 */
-			elog(LOG, "invalid SCRAM verifier for user \"%s\"", username);
-			doomed = true;
+			char	   *verifier;
+
+			verifier = scram_build_verifier(username, shadow_pass, 0);
+
+			(void) parse_scram_verifier(verifier, &state->salt, &state->iterations,
+										state->StoredKey, state->ServerKey);
+			pfree(verifier);
+
+			got_verifier = true;
+		}
+		else
+		{
+			/*
+			 * The user doesn't have SCRAM verifier, nor could we generate
+			 * one. (You cannot do SCRAM authentication with an MD5 hash.)
+			 */
+			state->logdetail = psprintf(_("User \"%s\" does not have a valid SCRAM verifier."),
+										state->username);
+			got_verifier = false;
 		}
 	}
-	else if (password_type == PASSWORD_TYPE_PLAINTEXT)
-	{
-		char	   *verifier;
-
-		/*
-		 * The password provided is in plain format, in which case a fresh
-		 * SCRAM verifier can be generated and used for the rest of the
-		 * processing.
-		 */
-		verifier = scram_build_verifier(username, shadow_pass, 0);
-
-		(void) parse_scram_verifier(verifier, &state->salt, &state->iterations,
-									state->StoredKey, state->ServerKey);
-		pfree(verifier);
-	}
 	else
-		doomed = true;
-
-	if (doomed)
 	{
 		/*
-		 * We don't have a valid SCRAM verifier, nor could we generate one, or
-		 * the caller requested us to perform a dummy authentication.
-		 *
-		 * The authentication is bound to fail, but to avoid revealing
-		 * information to the attacker, go through the motions with a fake
-		 * SCRAM verifier, and fail as if the password was incorrect.
+		 * The caller requested us to perform a dummy authentication.  This is
+		 * considered normal, since the caller requested it, so don't set log
+		 * detail.
 		 */
-		state->logdetail = psprintf(_("User \"%s\" does not have a valid SCRAM verifier."),
-									state->username);
+		got_verifier = false;
+	}
+
+	/*
+	 * If the user did not have a valid SCRAM verifier, we still go through
+	 * the motions with a mock one, and fail as if the client supplied an
+	 * incorrect password.  This is to avoid revealing information to an
+	 * attacker.
+	 */
+	if (!got_verifier)
+	{
 		mock_scram_verifier(username, &state->salt, &state->iterations,
 							state->StoredKey, state->ServerKey);
+		state->doomed = true;
 	}
-	state->doomed = doomed;
 
 	return state;
 }
@@ -364,6 +376,52 @@ scram_build_verifier(const char *username, const char *password,
 	return psprintf("scram-sha-256:%s:%d:%s:%s", encoded_salt, iterations, storedkey_hex, serverkey_hex);
 }
 
+/*
+ * Verify a plaintext password against a SCRAM verifier.  This is used when
+ * performing plaintext password authentication for a user that has a SCRAM
+ * verifier stored in pg_authid.
+ */
+bool
+scram_verify_plain_password(const char *username, const char *password,
+							const char *verifier)
+{
+	char	   *encoded_salt;
+	char	   *salt;
+	int			saltlen;
+	int			iterations;
+	uint8		stored_key[SCRAM_KEY_LEN];
+	uint8		server_key[SCRAM_KEY_LEN];
+	uint8		computed_key[SCRAM_KEY_LEN];
+
+	if (!parse_scram_verifier(verifier, &encoded_salt, &iterations,
+							  stored_key, server_key))
+	{
+		/*
+		 * The password looked like a SCRAM verifier, but could not be
+		 * parsed.
+		 */
+		elog(LOG, "invalid SCRAM verifier for user \"%s\"", username);
+		return false;
+	}
+
+	salt = palloc(pg_b64_dec_len(strlen(encoded_salt)));
+	saltlen = pg_b64_decode(encoded_salt, strlen(encoded_salt), salt);
+	if (saltlen == -1)
+	{
+		elog(LOG, "invalid SCRAM verifier for user \"%s\"", username);
+		return false;
+	}
+
+	/* Compute Server key based on the user-supplied plaintext password */
+	scram_ClientOrServerKey(password, salt, saltlen, iterations,
+							SCRAM_SERVER_KEY_NAME, computed_key);
+
+	/*
+	 * Compare the verifier's Server Key with the one computed from the
+	 * user-supplied password.
+	 */
+	return memcmp(computed_key, server_key, SCRAM_KEY_LEN) == 0;
+}
 
 /*
  * Check if given verifier can be used for SCRAM authentication.

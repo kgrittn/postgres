@@ -658,6 +658,43 @@ durable_rename(const char *oldfile, const char *newfile, int elevel)
 }
 
 /*
+ * durable_unlink -- remove a file in a durable manner
+ *
+ * This routine ensures that, after returning, the effect of removing file
+ * persists in case of a crash. A crash while this routine is running will
+ * leave the system in no mixed state.
+ *
+ * It does so by using fsync on the parent directory of the file after the
+ * actual removal is done.
+ *
+ * Log errors with the severity specified by caller.
+ *
+ * Returns 0 if the operation succeeded, -1 otherwise. Note that errno is not
+ * valid upon return.
+ */
+int
+durable_unlink(const char *fname, int elevel)
+{
+	if (unlink(fname) < 0)
+	{
+		ereport(elevel,
+				(errcode_for_file_access(),
+				 errmsg("could not remove file \"%s\": %m",
+						fname)));
+		return -1;
+	}
+
+	/*
+	 * To guarantee that the removal of the file is persistent, fsync
+	 * its parent directory.
+	 */
+	if (fsync_parent_path(fname, elevel) != 0)
+		return -1;
+
+	return 0;
+}
+
+/*
  * durable_link_or_rename -- rename a file in a durable manner.
  *
  * Similar to durable_rename(), except that this routine tries (but does not
@@ -1550,7 +1587,7 @@ FileClose(File file)
  * to read into.
  */
 int
-FilePrefetch(File file, off_t offset, int amount)
+FilePrefetch(File file, off_t offset, int amount, uint32 wait_event_info)
 {
 #if defined(USE_POSIX_FADVISE) && defined(POSIX_FADV_WILLNEED)
 	int			returnCode;
@@ -1565,8 +1602,10 @@ FilePrefetch(File file, off_t offset, int amount)
 	if (returnCode < 0)
 		return returnCode;
 
+	pgstat_report_wait_start(wait_event_info);
 	returnCode = posix_fadvise(VfdCache[file].fd, offset, amount,
 							   POSIX_FADV_WILLNEED);
+	pgstat_report_wait_end();
 
 	return returnCode;
 #else
@@ -1576,7 +1615,7 @@ FilePrefetch(File file, off_t offset, int amount)
 }
 
 void
-FileWriteback(File file, off_t offset, off_t nbytes)
+FileWriteback(File file, off_t offset, off_t nbytes, uint32 wait_event_info)
 {
 	int			returnCode;
 
@@ -1597,11 +1636,13 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 	if (returnCode < 0)
 		return;
 
+	pgstat_report_wait_start(wait_event_info);
 	pg_flush_data(VfdCache[file].fd, offset, nbytes);
+	pgstat_report_wait_end();
 }
 
 int
-FileRead(File file, char *buffer, int amount)
+FileRead(File file, char *buffer, int amount, uint32 wait_event_info)
 {
 	int			returnCode;
 	Vfd		   *vfdP;
@@ -1620,7 +1661,9 @@ FileRead(File file, char *buffer, int amount)
 	vfdP = &VfdCache[file];
 
 retry:
+	pgstat_report_wait_start(wait_event_info);
 	returnCode = read(vfdP->fd, buffer, amount);
+	pgstat_report_wait_end();
 
 	if (returnCode >= 0)
 	{
@@ -1663,7 +1706,7 @@ retry:
 }
 
 int
-FileWrite(File file, char *buffer, int amount)
+FileWrite(File file, char *buffer, int amount, uint32 wait_event_info)
 {
 	int			returnCode;
 	Vfd		   *vfdP;
@@ -1721,7 +1764,9 @@ FileWrite(File file, char *buffer, int amount)
 
 retry:
 	errno = 0;
+	pgstat_report_wait_start(wait_event_info);
 	returnCode = write(vfdP->fd, buffer, amount);
+	pgstat_report_wait_end();
 
 	/* if write didn't set errno, assume problem is no disk space */
 	if (returnCode != amount && errno == 0)
@@ -1782,7 +1827,7 @@ retry:
 }
 
 int
-FileSync(File file)
+FileSync(File file, uint32 wait_event_info)
 {
 	int			returnCode;
 
@@ -1795,7 +1840,11 @@ FileSync(File file)
 	if (returnCode < 0)
 		return returnCode;
 
-	return pg_fsync(VfdCache[file].fd);
+	pgstat_report_wait_start(wait_event_info);
+	returnCode = pg_fsync(VfdCache[file].fd);
+	pgstat_report_wait_end();
+
+	return returnCode;
 }
 
 off_t
@@ -1887,7 +1936,7 @@ FileTell(File file)
 #endif
 
 int
-FileTruncate(File file, off_t offset)
+FileTruncate(File file, off_t offset, uint32 wait_event_info)
 {
 	int			returnCode;
 
@@ -1900,7 +1949,9 @@ FileTruncate(File file, off_t offset)
 	if (returnCode < 0)
 		return returnCode;
 
+	pgstat_report_wait_start(wait_event_info);
 	returnCode = ftruncate(VfdCache[file].fd, offset);
+	pgstat_report_wait_end();
 
 	if (returnCode == 0 && VfdCache[file].fileSize > offset)
 	{

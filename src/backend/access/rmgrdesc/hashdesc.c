@@ -96,7 +96,8 @@ hash_desc(StringInfo buf, XLogReaderState *record)
 			{
 				xl_hash_delete *xlrec = (xl_hash_delete *) rec;
 
-				appendStringInfo(buf, "is_primary %c",
+				appendStringInfo(buf, "clear_dead_marking %c, is_primary %c",
+								 xlrec->clear_dead_marking ? 'T' : 'F',
 								 xlrec->is_primary_bucket_page ? 'T' : 'F');
 				break;
 			}
@@ -105,6 +106,14 @@ hash_desc(StringInfo buf, XLogReaderState *record)
 				xl_hash_update_meta_page *xlrec = (xl_hash_update_meta_page *) rec;
 
 				appendStringInfo(buf, "ntuples %g",
+								 xlrec->ntuples);
+				break;
+			}
+		case XLOG_HASH_VACUUM_ONE_PAGE:
+			{
+				xl_hash_vacuum_one_page *xlrec = (xl_hash_vacuum_one_page *) rec;
+
+				appendStringInfo(buf, "ntuples %d",
 								 xlrec->ntuples);
 				break;
 			}

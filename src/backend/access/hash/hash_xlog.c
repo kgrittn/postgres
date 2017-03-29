@@ -859,6 +859,19 @@ hash_xlog_delete(XLogReaderState *record)
 				PageIndexMultiDelete(page, unused, unend - unused);
 		}
 
+		/*
+		 * Mark the page as not containing any LP_DEAD items only if
+		 * clear_dead_marking flag is set to true. See comments in
+		 * hashbucketcleanup() for details.
+		 */
+		if (xldata->clear_dead_marking)
+		{
+			HashPageOpaque pageopaque;
+
+			pageopaque = (HashPageOpaque) PageGetSpecialPointer(page);
+			pageopaque->hasho_flag &= ~LH_PAGE_HAS_DEAD_TUPLES;
+		}
+
 		PageSetLSN(page, lsn);
 		MarkBufferDirty(deletebuf);
 	}
@@ -944,8 +957,6 @@ hash_xlog_vacuum_get_latestRemovedXid(XLogReaderState *record)
 	OffsetNumber	hoffnum;
 	TransactionId	latestRemovedXid = InvalidTransactionId;
 	int		i;
-	char *ptr;
-	Size len;
 
 	xlrec = (xl_hash_vacuum_one_page *) XLogRecGetData(record);
 
@@ -964,12 +975,20 @@ hash_xlog_vacuum_get_latestRemovedXid(XLogReaderState *record)
 		return latestRemovedXid;
 
 	/*
+	 * Check if WAL replay has reached a consistent database state. If not,
+	 * we must PANIC. See the definition of btree_xlog_delete_get_latestRemovedXid
+	 * for more details.
+	 */
+	if (!reachedConsistency)
+		elog(PANIC, "hash_xlog_vacuum_get_latestRemovedXid: cannot operate with inconsistent data");
+
+	/*
 	 * Get index page.  If the DB is consistent, this should not fail, nor
 	 * should any of the heap page fetches below.  If one does, we return
 	 * InvalidTransactionId to cancel all HS transactions.  That's probably
 	 * overkill, but it's safe, and certainly better than panicking here.
 	 */
-	XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
 	ibuffer = XLogReadBufferExtended(rnode, MAIN_FORKNUM, blkno, RBM_NORMAL);
 
 	if (!BufferIsValid(ibuffer))
@@ -981,9 +1000,7 @@ hash_xlog_vacuum_get_latestRemovedXid(XLogReaderState *record)
 	 * Loop through the deleted index items to obtain the TransactionId from
 	 * the heap items they point to.
 	 */
-	ptr = XLogRecGetBlockData(record, 1, &len);
-
-	unused = (OffsetNumber *) ptr;
+	unused = (OffsetNumber *) ((char *) xlrec + SizeOfHashVacuumOnePage);
 
 	for (i = 0; i < xlrec->ntuples; i++)
 	{
@@ -1078,6 +1095,7 @@ hash_xlog_vacuum_one_page(XLogReaderState *record)
 	Buffer metabuf;
 	Page page;
 	XLogRedoAction action;
+	HashPageOpaque pageopaque;
 
 	xldata = (xl_hash_vacuum_one_page *) XLogRecGetData(record);
 
@@ -1107,24 +1125,23 @@ hash_xlog_vacuum_one_page(XLogReaderState *record)
 
 	if (action == BLK_NEEDS_REDO)
 	{
-		char *ptr;
-		Size len;
-
-		ptr = XLogRecGetBlockData(record, 0, &len);
-
 		page = (Page) BufferGetPage(buffer);
 
-		if (len > 0)
+		if (XLogRecGetDataLen(record) > SizeOfHashVacuumOnePage)
 		{
 			OffsetNumber *unused;
-			OffsetNumber *unend;
 
-			unused = (OffsetNumber *) ptr;
-			unend = (OffsetNumber *) ((char *) ptr + len);
+			unused = (OffsetNumber *) ((char *) xldata + SizeOfHashVacuumOnePage);
 
-			if ((unend - unused) > 0)
-				PageIndexMultiDelete(page, unused, unend - unused);
+			PageIndexMultiDelete(page, unused, xldata->ntuples);
 		}
+
+		/*
+		 * Mark the page as not containing any LP_DEAD items. See comments
+		 * in _hash_vacuum_one_page() for details.
+		 */
+		pageopaque = (HashPageOpaque) PageGetSpecialPointer(page);
+		pageopaque->hasho_flag &= ~LH_PAGE_HAS_DEAD_TUPLES;
 
 		PageSetLSN(page, lsn);
 		MarkBufferDirty(buffer);
@@ -1229,8 +1246,14 @@ hash_mask(char *pagedata, BlockNumber blkno)
 		/*
 		 * In hash bucket and overflow pages, it is possible to modify the
 		 * LP_FLAGS without emitting any WAL record. Hence, mask the line
-		 * pointer flags. See hashgettuple() for details.
+		 * pointer flags. See hashgettuple(), _hash_kill_items() for details.
 		 */
 		mask_lp_flags(page);
 	}
+
+	/*
+	 * It is possible that the hint bit LH_PAGE_HAS_DEAD_TUPLES may remain
+	 * unlogged. So, mask it. See _hash_kill_items() for details.
+	 */
+	opaque->hasho_flag &= ~LH_PAGE_HAS_DEAD_TUPLES;
 }

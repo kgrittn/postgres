@@ -43,6 +43,7 @@
 #include "access/xlog_internal.h"
 #include "common/string.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "replication/slot.h"
 #include "storage/fd.h"
 #include "storage/proc.h"
@@ -795,6 +796,94 @@ ReplicationSlotsCountDBSlots(Oid dboid, int *nslots, int *nactive)
 	return false;
 }
 
+/*
+ * ReplicationSlotsDropDBSlots -- Drop all db-specific slots relating to the
+ * passed database oid. The caller should hold an exclusive lock on the
+ * pg_database oid for the database to prevent creation of new slots on the db
+ * or replay from existing slots.
+ *
+ * This routine isn't as efficient as it could be - but we don't drop databases
+ * often, especially databases with lots of slots.
+ *
+ * Another session that concurrently acquires an existing slot on the target DB
+ * (most likely to drop it) may cause this function to ERROR. If that happens
+ * it may have dropped some but not all slots.
+ */
+void
+ReplicationSlotsDropDBSlots(Oid dboid)
+{
+	int			i;
+
+	if (max_replication_slots <= 0)
+		return;
+
+restart:
+	LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+	for (i = 0; i < max_replication_slots; i++)
+	{
+		ReplicationSlot *s;
+		NameData slotname;
+		int active_pid;
+
+		s = &ReplicationSlotCtl->replication_slots[i];
+
+		/* cannot change while ReplicationSlotCtlLock is held */
+		if (!s->in_use)
+			continue;
+
+		/* only logical slots are database specific, skip */
+		if (!SlotIsLogical(s))
+			continue;
+
+		/* not our database, skip */
+		if (s->data.database != dboid)
+			continue;
+
+		/* Claim the slot, as if ReplicationSlotAcquire()ing. */
+		SpinLockAcquire(&s->mutex);
+		strncpy(NameStr(slotname), NameStr(s->data.name), NAMEDATALEN);
+		NameStr(slotname)[NAMEDATALEN-1] = '\0';
+		active_pid = s->active_pid;
+		if (active_pid == 0)
+		{
+			MyReplicationSlot = s;
+			s->active_pid = MyProcPid;
+		}
+		SpinLockRelease(&s->mutex);
+
+		/*
+		 * We might fail here if the slot was active. Even though we hold an
+		 * exclusive lock on the database object a logical slot for that DB can
+		 * still be active if it's being dropped by a backend connected to
+		 * another DB or is otherwise acquired.
+		 *
+		 * It's an unlikely race that'll only arise from concurrent user action,
+		 * so we'll just bail out.
+		 */
+		if (active_pid)
+			elog(ERROR, "replication slot %s is in use by pid %d",
+						NameStr(slotname), active_pid);
+
+		/*
+		 * To avoid largely duplicating ReplicationSlotDropAcquired() or
+		 * complicating it with already_locked flags for ProcArrayLock,
+		 * ReplicationSlotControlLock and ReplicationSlotAllocationLock, we
+		 * just release our ReplicationSlotControlLock to drop the slot.
+		 *
+		 * For safety we'll restart our scan from the beginning each
+		 * time we release the lock.
+		 */
+		LWLockRelease(ReplicationSlotControlLock);
+		ReplicationSlotDropAcquired();
+		goto restart;
+	}
+	LWLockRelease(ReplicationSlotControlLock);
+
+	/* recompute limits once after all slots are dropped */
+	ReplicationSlotsComputeRequiredXmin(false);
+	ReplicationSlotsComputeRequiredLSN();
+}
+
 
 /*
  * Check whether the server's configuration supports using replication
@@ -1100,10 +1189,12 @@ SaveSlotToPath(ReplicationSlot *slot, const char *dir, int elevel)
 				SnapBuildOnDiskChecksummedSize);
 	FIN_CRC32C(cp.checksum);
 
+	pgstat_report_wait_start(WAIT_EVENT_REPLICATION_SLOT_WRITE);
 	if ((write(fd, &cp, sizeof(cp))) != sizeof(cp))
 	{
 		int			save_errno = errno;
 
+		pgstat_report_wait_end();
 		CloseTransientFile(fd);
 		errno = save_errno;
 		ereport(elevel,
@@ -1112,12 +1203,15 @@ SaveSlotToPath(ReplicationSlot *slot, const char *dir, int elevel)
 						tmppath)));
 		return;
 	}
+	pgstat_report_wait_end();
 
 	/* fsync the temporary file */
+	pgstat_report_wait_start(WAIT_EVENT_REPLICATION_SLOT_SYNC);
 	if (pg_fsync(fd) != 0)
 	{
 		int			save_errno = errno;
 
+		pgstat_report_wait_end();
 		CloseTransientFile(fd);
 		errno = save_errno;
 		ereport(elevel,
@@ -1126,6 +1220,7 @@ SaveSlotToPath(ReplicationSlot *slot, const char *dir, int elevel)
 						tmppath)));
 		return;
 	}
+	pgstat_report_wait_end();
 
 	CloseTransientFile(fd);
 
@@ -1202,6 +1297,7 @@ RestoreSlotFromDisk(const char *name)
 	 * Sync state file before we're reading from it. We might have crashed
 	 * while it wasn't synced yet and we shouldn't continue on that basis.
 	 */
+	pgstat_report_wait_start(WAIT_EVENT_REPLICATION_SLOT_RESTORE_SYNC);
 	if (pg_fsync(fd) != 0)
 	{
 		CloseTransientFile(fd);
@@ -1210,6 +1306,7 @@ RestoreSlotFromDisk(const char *name)
 				 errmsg("could not fsync file \"%s\": %m",
 						path)));
 	}
+	pgstat_report_wait_end();
 
 	/* Also sync the parent directory */
 	START_CRIT_SECTION();
@@ -1217,7 +1314,9 @@ RestoreSlotFromDisk(const char *name)
 	END_CRIT_SECTION();
 
 	/* read part of statefile that's guaranteed to be version independent */
+	pgstat_report_wait_start(WAIT_EVENT_REPLICATION_SLOT_READ);
 	readBytes = read(fd, &cp, ReplicationSlotOnDiskConstantSize);
+	pgstat_report_wait_end();
 	if (readBytes != ReplicationSlotOnDiskConstantSize)
 	{
 		int			saved_errno = errno;
@@ -1253,9 +1352,11 @@ RestoreSlotFromDisk(const char *name)
 					  path, cp.length)));
 
 	/* Now that we know the size, read the entire file */
+	pgstat_report_wait_start(WAIT_EVENT_REPLICATION_SLOT_READ);
 	readBytes = read(fd,
 					 (char *) &cp + ReplicationSlotOnDiskConstantSize,
 					 cp.length);
+	pgstat_report_wait_end();
 	if (readBytes != cp.length)
 	{
 		int			saved_errno = errno;
