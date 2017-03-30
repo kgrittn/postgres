@@ -1991,6 +1991,12 @@ addRangeTableEntryForEnr(ParseState *pstate,
 	rte->rtekind = RTE_NAMEDTUPLESTORE;
 
 	/*
+	 * Record dependency on a relation.  This allows plans to be invalidated
+	 * if they access transition tables linked to a table that is altered.
+	 */
+	rte->relid = enrmd->reliddesc;
+
+	/*
 	 * Build the list of effective column names using user-supplied aliases
 	 * and/or actual column names.  Also build the cannibalized fields.
 	 */

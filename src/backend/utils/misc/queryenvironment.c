@@ -129,7 +129,7 @@ EnrmdGetTupDesc(Enrmd enrmd)
 	TupleDesc	tupdesc;
 
 	/* One, and only one, of these fields must be filled. */
-	Assert((enrmd->oiddesc == InvalidOid) != (enrmd->tupdesc == NULL));
+	Assert((enrmd->reliddesc == InvalidOid) != (enrmd->tupdesc == NULL));
 
 	if (enrmd->tupdesc != NULL)
 		tupdesc = enrmd->tupdesc;
@@ -137,7 +137,7 @@ EnrmdGetTupDesc(Enrmd enrmd)
 	{
 		Relation	relation;
 
-		relation = heap_open(enrmd->oiddesc, NoLock);
+		relation = heap_open(enrmd->reliddesc, NoLock);
 		tupdesc = relation->rd_att;
 		heap_close(relation, NoLock);
 	}

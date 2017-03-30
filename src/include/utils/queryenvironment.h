@@ -34,7 +34,7 @@ typedef struct EnrmdData
 	char			   *name;		/* name used to identify the relation */
 
 	/* only one of the next two fields should be used */
-	Oid					oiddesc;	/* oid of relation to get tupdesc */
+	Oid					reliddesc;	/* oid of relation to get tupdesc */
 	TupleDesc			tupdesc;	/* description of result rows */
 
 	EnrType				enrtype;	/* to identify type of relation */
