@@ -199,7 +199,7 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	estate->es_sourceText = queryDesc->sourceText;
 
 	/*
-	 * Fill in the named tuplestores, if any, from queryDesc.
+	 * Fill in the query environment, if any, from queryDesc.
 	 */
 	estate->es_queryEnv = queryDesc->queryEnv;
 
