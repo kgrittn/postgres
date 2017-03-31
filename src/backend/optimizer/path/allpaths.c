@@ -650,7 +650,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 
 		case RTE_NAMEDTUPLESTORE:
 			/*
-			 * tubplestore cannot be shared, at least without more
+			 * tuplestore cannot be shared, at least without more
 			 * infrastructure to support that.
 			 */
 			return;
