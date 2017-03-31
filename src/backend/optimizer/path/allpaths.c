@@ -2106,10 +2106,10 @@ set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 
 /*
  * set_namedtuplestore_pathlist
- *		Build the (single) access path for a tuplestore RTE
+ *		Build the (single) access path for a named tuplestore RTE
  *
- * There's no need for a separate set_tuplestore_size phase, since we don't
- * support join-qual-parameterized paths for tuplestores.
+ * There's no need for a separate set_namedtuplestore_size phase, since we
+ * don't support join-qual-parameterized paths for tuplestores.
  */
 static void
 set_namedtuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel,
