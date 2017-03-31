@@ -1989,7 +1989,16 @@ addRangeTableEntryForENR(ParseState *pstate,
 
 	Assert(enrmd != NULL);
 
-	rte->rtekind = RTE_NAMEDTUPLESTORE;
+	switch (enrmd->enrtype)
+	{
+		case ENR_NAMED_TUPLESTORE:
+			rte->rtekind = RTE_NAMEDTUPLESTORE;
+			break;
+
+		default:
+			elog(ERROR, "unexpected enrtype of %i", enrmd->enrtype);
+			return NULL;  /* for fussy compilers */
+	}
 
 	/*
 	 * Record dependency on a relation.  This allows plans to be invalidated
