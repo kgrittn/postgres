@@ -1970,9 +1970,13 @@ addRangeTableEntryForCTE(ParseState *pstate,
  * Add an entry for an ephemeral named relation reference to the pstate's
  * range table (p_rtable).
  *
+ * It is expected that the RangeVar, which up until now is only known to be an
+ * ephemeral named relation, will (in conjunction with the QueryEnvironment in
+ * the ParseState), create a RangeTblEntry for a specific *kind* of ephemeral
+ * named relation, based on enrtype.
+ *
  * This is much like addRangeTableEntry() except that it makes an RTE for an
- * ephemeral named relation.  The rtekind will be for a specific type of
- * relation, with its own execution node type, based on enrtype.
+ * ephemeral named relation.
  */
 RangeTblEntry *
 addRangeTableEntryForENR(ParseState *pstate,
