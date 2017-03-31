@@ -80,7 +80,7 @@ NamedTuplestoreScanState *
 ExecInitNamedTuplestoreScan(NamedTuplestoreScan *node, EState *estate, int eflags)
 {
 	NamedTuplestoreScanState *scanstate;
-	Enr		enr;
+	EphemeralNamedRelation enr;
 
 	/* check for unsupported flags */
 	Assert(!(eflags & (EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK)));
@@ -98,14 +98,14 @@ ExecInitNamedTuplestoreScan(NamedTuplestoreScan *node, EState *estate, int eflag
 	scanstate->ss.ps.plan = (Plan *) node;
 	scanstate->ss.ps.state = estate;
 
-	enr = get_enr(estate->es_queryEnv, node->enrname);
+	enr = get_ENR(estate->es_queryEnv, node->enrname);
 	if (!enr)
 		elog(ERROR, "executor could not find named tuplestore \"%s\"",
 			 node->enrname);
 
 	Assert(enr->reldata);
 	scanstate->relation = (Tuplestorestate *) enr->reldata;
-	scanstate->tupdesc = EnrmdGetTupDesc(&(enr->md));
+	scanstate->tupdesc = ENRMetadataGetTupDesc(&(enr->md));
 	scanstate->readptr =
 		tuplestore_alloc_read_pointer(scanstate->relation, 0);
 

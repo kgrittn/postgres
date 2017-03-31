@@ -16,7 +16,7 @@
 
 #include "parser/parse_node.h"
 
-extern bool name_matches_visible_enr(ParseState *pstate, const char *refname);
-extern Enrmd get_visible_enr(ParseState *pstate, const char *refname);
+extern bool name_matches_visible_ENR(ParseState *pstate, const char *refname);
+extern EphemeralNamedRelationMetadata get_visible_ENR(ParseState *pstate, const char *refname);
 
 #endif   /* PARSE_ENR_H */

@@ -23,8 +23,6 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
-#include "access/tupdesc.h"
-#include "lib/ilist.h"
 #include "utils/queryenvironment.h"
 #include "utils/rel.h"
 
@@ -43,17 +41,17 @@ create_queryEnv()
 	return (QueryEnvironment *) palloc0(sizeof(QueryEnvironment));
 }
 
-Enrmd
-get_visible_enr_metadata(QueryEnvironment *queryEnv, const char *refname)
+EphemeralNamedRelationMetadata
+get_visible_ENR_metadata(QueryEnvironment *queryEnv, const char *refname)
 {
-	Enr     enr;
+	EphemeralNamedRelation enr;
 
 	Assert(refname != NULL);
 
 	if (queryEnv == NULL)
 		return NULL;
 
-	enr = get_enr(queryEnv, refname);
+	enr = get_ENR(queryEnv, refname);
 
 	if (enr)
 		return &(enr->md);
@@ -68,10 +66,10 @@ get_visible_enr_metadata(QueryEnvironment *queryEnv, const char *refname)
  * be left NULL;
  */
 void
-register_enr(QueryEnvironment *queryEnv, Enr enr)
+register_ENR(QueryEnvironment *queryEnv, EphemeralNamedRelation enr)
 {
 	Assert(enr != NULL);
-	Assert(get_enr(queryEnv, enr->md.name) == NULL);
+	Assert(get_ENR(queryEnv, enr->md.name) == NULL);
 
 	queryEnv->namedRelList = lappend(queryEnv->namedRelList, enr);
 }
@@ -81,21 +79,21 @@ register_enr(QueryEnvironment *queryEnv, Enr enr)
  * used function, but seems like it should be provided "just in case".
  */
 void
-unregister_enr(QueryEnvironment *queryEnv, const char *name)
+unregister_ENR(QueryEnvironment *queryEnv, const char *name)
 {
-	Enr			match;
+	EphemeralNamedRelation match;
 
-	match = get_enr(queryEnv, name);
+	match = get_ENR(queryEnv, name);
 	if (match)
 		queryEnv->namedRelList = list_delete(queryEnv->namedRelList, match);
 }
 
 /*
- * This returns a Enr if there is a name match in the given collection.  It
+ * This returns an ENR if there is a name match in the given collection.  It
  * must quietly return NULL if no match is found.
  */
-Enr
-get_enr(QueryEnvironment *queryEnv, const char *name)
+EphemeralNamedRelation
+get_ENR(QueryEnvironment *queryEnv, const char *name)
 {
 	ListCell   *lc;
 
@@ -106,7 +104,7 @@ get_enr(QueryEnvironment *queryEnv, const char *name)
 
 	foreach(lc, queryEnv->namedRelList)
 	{
-		Enr enr = (Enr) lfirst(lc);
+		EphemeralNamedRelation enr = (EphemeralNamedRelation) lfirst(lc);
 
 		if (strcmp(enr->md.name, name) == 0)
 			return enr;
@@ -124,7 +122,7 @@ get_enr(QueryEnvironment *queryEnv, const char *name)
  * already be held.  Locking here would be too late anyway.
  */
 TupleDesc
-EnrmdGetTupDesc(Enrmd enrmd)
+ENRMetadataGetTupDesc(EphemeralNamedRelationMetadata enrmd)
 {
 	TupleDesc	tupdesc;
 

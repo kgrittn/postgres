@@ -150,7 +150,7 @@ extern void SPI_scroll_cursor_fetch(Portal, FetchDirection direction, long count
 extern void SPI_scroll_cursor_move(Portal, FetchDirection direction, long count);
 extern void SPI_cursor_close(Portal portal);
 
-extern int SPI_register_relation(Enr enr);
+extern int SPI_register_relation(EphemeralNamedRelation enr);
 extern int SPI_unregister_relation(const char *name);
 
 extern void AtEOXact_SPI(bool isCommit);

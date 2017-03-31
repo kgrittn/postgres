@@ -64,7 +64,7 @@ static RangeTblEntry *getRTEForSpecialRelationTypes(ParseState *pstate,
 static RangeTblEntry *transformTableEntry(ParseState *pstate, RangeVar *r);
 static RangeTblEntry *transformCTEReference(ParseState *pstate, RangeVar *r,
 					  CommonTableExpr *cte, Index levelsup);
-static RangeTblEntry *transformEnrReference(ParseState *pstate, RangeVar *r);
+static RangeTblEntry *transformENRReference(ParseState *pstate, RangeVar *r);
 static RangeTblEntry *transformRangeSubselect(ParseState *pstate,
 						RangeSubselect *r);
 static RangeTblEntry *transformRangeFunction(ParseState *pstate,
@@ -446,15 +446,15 @@ transformCTEReference(ParseState *pstate, RangeVar *r,
 }
 
 /*
- * transformEnrReference --- transform a RangeVar that references an ephemeral
+ * transformENRReference --- transform a RangeVar that references an ephemeral
  * named relation
  */
 static RangeTblEntry *
-transformEnrReference(ParseState *pstate, RangeVar *r)
+transformENRReference(ParseState *pstate, RangeVar *r)
 {
 	RangeTblEntry *rte;
 
-	rte = addRangeTableEntryForEnr(pstate, r, true);
+	rte = addRangeTableEntryForENR(pstate, r, true);
 
 	return rte;
 }
@@ -1058,8 +1058,8 @@ getRTEForSpecialRelationTypes(ParseState *pstate, RangeVar *rv)
 	cte = scanNameSpaceForCTE(pstate, rv->relname, &levelsup);
 	if (cte)
 		rte = transformCTEReference(pstate, rv, cte, levelsup);
-	if (!rte && scanNameSpaceForEnr(pstate, rv->relname))
-		rte = transformEnrReference(pstate, rv);
+	if (!rte && scanNameSpaceForENR(pstate, rv->relname))
+		rte = transformENRReference(pstate, rv);
 
 	return rte;
 }

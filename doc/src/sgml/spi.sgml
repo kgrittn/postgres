@@ -2656,7 +2656,7 @@ SPIPlanPtr SPI_saveplan(SPIPlanPtr <parameter>plan</parameter>)
 
  <refsynopsisdiv>
 <synopsis>
-int SPI_register_relation(Enr <parameter>enr</parameter>)
+int SPI_register_relation(EphemeralNamedRelation <parameter>enr</parameter>)
 </synopsis>
  </refsynopsisdiv>
 
@@ -2675,7 +2675,7 @@ int SPI_register_relation(Enr <parameter>enr</parameter>)
 
   <variablelist>
    <varlistentry>
-    <term><literal>Enr <parameter>enr</parameter></literal></term>
+    <term><literal>EphemeralNamedRelation <parameter>enr</parameter></literal></term>
     <listitem>
      <para>
       the ephemeral named relation registry entry

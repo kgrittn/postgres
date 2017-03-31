@@ -2638,10 +2638,10 @@ _SPI_save_plan(SPIPlanPtr plan)
 }
 
 /*
- * Internal lookup of Enr by name.
+ * Internal lookup of ephemeral named relation by name.
  */
-static Enr
-_SPI_find_enr_by_name(const char *name)
+static EphemeralNamedRelation
+_SPI_find_ENR_by_name(const char *name)
 {
 	/* internal static function; any error is bug in SPI itself */
 	Assert(name != NULL);
@@ -2650,7 +2650,7 @@ _SPI_find_enr_by_name(const char *name)
 	if (_SPI_current->queryEnv == NULL)
 		return NULL;
 
-	return get_enr(_SPI_current->queryEnv, name);
+	return get_ENR(_SPI_current->queryEnv, name);
 }
 
 /*
@@ -2658,9 +2658,9 @@ _SPI_find_enr_by_name(const char *name)
  * subsequent calls using this SPI connection.
  */
 int
-SPI_register_relation(Enr enr)
+SPI_register_relation(EphemeralNamedRelation enr)
 {
-	Enr			match;
+	EphemeralNamedRelation match;
 	int			res;
 
 	if (enr == NULL || enr->md.name == NULL)
@@ -2670,7 +2670,7 @@ SPI_register_relation(Enr enr)
 	if (res < 0)
 		return res;
 
-	match = _SPI_find_enr_by_name(enr->md.name);
+	match = _SPI_find_ENR_by_name(enr->md.name);
 	if (match)
 		res = SPI_ERROR_REL_DUPLICATE;
 	else
@@ -2678,7 +2678,7 @@ SPI_register_relation(Enr enr)
 		if (_SPI_current->queryEnv == NULL)
 			_SPI_current->queryEnv = create_queryEnv();
 
-		register_enr(_SPI_current->queryEnv, enr);
+		register_ENR(_SPI_current->queryEnv, enr);
 		res = SPI_OK_REL_REGISTER;
 	}
 
@@ -2694,7 +2694,7 @@ SPI_register_relation(Enr enr)
 int
 SPI_unregister_relation(const char *name)
 {
-	Enr			match;
+	EphemeralNamedRelation match;
 	int			res;
 
 	if (name == NULL)
@@ -2704,10 +2704,10 @@ SPI_unregister_relation(const char *name)
 	if (res < 0)
 		return res;
 
-	match = _SPI_find_enr_by_name(name);
+	match = _SPI_find_ENR_by_name(name);
 	if (match)
 	{
-		unregister_enr(_SPI_current->queryEnv, match->md.name);
+		unregister_ENR(_SPI_current->queryEnv, match->md.name);
 		res = SPI_OK_REL_UNREGISTER;
 	}
 	else

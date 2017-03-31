@@ -698,29 +698,33 @@ plpgsql_exec_trigger(PLpgSQL_function *func,
 		estate.queryEnv = create_queryEnv();
 		if (trigdata->tg_newtable)
 		{
-			Enr enr = palloc(sizeof(EnrData));
+			EphemeralNamedRelation enr =
+			  palloc(sizeof(EphemeralNamedRelationData));
 			int rc PG_USED_FOR_ASSERTS_ONLY;
 
 			enr->md.name = trigdata->tg_trigger->tgnewtable;
 			enr->md.reliddesc = RelationGetRelid(trigdata->tg_relation);
 			enr->md.tupdesc = NULL;
+			enr->md.enrtype = ENR_NAMED_TUPLESTORE;
 			enr->md.enrtuples = tuplestore_tuple_count(trigdata->tg_newtable);
 			enr->reldata = trigdata->tg_newtable;
-			register_enr(estate.queryEnv, enr);
+			register_ENR(estate.queryEnv, enr);
 			rc = SPI_register_relation(enr);
 			Assert(rc >= 0);
 		}
 		if (trigdata->tg_oldtable)
 		{
-			Enr enr = palloc(sizeof(EnrData));
+			EphemeralNamedRelation enr =
+			  palloc(sizeof(EphemeralNamedRelationData));
 			int rc PG_USED_FOR_ASSERTS_ONLY;
 
 			enr->md.name = trigdata->tg_trigger->tgoldtable;
 			enr->md.reliddesc = RelationGetRelid(trigdata->tg_relation);
 			enr->md.tupdesc = NULL;
+			enr->md.enrtype = ENR_NAMED_TUPLESTORE;
 			enr->md.enrtuples = tuplestore_tuple_count(trigdata->tg_oldtable);
 			enr->reldata = trigdata->tg_oldtable;
-			register_enr(estate.queryEnv, enr);
+			register_ENR(estate.queryEnv, enr);
 			rc = SPI_register_relation(enr);
 			Assert(rc >= 0);
 		}

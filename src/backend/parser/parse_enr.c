@@ -17,13 +17,13 @@
 #include "parser/parse_enr.h"
 
 bool
-name_matches_visible_enr(ParseState *pstate, const char *refname)
+name_matches_visible_ENR(ParseState *pstate, const char *refname)
 {
-	return (get_visible_enr_metadata(pstate->p_queryEnv, refname) != NULL);
+	return (get_visible_ENR_metadata(pstate->p_queryEnv, refname) != NULL);
 }
 
-Enrmd
-get_visible_enr(ParseState *pstate, const char *refname)
+EphemeralNamedRelationMetadata
+get_visible_ENR(ParseState *pstate, const char *refname)
 {
-	return get_visible_enr_metadata(pstate->p_queryEnv, refname);
+	return get_visible_ENR_metadata(pstate->p_queryEnv, refname);
 }

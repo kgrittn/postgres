@@ -287,9 +287,9 @@ isFutureCTE(ParseState *pstate, const char *refname)
  * matching the given unqualified refname.
  */
 bool
-scanNameSpaceForEnr(ParseState *pstate, const char *refname)
+scanNameSpaceForENR(ParseState *pstate, const char *refname)
 {
-	return name_matches_visible_enr(pstate, refname);
+	return name_matches_visible_ENR(pstate, refname);
 }
 
 /*
@@ -333,13 +333,13 @@ searchRangeTableForRel(ParseState *pstate, RangeVar *relation)
 	{
 		cte = scanNameSpaceForCTE(pstate, refname, &ctelevelsup);
 		if (!cte)
-			isenr = scanNameSpaceForEnr(pstate, refname);
+			isenr = scanNameSpaceForENR(pstate, refname);
 	}
 
 	if (!cte && !isenr)
 		relId = RangeVarGetRelid(relation, NoLock, true);
 
-	/* Now look for RTEs matching either the relation/CTE/Enr or the alias */
+	/* Now look for RTEs matching either the relation/CTE/ENR or the alias */
 	for (levelsup = 0;
 		 pstate != NULL;
 		 pstate = pstate->parentParseState, levelsup++)
@@ -1162,7 +1162,7 @@ parserOpenTable(ParseState *pstate, const RangeVar *relation, int lockmode)
 			/*
 			 * An unqualified name might be a named ephemeral relation.
 			 */
-			if (get_visible_enr_metadata(pstate->p_queryEnv, relation->relname))
+			if (get_visible_ENR_metadata(pstate->p_queryEnv, relation->relname))
 				rel = NULL;
 			/*
 			 * An unqualified name might have been meant as a reference to
@@ -1975,14 +1975,15 @@ addRangeTableEntryForCTE(ParseState *pstate,
  * relation, with its own execution node type, based on enrtype.
  */
 RangeTblEntry *
-addRangeTableEntryForEnr(ParseState *pstate,
+addRangeTableEntryForENR(ParseState *pstate,
 						 RangeVar *rv,
 						 bool inFromCl)
 {
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
 	Alias	   *alias = rv->alias;
 	char	   *refname = alias ? alias->aliasname : rv->relname;
-	Enrmd		enrmd = get_visible_enr(pstate, rv->relname);
+	EphemeralNamedRelationMetadata enrmd =
+	  get_visible_ENR(pstate, rv->relname);
 	TupleDesc	tupdesc;
 	int			attno;
 
@@ -2000,7 +2001,7 @@ addRangeTableEntryForEnr(ParseState *pstate,
 	 * Build the list of effective column names using user-supplied aliases
 	 * and/or actual column names.  Also build the cannibalized fields.
 	 */
-	tupdesc = EnrmdGetTupDesc(enrmd);
+	tupdesc = ENRMetadataGetTupDesc(enrmd);
 	rte->eref = makeAlias(refname, NIL);
 	buildRelationAliases(tupdesc, alias, rte->eref);
 	rte->enrname = enrmd->name;
